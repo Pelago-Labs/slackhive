@@ -70,10 +70,14 @@ The Boss reads the message, checks its team registry, and delegates to the right
 | 📝 **Skill Editor** | In-browser editor for agent markdown skills with file tree and categories |
 | 🔐 **Tool Permissions** | Per-agent allowlist/denylist for Claude Code SDK tools |
 | 📊 **Live Logs** | SSE-streamed Docker log output per agent with level filters and search |
-| ⚙️ **Settings** | Configurable branding (app name, logo, tagline), dashboard title |
+| ⚙️ **Settings** | Configurable branding (app name, logo, tagline), dashboard title, user management |
 | 🧠 **Memory Viewer** | Browse, inspect, and delete agent memories grouped by type |
 | 📄 **CLAUDE.md Viewer** | Read and edit the compiled system prompt sent to each agent |
 | 📐 **Collapsible Sidebar** | Clean sidebar with live agent roster, status dots, and collapse toggle |
+| 📱 **Responsive Design** | Mobile-friendly layout with hamburger menu, overlay sidebar, fluid grids |
+| 🔒 **Auth & RBAC** | Login page, superadmin via env vars, admin/viewer roles, API route guards |
+| 👥 **User Management** | Create users with admin or viewer roles from Settings, viewers get read-only UI |
+| 🏢 **Agent Hierarchy** | "Reports to" field — agents report to the boss, only one boss allowed |
 
 ### Agent Capabilities
 
@@ -84,6 +88,7 @@ The Boss reads the message, checks its team registry, and delegates to the right
 - **Skill system** — modular markdown files organized by category with sort ordering
 - **Auto-generated boss registry** — team roster updated automatically on agent changes
 - **Memory system injected into CLAUDE.md** — agents know how to write and organize memories
+- **Agent hierarchy** — `reports_to` field tracks which boss each agent reports to
 
 ---
 
@@ -117,8 +122,9 @@ The Boss reads the message, checks its team registry, and delegates to the right
 │  ┌─────────────────────────────────────────────────────┐   │
 │  │  PostgreSQL 16                                      │   │
 │  │                                                     │   │
-│  │  agents · skills · memories · permissions           │   │
-│  │  mcp_servers · agent_mcps · sessions · settings     │   │
+│  │  agents · skills · memories · permissions            │   │
+│  │  mcp_servers · agent_mcps · sessions                │   │
+│  │  settings · users                                   │   │
 │  └─────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -151,6 +157,13 @@ cp .env.example .env
 ```
 
 Edit `.env` with your Anthropic API key and a secure Postgres password.
+
+Optional auth config (defaults shown):
+```env
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=changeme
+AUTH_SECRET=change-this-secret-in-production
+```
 
 ### 2. Start everything
 
@@ -256,6 +269,28 @@ View and manage all memories from **Agents → [name] → Memory**.
 
 ---
 
+## 🔒 Authentication & Roles
+
+AI Teams ships with a simple but effective auth system — no external auth provider needed.
+
+### How it works
+
+- **Superadmin** is configured via environment variables (`ADMIN_USERNAME` / `ADMIN_PASSWORD`) — never stored in the database
+- **Sessions** use HMAC-signed cookies (no JWTs, no session table)
+- **Middleware** protects all routes — unauthenticated requests redirect to `/login`
+
+### Roles
+
+| Role | Dashboard | View agents | Create/edit agents | Manage users | Settings |
+|------|-----------|-------------|-------------------|--------------|----------|
+| **Superadmin** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Admin** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Viewer** | ✅ | ✅ | ❌ | ❌ | ❌ |
+
+Admins can create viewer/admin users from **Settings → Users**. All mutating API routes return `403` for viewers — enforced server-side, not just hidden in the UI.
+
+---
+
 ## 🔌 MCP Server Catalog
 
 MCP servers are managed at the platform level. Add a server once, assign it to any agent.
@@ -295,6 +330,9 @@ slack-claude-code-agent-team/
 │   │       ├── app/                # Pages, API routes, settings
 │   │       └── lib/
 │   │           ├── db.ts           # Postgres + Redis client
+│   │           ├── auth.ts         # HMAC cookie sessions, bcrypt
+│   │           ├── auth-context.tsx # Client-side auth React context
+│   │           ├── api-guard.ts    # Role guard for API routes
 │   │           ├── boss-registry.ts # Auto-generated boss team registry
 │   │           ├── slack-manifest.ts
 │   │           └── skill-templates.ts
