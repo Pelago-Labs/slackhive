@@ -77,9 +77,10 @@ The Boss reads the message, checks its team registry, and delegates to the right
 | 📄 **CLAUDE.md Viewer** | Read and edit the compiled system prompt sent to each agent |
 | 📐 **Collapsible Sidebar** | Clean sidebar with live agent roster, status dots, and collapse toggle |
 | 📱 **Responsive Design** | Mobile-friendly layout with hamburger menu, overlay sidebar, fluid grids |
-| 🔒 **Auth & RBAC** | Login page, superadmin via env vars, admin/viewer roles, API route guards |
-| 👥 **User Management** | Create users with admin or viewer roles from Settings, viewers get read-only UI |
+| 🔒 **Auth & RBAC** | Login page, superadmin via env vars, 4 roles (superadmin/admin/editor/viewer) |
+| 👥 **User Management** | Create users with admin, editor, or viewer roles from Settings |
 | 🏢 **Agent Hierarchy** | "Reports to" field — agents report to the boss, only one boss allowed |
+| ⏰ **Scheduled Jobs** | Cron-based recurring tasks executed by the boss agent, with run history |
 
 ### Agent Capabilities
 
@@ -126,7 +127,7 @@ The Boss reads the message, checks its team registry, and delegates to the right
 │  │                                                     │    │
 │  │  agents · skills · memories · permissions           │    │
 │  │  mcp_servers · agent_mcps · sessions                │    │
-│  │  settings · users                                   │    │
+│  │  settings · users · scheduled_jobs · job_runs       │    │
 │  └─────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -369,6 +370,40 @@ View and manage all memories from **Agents → [name] → Memory**.
 
 ---
 
+## ⏰ Scheduled Jobs
+
+Scheduled jobs let the boss agent run recurring tasks on a cron schedule and post results to Slack.
+
+### How it works
+
+1. Create a job from the **Jobs** page in the web UI
+2. Set a **prompt** (what to tell the boss), **schedule** (cron expression), and **target** (channel or DM)
+3. The runner's `JobScheduler` fires on schedule and sends the prompt to the boss agent
+4. Boss processes it like any normal message — may delegate to specialists, run MCP tools, etc.
+5. Result is posted to the target Slack channel or DM
+6. Run history (status, output, duration) is tracked and visible in the UI
+
+### Example
+
+| Field | Value |
+|-------|-------|
+| **Name** | Daily Booking Report |
+| **Prompt** | Generate a summary of yesterday's bookings with key metrics |
+| **Schedule** | `0 8 * * *` (daily at 8:00 AM) |
+| **Target** | `#analytics` channel |
+
+The UI includes schedule presets (hourly, daily, weekdays, weekly) and shows cron expressions in human-readable form.
+
+### Job run states
+
+| Status | Meaning |
+|--------|---------|
+| **Running** | Job is currently executing |
+| **Success** | Completed and result posted to Slack |
+| **Error** | Failed — boss not running, Claude error, or Slack API failure |
+
+---
+
 ## 🔒 Authentication & Roles
 
 SlackHive ships with a simple but effective auth system — no external auth provider needed.
@@ -381,13 +416,19 @@ SlackHive ships with a simple but effective auth system — no external auth pro
 
 ### Roles
 
-| Role | Dashboard | View agents | Create/edit agents | Manage users | Settings |
-|------|-----------|-------------|-------------------|--------------|----------|
+| Role | View | Create/edit agents | Manage jobs | Settings | Manage users |
+|------|------|-------------------|-------------|----------|-------------|
 | **Superadmin** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **Admin** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Viewer** | ✅ | ✅ | ❌ | ❌ | ❌ |
+| **Editor** | ✅ | ✅ | ✅ | ✅ | ❌ |
+| **Viewer** | ✅ | ❌ | ❌ | ❌ | ❌ |
 
-Admins can create viewer/admin users from **Settings → Users**. All mutating API routes return `403` for viewers — enforced server-side, not just hidden in the UI.
+- **Superadmin**: configured via env vars, never stored in DB
+- **Admin**: full access — can create users with any role
+- **Editor**: can create/edit agents, jobs, MCPs, skills, settings — but cannot manage users
+- **Viewer**: read-only access to everything
+
+All permissions are enforced server-side via API route guards, not just hidden in the UI.
 
 ---
 
@@ -444,6 +485,7 @@ slackhive/
 │           ├── slack-handler.ts    # Slack Bolt + Block Kit formatting
 │           ├── compile-claude-md.ts # Skills + memories → CLAUDE.md
 │           ├── memory-watcher.ts   # fs.watch → DB sync (learning)
+│           ├── job-scheduler.ts   # Cron-based scheduled job executor
 │           └── logger.ts           # Structured logging
 │
 ├── packages/
