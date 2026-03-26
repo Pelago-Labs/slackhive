@@ -20,6 +20,10 @@ import type {
   Permission,
   Memory,
   Session,
+  ScheduledJob,
+  JobRun,
+  CreateJobRequest,
+  UpdateJobRequest,
   AgentEvent,
   AgentStatus,
   UpsertMcpServerRequest,
@@ -577,4 +581,143 @@ export async function createUser(username: string, passwordHash: string, role: s
  */
 export async function deleteUser(id: string): Promise<void> {
   await getPool().query('DELETE FROM users WHERE id = $1', [id]);
+}
+
+// =============================================================================
+// Scheduled Jobs
+// =============================================================================
+
+/**
+ * Maps a DB row to a ScheduledJob object.
+ */
+function rowToJob(row: Record<string, unknown>): ScheduledJob {
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    prompt: row.prompt as string,
+    cronSchedule: row.cron_schedule as string,
+    targetType: row.target_type as 'channel' | 'dm',
+    targetId: row.target_id as string,
+    enabled: row.enabled as boolean,
+    createdAt: row.created_at as Date,
+    updatedAt: row.updated_at as Date,
+  };
+}
+
+/**
+ * Maps a DB row to a JobRun object.
+ */
+function rowToJobRun(row: Record<string, unknown>): JobRun {
+  return {
+    id: row.id as string,
+    jobId: row.job_id as string,
+    startedAt: row.started_at as Date,
+    finishedAt: (row.finished_at as Date) ?? undefined,
+    status: row.status as 'running' | 'success' | 'error',
+    output: (row.output as string) ?? undefined,
+    error: (row.error as string) ?? undefined,
+  };
+}
+
+/**
+ * Returns all scheduled jobs with their most recent run info.
+ *
+ * @returns {Promise<Array<ScheduledJob & { lastRun?: JobRun }>>}
+ */
+export async function getAllJobs(): Promise<Array<ScheduledJob & { lastRun?: JobRun }>> {
+  const r = await getPool().query(`
+    SELECT j.*,
+           lr.id AS lr_id, lr.started_at AS lr_started_at, lr.finished_at AS lr_finished_at,
+           lr.status AS lr_status, lr.output AS lr_output, lr.error AS lr_error
+    FROM scheduled_jobs j
+    LEFT JOIN LATERAL (
+      SELECT * FROM job_runs WHERE job_id = j.id ORDER BY started_at DESC LIMIT 1
+    ) lr ON true
+    ORDER BY j.created_at DESC
+  `);
+  return r.rows.map(row => ({
+    ...rowToJob(row),
+    lastRun: row.lr_id ? {
+      id: row.lr_id, jobId: row.id as string,
+      startedAt: row.lr_started_at, finishedAt: row.lr_finished_at ?? undefined,
+      status: row.lr_status, output: row.lr_output ?? undefined, error: row.lr_error ?? undefined,
+    } : undefined,
+  }));
+}
+
+/**
+ * Returns a single job by ID.
+ *
+ * @param {string} id - Job UUID.
+ * @returns {Promise<ScheduledJob | null>}
+ */
+export async function getJobById(id: string): Promise<ScheduledJob | null> {
+  const r = await getPool().query('SELECT * FROM scheduled_jobs WHERE id = $1', [id]);
+  return r.rows.length ? rowToJob(r.rows[0]) : null;
+}
+
+/**
+ * Creates a new scheduled job.
+ *
+ * @param {CreateJobRequest} req - Job creation payload.
+ * @returns {Promise<ScheduledJob>}
+ */
+export async function createJob(req: CreateJobRequest): Promise<ScheduledJob> {
+  const r = await getPool().query(
+    `INSERT INTO scheduled_jobs (name, prompt, cron_schedule, target_type, target_id, enabled)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    [req.name, req.prompt, req.cronSchedule, req.targetType ?? 'channel', req.targetId, req.enabled ?? true]
+  );
+  return rowToJob(r.rows[0]);
+}
+
+/**
+ * Updates an existing scheduled job.
+ *
+ * @param {string} id - Job UUID.
+ * @param {UpdateJobRequest} req - Fields to update.
+ * @returns {Promise<ScheduledJob | null>}
+ */
+export async function updateJob(id: string, req: UpdateJobRequest): Promise<ScheduledJob | null> {
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  let i = 1;
+  if (req.name !== undefined) { sets.push(`name = $${i++}`); vals.push(req.name); }
+  if (req.prompt !== undefined) { sets.push(`prompt = $${i++}`); vals.push(req.prompt); }
+  if (req.cronSchedule !== undefined) { sets.push(`cron_schedule = $${i++}`); vals.push(req.cronSchedule); }
+  if (req.targetType !== undefined) { sets.push(`target_type = $${i++}`); vals.push(req.targetType); }
+  if (req.targetId !== undefined) { sets.push(`target_id = $${i++}`); vals.push(req.targetId); }
+  if (req.enabled !== undefined) { sets.push(`enabled = $${i++}`); vals.push(req.enabled); }
+  if (!sets.length) return getJobById(id);
+  sets.push(`updated_at = now()`);
+  vals.push(id);
+  const r = await getPool().query(
+    `UPDATE scheduled_jobs SET ${sets.join(', ')} WHERE id = $${i} RETURNING *`, vals
+  );
+  return r.rows.length ? rowToJob(r.rows[0]) : null;
+}
+
+/**
+ * Deletes a scheduled job and all its runs (CASCADE).
+ *
+ * @param {string} id - Job UUID.
+ */
+export async function deleteJob(id: string): Promise<void> {
+  await getPool().query('DELETE FROM scheduled_jobs WHERE id = $1', [id]);
+}
+
+/**
+ * Returns paginated run history for a job.
+ *
+ * @param {string} jobId - Job UUID.
+ * @param {number} limit - Max results.
+ * @param {number} offset - Offset.
+ * @returns {Promise<JobRun[]>}
+ */
+export async function getJobRuns(jobId: string, limit = 20, offset = 0): Promise<JobRun[]> {
+  const r = await getPool().query(
+    'SELECT * FROM job_runs WHERE job_id = $1 ORDER BY started_at DESC LIMIT $2 OFFSET $3',
+    [jobId, limit, offset]
+  );
+  return r.rows.map(rowToJobRun);
 }

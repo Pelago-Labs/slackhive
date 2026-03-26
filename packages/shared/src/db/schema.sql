@@ -173,6 +173,41 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- -----------------------------------------------------------------------------
+-- scheduled_jobs
+-- Recurring tasks executed by the boss agent on a cron schedule.
+-- Results are posted to a Slack channel or DM.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS scheduled_jobs (
+  id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  name          TEXT        NOT NULL,
+  prompt        TEXT        NOT NULL,
+  cron_schedule TEXT        NOT NULL,
+  target_type   TEXT        NOT NULL DEFAULT 'channel'
+                            CHECK (target_type IN ('channel', 'dm')),
+  target_id     TEXT        NOT NULL,       -- Slack channel ID or user ID
+  enabled       BOOLEAN     NOT NULL DEFAULT true,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- -----------------------------------------------------------------------------
+-- job_runs
+-- Execution history for scheduled jobs.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS job_runs (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id      UUID        NOT NULL REFERENCES scheduled_jobs(id) ON DELETE CASCADE,
+  started_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  finished_at TIMESTAMPTZ,
+  status      TEXT        NOT NULL DEFAULT 'running'
+                          CHECK (status IN ('running', 'success', 'error')),
+  output      TEXT,
+  error       TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_job_runs_job ON job_runs(job_id, started_at DESC);
+
+-- -----------------------------------------------------------------------------
 -- Indexes
 -- -----------------------------------------------------------------------------
 CREATE INDEX idx_sessions_agent_key  ON sessions(agent_id, session_key);

@@ -13,6 +13,7 @@ import type {
   Agent,
   McpServer,
   AgentMcp,
+  ScheduledJob,
   Skill,
   Permission,
   Memory,
@@ -450,4 +451,62 @@ export async function cleanupStaleSessions(agentId: string, maxAgeMs: number): P
     [agentId, cutoff]
   );
   return result.rowCount ?? 0;
+}
+
+// =============================================================================
+// Scheduled Jobs
+// =============================================================================
+
+/**
+ * Returns all enabled scheduled jobs.
+ *
+ * @returns {Promise<ScheduledJob[]>}
+ */
+export async function getAllEnabledJobs(): Promise<ScheduledJob[]> {
+  const r = await getPool().query('SELECT * FROM scheduled_jobs WHERE enabled = true');
+  return r.rows.map(row => ({
+    id: row.id,
+    name: row.name,
+    prompt: row.prompt,
+    cronSchedule: row.cron_schedule,
+    targetType: row.target_type,
+    targetId: row.target_id,
+    enabled: row.enabled,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+}
+
+/**
+ * Inserts a new job run record with status 'running'.
+ *
+ * @param {string} jobId - The scheduled job ID.
+ * @returns {Promise<string>} The new run ID.
+ */
+export async function insertJobRun(jobId: string): Promise<string> {
+  const r = await getPool().query(
+    "INSERT INTO job_runs (job_id, status) VALUES ($1, 'running') RETURNING id",
+    [jobId]
+  );
+  return r.rows[0].id;
+}
+
+/**
+ * Updates a job run with final status, output, and error.
+ *
+ * @param {string} runId - The run ID.
+ * @param {'success' | 'error'} status - Final status.
+ * @param {string | null} output - Truncated output text.
+ * @param {string | null} error - Error message if failed.
+ */
+export async function updateJobRun(
+  runId: string,
+  status: 'success' | 'error',
+  output?: string | null,
+  error?: string | null
+): Promise<void> {
+  await getPool().query(
+    'UPDATE job_runs SET status = $1, output = $2, error = $3, finished_at = now() WHERE id = $4',
+    [status, output ?? null, error ?? null, runId]
+  );
 }

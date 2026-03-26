@@ -24,6 +24,7 @@ import { App } from '@slack/bolt';
 import { createClient, type RedisClientType } from 'redis';
 import type { Agent } from '@slackhive/shared';
 import { AGENT_EVENTS_CHANNEL, type AgentEvent } from '@slackhive/shared';
+import { JobScheduler } from './job-scheduler';
 import {
   getAllAgents,
   getAgentById,
@@ -61,8 +62,25 @@ export class AgentRunner {
   /** Map of agent ID → running agent resources. */
   private runningAgents: Map<string, RunningAgent> = new Map();
 
+  /** Scheduled job executor. */
+  private jobScheduler: JobScheduler;
+
   /** Redis subscriber client for hot-reload events. */
   private redisSubscriber: RedisClientType | null = null;
+
+  constructor() {
+    this.jobScheduler = new JobScheduler(() => this.getBossAgent());
+  }
+
+  /**
+   * Returns the running boss agent, or undefined if not running.
+   */
+  private getBossAgent(): { app: App; claudeHandler: import('./claude-handler').ClaudeHandler } | undefined {
+    for (const ra of this.runningAgents.values()) {
+      if (ra.agent.isBoss) return { app: ra.app, claudeHandler: ra.claudeHandler };
+    }
+    return undefined;
+  }
 
   /**
    * Starts the runner:
@@ -78,6 +96,7 @@ export class AgentRunner {
 
     await this.connectRedis();
     await this.loadAllAgents();
+    await this.jobScheduler.start();
     this.registerShutdownHandlers();
 
     logger.info('AgentRunner started', { agents: this.runningAgents.size });
@@ -90,6 +109,9 @@ export class AgentRunner {
    */
   async stop(): Promise<void> {
     logger.info('AgentRunner stopping...');
+
+    // Stop job scheduler
+    await this.jobScheduler.stop();
 
     // Stop all agents concurrently
     const stopPromises = Array.from(this.runningAgents.keys()).map((id) =>
@@ -340,6 +362,11 @@ export class AgentRunner {
       case 'stop':
         this.stopAgent(event.agentId).catch((err) =>
           logger.error('Failed to stop agent', { agentId: event.agentId, error: err.message })
+        );
+        break;
+      case 'reload-jobs':
+        this.jobScheduler.reload().catch((err) =>
+          logger.error('Failed to reload jobs', { error: (err as Error).message })
         );
         break;
     }
