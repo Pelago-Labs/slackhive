@@ -220,6 +220,76 @@ After installing with `npm install -g slackhive`:
 
 ---
 
+## 🔑 Claude Code Authentication
+
+SlackHive supports two authentication modes for the Claude Code SDK. Choose the one that fits your setup.
+
+### Option 1: API Key (pay-per-use)
+
+Best for: teams, production, predictable billing.
+
+Set your Anthropic API key in `.env`:
+
+```env
+ANTHROPIC_API_KEY=sk-ant-api03-...
+```
+
+That's it. Every agent will use this key. You're billed per token via the [Anthropic API](https://console.anthropic.com/).
+
+### Option 2: Claude Code Subscription (Max plan)
+
+Best for: individual developers, Claude Pro/Max subscribers ($100–$200/month unlimited).
+
+If you have a Claude Max subscription with Claude Code access:
+
+**Step 1 — Login on the host machine:**
+
+```bash
+claude login
+```
+
+This opens a browser for OAuth and saves credentials to `~/.claude/`.
+
+**Step 2 — Mount credentials into the runner container:**
+
+The `docker-compose.yml` runner service needs access to your host's Claude credentials. Add these volume mounts if not already present:
+
+```yaml
+runner:
+  volumes:
+    - ~/.claude:/root/.claude          # Auth credentials
+    - /tmp/agents:/tmp/agents          # Agent working dirs
+```
+
+**Step 3 — Remove the API key (important):**
+
+Make sure `ANTHROPIC_API_KEY` is **not** set in `.env`. When no API key is present, the SDK falls back to the subscription credentials from `~/.claude/`.
+
+```env
+# ANTHROPIC_API_KEY=          ← comment out or remove
+```
+
+**Step 4 — Restart:**
+
+```bash
+slackhive update
+# or: docker compose up -d --build runner
+```
+
+### Which should I use?
+
+| | API Key | Subscription |
+|---|---------|-------------|
+| **Billing** | Per-token (pay what you use) | Flat monthly ($100/$200) |
+| **Setup** | Just paste the key | Run `claude login` on host |
+| **Best for** | Teams, CI/CD, production | Solo devs, prototyping |
+| **Rate limits** | API tier limits | Subscription fair-use limits |
+| **Multiple agents** | All share one key | All share one subscription |
+
+> **Note:** If both `ANTHROPIC_API_KEY` and `~/.claude` credentials are present, the API key takes precedence.
+
+---
+
 ## 🤖 Creating Your First Agent
 
 Click **New Agent** from the dashboard and follow the 5-step wizard:

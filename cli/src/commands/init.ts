@@ -72,13 +72,42 @@ export async function init(opts: InitOptions): Promise<void> {
     console.log(chalk.bold('  Configure environment:'));
     console.log('');
 
-    const response = await prompts([
-      {
+    // Auth mode selection
+    const authMode = await prompts({
+      type: 'select',
+      name: 'mode',
+      message: 'How do you want to authenticate with Claude?',
+      choices: [
+        { title: 'API Key — pay-per-use via Anthropic API', value: 'apikey' },
+        { title: 'Subscription — Claude Max plan (run `claude login` first)', value: 'subscription' },
+      ],
+    });
+
+    if (!authMode.mode) {
+      console.log(chalk.red('\n  Setup cancelled.'));
+      process.exit(1);
+    }
+
+    const questions: prompts.PromptObject[] = [];
+
+    if (authMode.mode === 'apikey') {
+      questions.push({
         type: 'text',
         name: 'anthropicKey',
         message: 'Anthropic API key',
         validate: (v: string) => v.startsWith('sk-') ? true : 'Must start with sk-',
-      },
+      });
+    } else {
+      // Check if ~/.claude exists
+      const claudeDir = join(process.env.HOME || '~', '.claude');
+      if (!existsSync(claudeDir)) {
+        console.log(chalk.yellow('\n  ⚠ ~/.claude not found. Run `claude login` first, then re-run `slackhive init`.'));
+        process.exit(1);
+      }
+      console.log(chalk.green('  ✓') + ' Found ~/.claude credentials');
+    }
+
+    questions.push(
       {
         type: 'text',
         name: 'adminUsername',
@@ -97,15 +126,25 @@ export async function init(opts: InitOptions): Promise<void> {
         message: 'Postgres password',
         initial: 'slackhive',
       },
-    ]);
+    );
 
-    if (!response.anthropicKey) {
+    const response = await prompts(questions);
+
+    if (authMode.mode === 'apikey' && !response.anthropicKey) {
+      console.log(chalk.red('\n  Setup cancelled.'));
+      process.exit(1);
+    }
+    if (!response.adminPassword) {
       console.log(chalk.red('\n  Setup cancelled.'));
       process.exit(1);
     }
 
     let envContent = readFileSync(envExamplePath, 'utf-8');
-    envContent += `\nANTHROPIC_API_KEY=${response.anthropicKey}`;
+    if (authMode.mode === 'apikey') {
+      envContent += `\nANTHROPIC_API_KEY=${response.anthropicKey}`;
+    } else {
+      envContent += `\n# Using Claude Code subscription — credentials from ~/.claude`;
+    }
     envContent += `\nADMIN_USERNAME=${response.adminUsername}`;
     envContent += `\nADMIN_PASSWORD=${response.adminPassword}`;
     envContent += `\nPOSTGRES_PASSWORD=${response.postgresPassword}`;
