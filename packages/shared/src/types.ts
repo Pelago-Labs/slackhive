@@ -315,8 +315,13 @@ export interface AgentStopEvent {
   agentId: string;
 }
 
-/** Union of all agent lifecycle events published on Redis. */
-export type AgentEvent = AgentReloadEvent | AgentStartEvent | AgentStopEvent;
+/** Event to reload the job scheduler (jobs created/updated/deleted). */
+export interface JobsReloadEvent {
+  type: 'reload-jobs';
+}
+
+/** Union of all lifecycle events published on Redis. */
+export type AgentEvent = AgentReloadEvent | AgentStartEvent | AgentStopEvent | JobsReloadEvent;
 
 /** Redis channel name for agent lifecycle events. */
 export const AGENT_EVENTS_CHANNEL = 'agent:events';
@@ -483,3 +488,73 @@ export interface UpsertMemoryRequest {
  * - `developer`: Code review and development assistance skills.
  */
 export type SkillTemplate = 'blank' | 'data-analyst' | 'writer' | 'developer';
+
+// =============================================================================
+// Scheduled Jobs
+// =============================================================================
+
+/** Delivery target type for scheduled job results. */
+export type JobTargetType = 'channel' | 'dm';
+
+/** Execution status of a job run. */
+export type JobRunStatus = 'running' | 'success' | 'error';
+
+/**
+ * A recurring task executed by the boss agent on a cron schedule.
+ * The boss receives the prompt, may delegate to specialists,
+ * and the result is posted to the target channel or DM.
+ */
+export interface ScheduledJob {
+  id: string;
+  name: string;
+  /** The prompt sent to the boss agent on each run. */
+  prompt: string;
+  /** Cron expression (e.g. "0 8 * * *" for daily at 8am). */
+  cronSchedule: string;
+  /** Whether to post to a channel or send a DM. */
+  targetType: JobTargetType;
+  /** Slack channel ID or user ID to deliver results to. */
+  targetId: string;
+  enabled: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * A single execution record for a scheduled job.
+ */
+export interface JobRun {
+  id: string;
+  jobId: string;
+  startedAt: Date;
+  finishedAt?: Date;
+  status: JobRunStatus;
+  /** Truncated output from the job (max ~2000 chars). */
+  output?: string;
+  /** Error message if the job failed. */
+  error?: string;
+}
+
+/**
+ * Request body for creating a new scheduled job.
+ */
+export interface CreateJobRequest {
+  name: string;
+  prompt: string;
+  cronSchedule: string;
+  targetType?: JobTargetType;
+  targetId: string;
+  enabled?: boolean;
+}
+
+/**
+ * Request body for updating an existing scheduled job.
+ */
+export interface UpdateJobRequest {
+  name?: string;
+  prompt?: string;
+  cronSchedule?: string;
+  targetType?: JobTargetType;
+  targetId?: string;
+  enabled?: boolean;
+}
