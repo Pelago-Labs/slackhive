@@ -4,8 +4,8 @@
  * @module cli/commands/init
  */
 
-import { execSync } from 'child_process';
-import { existsSync, writeFileSync, readFileSync } from 'fs';
+import { execSync, spawn } from 'child_process';
+import { existsSync, writeFileSync } from 'fs';
 import { join, resolve } from 'path';
 import chalk from 'chalk';
 import ora from 'ora';
@@ -37,56 +37,57 @@ export async function init(opts: InitOptions): Promise<void> {
   console.log(chalk.bold('  SlackHive') + chalk.gray(' — AI agent teams on Slack'));
   console.log('');
 
-  // ── Check prerequisites ────────────────────────────────────────────────────
+  // ── Step 1: Check prerequisites ───────────────────────────────────────────
+  console.log(chalk.bold.hex('#D97757')('  [1/4]') + chalk.bold(' Checking prerequisites'));
+  console.log('');
+
   const checks = [
-    { name: 'Docker', cmd: 'docker info' },
-    { name: 'Docker Compose', cmd: 'docker compose version' },
-    { name: 'Git', cmd: 'git --version' },
+    { name: 'Docker daemon', cmd: 'docker info', errMsg: 'Docker is not running. Please start Docker Desktop and try again.' },
+    { name: 'Docker Compose', cmd: 'docker compose version', errMsg: 'Docker Compose not found. Please install Docker Desktop.' },
+    { name: 'Git', cmd: 'git --version', errMsg: 'Git not found. Please install Git first.' },
   ];
 
   for (const check of checks) {
+    const spinner = ora(`  Checking ${check.name}...`).start();
     try {
       execSync(check.cmd, { stdio: 'ignore' });
-      console.log(chalk.green('  ✓') + ` ${check.name} found`);
+      spinner.succeed(chalk.green(`${check.name} ready`));
     } catch {
-      if (check.name === 'Docker') {
-        console.log(chalk.red('  ✗ Docker daemon is not running. Please start Docker Desktop and try again.'));
-      } else {
-        console.log(chalk.red(`  ✗ ${check.name} not found. Please install it first.`));
-      }
+      spinner.fail(chalk.red(`${check.name}: ${check.errMsg}`));
       process.exit(1);
     }
   }
   console.log('');
 
-  // ── Clone ──────────────────────────────────────────────────────────────────
+  // ── Step 2: Clone ─────────────────────────────────────────────────────────
+  console.log(chalk.bold.hex('#D97757')('  [2/4]') + chalk.bold(' Getting SlackHive'));
+  console.log('');
+
   if (existsSync(dir)) {
-    console.log(chalk.yellow(`  Directory ${opts.dir} already exists. Using existing.`));
+    console.log(chalk.yellow(`  ⚡ Directory ${opts.dir} already exists — using existing`));
   } else {
-    const spinner = ora('Cloning SlackHive repository...').start();
+    const spinner = ora('  Cloning repository...').start();
     try {
       execSync(`git clone ${REPO_URL} "${dir}"`, { stdio: 'ignore' });
       spinner.succeed('Repository cloned');
-    } catch (e) {
+    } catch {
       spinner.fail('Failed to clone repository');
       process.exit(1);
     }
   }
+  console.log('');
 
-  // ── Configure .env ─────────────────────────────────────────────────────────
+  // ── Step 3: Configure .env ────────────────────────────────────────────────
   const envPath = join(dir, '.env');
-  const envExamplePath = join(dir, '.env.example');
 
-  if (!existsSync(envPath) && existsSync(envExamplePath)) {
-    console.log('');
-    console.log(chalk.bold('  Configure environment:'));
+  if (!existsSync(envPath)) {
+    console.log(chalk.bold.hex('#D97757')('  [3/4]') + chalk.bold(' Configure environment'));
     console.log('');
 
-    // Auth mode selection
     const authMode = await prompts({
       type: 'select',
       name: 'mode',
-      message: 'How do you want to authenticate with Claude?',
+      message: 'Claude authentication',
       choices: [
         { title: 'API Key — pay-per-use via Anthropic API', value: 'apikey' },
         { title: 'Subscription — run `claude login` first', value: 'subscription' },
@@ -108,14 +109,12 @@ export async function init(opts: InitOptions): Promise<void> {
         validate: (v: string) => v.startsWith('sk-') ? true : 'Must start with sk-',
       });
     } else {
-      // Check if ~/.claude exists
       const claudeDir = join(process.env.HOME || '~', '.claude');
       if (!existsSync(claudeDir)) {
         console.log(chalk.yellow('\n  ⚠ ~/.claude not found. Run `claude login` first, then re-run `slackhive init`.'));
         process.exit(1);
       }
       console.log(chalk.green('  ✓') + ' Found ~/.claude credentials');
-      // Find claude binary
       let claudeBinDefault = '/usr/local/bin/claude';
       try {
         const found = execSync('which claude', { encoding: 'utf-8' }).trim();
@@ -130,44 +129,19 @@ export async function init(opts: InitOptions): Promise<void> {
     }
 
     questions.push(
-      {
-        type: 'text',
-        name: 'adminUsername',
-        message: 'Admin username',
-        initial: 'admin',
-      },
-      {
-        type: 'password',
-        name: 'adminPassword',
-        message: 'Admin password',
-        validate: (v: string) => v.length >= 6 ? true : 'At least 6 characters',
-      },
-      {
-        type: 'text',
-        name: 'postgresPassword',
-        message: 'Postgres password',
-        initial: randomSecret().slice(0, 16),
-      },
-      {
-        type: 'text',
-        name: 'redisPassword',
-        message: 'Redis password',
-        initial: randomSecret().slice(0, 16),
-      },
+      { type: 'text', name: 'adminUsername', message: 'Admin username', initial: 'admin' },
+      { type: 'password', name: 'adminPassword', message: 'Admin password', validate: (v: string) => v.length >= 6 ? true : 'At least 6 characters' },
+      { type: 'text', name: 'postgresPassword', message: 'Postgres password', initial: randomSecret().slice(0, 16) },
+      { type: 'text', name: 'redisPassword', message: 'Redis password', initial: randomSecret().slice(0, 16) },
     );
 
     const response = await prompts(questions);
 
-    if (authMode.mode === 'apikey' && !response.anthropicKey) {
-      console.log(chalk.red('\n  Setup cancelled.'));
-      process.exit(1);
-    }
     if (!response.adminPassword) {
       console.log(chalk.red('\n  Setup cancelled.'));
       process.exit(1);
     }
 
-    // Build .env from scratch so there are no placeholder values
     let envContent = '# Generated by slackhive init\n\n';
     if (authMode.mode === 'apikey') {
       envContent += `ANTHROPIC_API_KEY=${response.anthropicKey}\n`;
@@ -185,70 +159,137 @@ export async function init(opts: InitOptions): Promise<void> {
     envContent += `\nNODE_ENV=production\n`;
 
     writeFileSync(envPath, envContent);
-    console.log(chalk.green('\n  ✓') + ' .env file created');
-  } else if (existsSync(envPath)) {
-    console.log(chalk.yellow('  .env already exists, skipping configuration'));
+    console.log('');
+    console.log(chalk.green('  ✓') + ' .env file created');
+    console.log('');
+  } else {
+    console.log(chalk.bold.hex('#D97757')('  [3/4]') + chalk.bold(' Configure environment'));
+    console.log('');
+    console.log(chalk.yellow('  ⚡ .env already exists — skipping configuration'));
+    console.log('');
   }
 
-  // ── Start services ─────────────────────────────────────────────────────────
+  // ── Step 4: Build & start ─────────────────────────────────────────────────
   if (!opts.skipStart) {
+    console.log(chalk.bold.hex('#D97757')('  [4/4]') + chalk.bold(' Building & starting services'));
+    console.log(chalk.gray('  This takes 3–5 minutes on first run while Docker builds images.'));
     console.log('');
-    const spinner = ora('Starting SlackHive services (this may take a few minutes on first run)...').start();
-    try {
-      execSync('docker compose up -d --build', { cwd: dir, stdio: 'ignore', timeout: 600000 });
-      spinner.succeed('All services started');
-    } catch {
-      spinner.fail('Failed to start services');
-      console.log(chalk.gray('  Try running manually: cd ' + opts.dir + ' && docker compose up -d --build'));
-      process.exit(1);
-    }
 
-    // Wait for web to be ready
-    const webSpinner = ora('Waiting for web UI...').start();
+    await runDockerBuild(dir, opts.dir);
+
+    // Wait for web UI
+    const webSpinner = ora('  Waiting for web UI to be ready...').start();
     let ready = false;
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 40; i++) {
       try {
-        execSync('curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/login | grep -q 200', { stdio: 'ignore' });
+        execSync('curl -sf http://localhost:3001/login', { stdio: 'ignore' });
         ready = true;
         break;
       } catch {
-        await sleep(2000);
+        await sleep(3000);
       }
     }
-
     if (ready) {
-      webSpinner.succeed('Web UI ready');
+      webSpinner.succeed('Web UI is ready');
     } else {
-      webSpinner.warn('Web UI may still be starting — check http://localhost:3001');
+      webSpinner.warn('Web UI may still be starting up');
     }
   }
 
-  // ── Done ───────────────────────────────────────────────────────────────────
+  // ── Done ──────────────────────────────────────────────────────────────────
   console.log('');
-  console.log(chalk.hex('#D97757').bold('  🐝 SlackHive is ready!'));
+  console.log('  ' + chalk.bgHex('#D97757').black.bold('  SlackHive is ready!  '));
   console.log('');
-  console.log(`  ${chalk.bold('Web UI:')}        http://localhost:3001`);
-  console.log(`  ${chalk.bold('Login:')}         http://localhost:3001/login`);
-  console.log(`  ${chalk.bold('Project dir:')}   ${dir}`);
+  console.log(`  ${chalk.bold('→ Open:')}   ${chalk.cyan('http://localhost:3001')}`);
+  console.log(`  ${chalk.bold('→ Dir:')}    ${chalk.gray(dir)}`);
   console.log('');
-  console.log(chalk.gray('  Commands:'));
-  console.log(chalk.gray('    slackhive start    Start services'));
-  console.log(chalk.gray('    slackhive stop     Stop services'));
-  console.log(chalk.gray('    slackhive status   Show container status'));
-  console.log(chalk.gray('    slackhive logs     Tail runner logs'));
-  console.log(chalk.gray('    slackhive update   Pull latest & rebuild'));
+  console.log(chalk.gray('  Useful commands:'));
+  console.log(chalk.gray('    slackhive start    — Start services'));
+  console.log(chalk.gray('    slackhive stop     — Stop services'));
+  console.log(chalk.gray('    slackhive status   — Show container status'));
+  console.log(chalk.gray('    slackhive logs     — Tail runner logs'));
+  console.log(chalk.gray('    slackhive update   — Pull latest & rebuild'));
   console.log('');
+}
+
+/**
+ * Runs `docker compose up -d --build` with live streaming progress output.
+ * Shows each build step as it happens instead of a silent spinner.
+ *
+ * @param {string} cwd - The project directory.
+ * @param {string} displayDir - Display name for error message.
+ * @returns {Promise<void>}
+ */
+function runDockerBuild(cwd: string, displayDir: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn('docker', ['compose', 'up', '-d', '--build'], {
+      cwd,
+      env: { ...process.env },
+    });
+
+    const stepPattern = /^#\d+ \[([^\]]+)\] (.+)/;
+    const donePattern = /^\s*(✔|Container .+ (Started|Running|Healthy)|Image .+ Built)/i;
+
+    let lastStep = '';
+
+    const processLine = (line: string) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#') && trimmed.includes('CACHED')) return;
+
+      const stepMatch = stepPattern.exec(trimmed);
+      if (stepMatch) {
+        const label = `  ${chalk.gray('▸')} ${chalk.dim(stepMatch[1])} ${stepMatch[2]}`;
+        if (label !== lastStep) {
+          process.stdout.write('\r\x1b[K' + label.slice(0, process.stdout.columns - 2));
+          lastStep = label;
+        }
+        return;
+      }
+
+      if (donePattern.test(trimmed)) {
+        process.stdout.write('\r\x1b[K');
+        console.log('  ' + chalk.green('✓') + ' ' + trimmed.replace(/^✔\s*/, '').replace(/Container /, ''));
+      }
+    };
+
+    let stdoutBuf = '';
+    let stderrBuf = '';
+
+    proc.stdout.on('data', (chunk: Buffer) => {
+      stdoutBuf += chunk.toString();
+      const lines = stdoutBuf.split('\n');
+      stdoutBuf = lines.pop() ?? '';
+      lines.forEach(processLine);
+    });
+
+    proc.stderr.on('data', (chunk: Buffer) => {
+      stderrBuf += chunk.toString();
+      const lines = stderrBuf.split('\n');
+      stderrBuf = lines.pop() ?? '';
+      lines.forEach(processLine);
+    });
+
+    proc.on('close', (code) => {
+      process.stdout.write('\r\x1b[K');
+      if (code === 0) {
+        console.log('  ' + chalk.green('✓') + ' All services started');
+        resolve();
+      } else {
+        console.log('  ' + chalk.red('✗') + ' Failed to start services');
+        console.log(chalk.gray(`  Try manually: cd ${displayDir} && docker compose up -d --build`));
+        reject(new Error(`docker compose exited with code ${code}`));
+      }
+    });
+  });
 }
 
 function randomSecret(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let result = '';
-  for (let i = 0; i < 32; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
+  for (let i = 0; i < 32; i++) result += chars.charAt(Math.floor(Math.random() * chars.length));
   return result;
 }
 
 function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise(r => setTimeout(r, ms));
 }
