@@ -64,7 +64,7 @@ export async function init(opts: InitOptions): Promise<void> {
   console.log('');
 
   if (existsSync(dir)) {
-    console.log(chalk.yellow(`  ⚡ Directory ${opts.dir} already exists — using existing`));
+    console.log(chalk.yellow(`  ↳ Directory ${opts.dir} already exists — using existing`));
   } else {
     const spinner = ora('  Cloning repository...').start();
     try {
@@ -178,7 +178,7 @@ export async function init(opts: InitOptions): Promise<void> {
       require('fs').appendFileSync(envPath, patch);
       console.log(chalk.green('  ✓') + ' .env patched');
     } else {
-      console.log(chalk.yellow('  ⚡ .env already exists — skipping configuration'));
+      console.log(chalk.yellow('  ↳ .env already exists — skipping configuration'));
     }
     console.log('');
   }
