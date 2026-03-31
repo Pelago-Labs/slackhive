@@ -134,6 +134,7 @@ The Boss reads the message, checks its team registry, and delegates to the right
 │  │  agents · skills · memories · permissions           │    │
 │  │  mcp_servers · agent_mcps · sessions                │    │
 │  │  settings · users · scheduled_jobs · job_runs       │    │
+│  │  agent_snapshots · agent_access                     │    │
 │  └─────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -487,7 +488,7 @@ slackhive/
 │   │           ├── db.ts           # Postgres + Redis client
 │   │           ├── auth.ts         # HMAC cookie sessions, bcrypt
 │   │           ├── auth-context.tsx # Client-side auth React context
-│   │           ├── api-guard.ts    # Role guard for API routes
+│   │           ├── api-guard.ts    # Role + per-agent write guards for API routes
 │   │           ├── boss-registry.ts # Auto-generated boss team registry
 │   │           ├── slack-manifest.ts
 │   │           └── skill-templates.ts
@@ -497,7 +498,7 @@ slackhive/
 │           ├── agent-runner.ts     # Lifecycle manager
 │           ├── claude-handler.ts   # Claude Code SDK integration
 │           ├── slack-handler.ts    # Slack Bolt + Block Kit formatting
-│           ├── compile-claude-md.ts # Skills + memories → CLAUDE.md
+│           ├── compile-claude-md.ts # Writes CLAUDE.md (identity + memories) and .claude/commands/ (skills)
 │           ├── memory-watcher.ts   # fs.watch → DB sync (learning)
 │           ├── job-scheduler.ts   # Cron-based scheduled job executor
 │           └── logger.ts           # Structured logging
