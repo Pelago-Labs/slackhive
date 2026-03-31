@@ -20,6 +20,7 @@ import type { CreateAgentRequest } from '@slackhive/shared';
 import { SKILL_TEMPLATES } from '@/lib/skill-templates';
 import { regenerateBossRegistry } from '@/lib/boss-registry';
 import { guardAdmin } from '@/lib/api-guard';
+import { getSessionFromRequest } from '@/lib/auth';
 
 /**
  * GET /api/agents
@@ -59,8 +60,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // Create the agent record
-    const agent = await createAgent(body);
+    // Create the agent record, tracking who created it
+    const session = getSessionFromRequest(request);
+    const agent = await createAgent(body, session?.username ?? 'system');
 
     // Assign MCPs if provided
     if (body.mcpServerIds?.length) {

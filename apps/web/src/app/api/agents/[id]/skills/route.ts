@@ -10,7 +10,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAgentById, getAgentSkills, upsertSkill, publishAgentEvent, getAgentPermissions, getAgentMcpServers, createSnapshot } from '@/lib/db';
 import type { UpsertSkillRequest } from '@slackhive/shared';
-import { guardAdmin } from '@/lib/api-guard';
+import { guardAgentWrite } from '@/lib/api-guard';
 import { getSessionFromRequest } from '@/lib/auth';
 import { skillToSnapshotSkill } from '@/lib/compile';
 
@@ -42,10 +42,10 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<N
  * @returns {Promise<NextResponse>} The upserted Skill or error.
  */
 export async function POST(req: NextRequest, { params }: RouteParams): Promise<NextResponse> {
-  const denied = guardAdmin(req);
-  if (denied) return denied;
   try {
     const { id } = await params;
+    const denied = await guardAgentWrite(req, id);
+    if (denied) return denied;
     const body = (await req.json()) as UpsertSkillRequest & { category: string; filename: string };
     if (!body.category || !body.filename || body.content === undefined) {
       return NextResponse.json({ error: 'category, filename, content are required' }, { status: 400 });

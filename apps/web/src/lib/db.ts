@@ -114,6 +114,7 @@ function rowToAgent(row: Record<string, unknown>): Agent {
     isBoss: row.is_boss as boolean,
     reportsTo: (row.reports_to as string[]) ?? [],
     claudeMd: (row.claude_md as string) ?? '',
+    createdBy: (row.created_by as string) ?? 'system',
     createdAt: row.created_at as Date,
     updatedAt: row.updated_at as Date,
   };
@@ -216,17 +217,18 @@ export async function getAgentBySlug(slug: string): Promise<Agent | null> {
  * @param {CreateAgentRequest} req - Agent creation data.
  * @returns {Promise<Agent>} The created agent.
  */
-export async function createAgent(req: CreateAgentRequest): Promise<Agent> {
+export async function createAgent(req: CreateAgentRequest, createdBy = 'system'): Promise<Agent> {
   const r = await getPool().query(
     `INSERT INTO agents
        (slug, name, persona, description, slack_bot_token, slack_app_token,
-        slack_signing_secret, model, is_boss, reports_to)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        slack_signing_secret, model, is_boss, reports_to, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
      RETURNING *`,
     [
       req.slug, req.name, req.persona ?? null, req.description ?? null,
       req.slackBotToken, req.slackAppToken, req.slackSigningSecret,
       req.model ?? 'claude-opus-4-6', req.isBoss ?? false, req.reportsTo ?? [],
+      createdBy,
     ]
   );
   return rowToAgent(r.rows[0]);
@@ -715,6 +717,71 @@ export async function createUser(username: string, passwordHash: string, role: s
  */
 export async function deleteUser(id: string): Promise<void> {
   await getPool().query('DELETE FROM users WHERE id = $1', [id]);
+}
+
+/**
+ * Updates a user's role.
+ *
+ * @param {string} id - User UUID.
+ * @param {string} role - New role (admin | editor | viewer).
+ * @returns {Promise<void>}
+ */
+export async function updateUserRole(id: string, role: string): Promise<void> {
+  await getPool().query('UPDATE users SET role = $1 WHERE id = $2', [role, id]);
+}
+
+// =============================================================================
+// Agent access control
+// =============================================================================
+
+/**
+ * Returns the list of user IDs that have explicit write access to an agent.
+ */
+export async function getAgentWriteUsers(agentId: string): Promise<{ userId: string; username: string }[]> {
+  const r = await getPool().query(
+    `SELECT aa.user_id, u.username
+     FROM agent_access aa
+     JOIN users u ON u.id = aa.user_id
+     WHERE aa.agent_id = $1
+     ORDER BY u.username`,
+    [agentId]
+  );
+  return r.rows.map(row => ({ userId: row.user_id as string, username: row.username as string }));
+}
+
+/**
+ * Grants write access to a user for an agent.
+ */
+export async function grantAgentWrite(agentId: string, userId: string): Promise<void> {
+  await getPool().query(
+    'INSERT INTO agent_access (agent_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',
+    [agentId, userId]
+  );
+}
+
+/**
+ * Revokes write access from a user for an agent.
+ */
+export async function revokeAgentWrite(agentId: string, userId: string): Promise<void> {
+  await getPool().query('DELETE FROM agent_access WHERE agent_id = $1 AND user_id = $2', [agentId, userId]);
+}
+
+/**
+ * Returns true if a user has write access to an agent.
+ * Write access = admin/superadmin role, OR own created agent, OR explicit grant.
+ */
+export async function userCanWriteAgent(agentId: string, username: string, role: string): Promise<boolean> {
+  if (role === 'admin' || role === 'superadmin') return true;
+  // Check if creator or explicitly granted
+  const r = await getPool().query(
+    `SELECT 1 FROM agents WHERE id = $1 AND created_by = $2
+     UNION
+     SELECT 1 FROM agent_access aa JOIN users u ON u.id = aa.user_id
+       WHERE aa.agent_id = $1 AND u.username = $2
+     LIMIT 1`,
+    [agentId, username]
+  );
+  return r.rows.length > 0;
 }
 
 // =============================================================================

@@ -14,7 +14,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAgentById, getAgentMemories, updateAgentClaudeMd, publishAgentEvent, getAgentSkills, getAgentPermissions, getAgentMcpServers, createSnapshot } from '@/lib/db';
-import { guardAdmin } from '@/lib/api-guard';
+import { guardAgentWrite } from '@/lib/api-guard';
 import { getSessionFromRequest } from '@/lib/auth';
 import { skillToSnapshotSkill } from '@/lib/compile';
 
@@ -80,9 +80,9 @@ export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const denied = guardAdmin(req);
-  if (denied) return denied;
   const { id } = await params;
+  const denied = await guardAgentWrite(req, id);
+  if (denied) return denied;
   const agent = await getAgentById(id);
   if (!agent) return new NextResponse('Not found', { status: 404 });
 

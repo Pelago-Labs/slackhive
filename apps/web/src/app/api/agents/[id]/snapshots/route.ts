@@ -16,7 +16,7 @@ import {
   listSnapshots,
   createSnapshot,
 } from '@/lib/db';
-import { guardAdmin } from '@/lib/api-guard';
+import { guardAgentWrite } from '@/lib/api-guard';
 import { getSessionFromRequest } from '@/lib/auth';
 import { skillToSnapshotSkill } from '@/lib/compile';
 
@@ -51,10 +51,10 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse> {
-  const denied = guardAdmin(request);
-  if (denied) return denied;
   try {
     const { id } = await params;
+    const denied = await guardAgentWrite(request, id);
+    if (denied) return denied;
     const agent = await getAgentById(id);
     if (!agent) return NextResponse.json({ error: 'Agent not found' }, { status: 404 });
 

@@ -18,7 +18,7 @@ import {
   setAgentMcps,
   publishAgentEvent,
 } from '@/lib/db';
-import { guardAdmin } from '@/lib/api-guard';
+import { guardAgentWrite } from '@/lib/api-guard';
 
 /**
  * POST /api/agents/[id]/snapshots/[sid]/restore
@@ -30,10 +30,10 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; sid: string }> }
 ): Promise<NextResponse> {
-  const denied = guardAdmin(request);
-  if (denied) return denied;
   try {
     const { id, sid } = await params;
+    const denied = await guardAgentWrite(request, id);
+    if (denied) return denied;
 
     const snapshot = await getSnapshotById(sid);
     if (!snapshot) return NextResponse.json({ error: 'Snapshot not found' }, { status: 404 });

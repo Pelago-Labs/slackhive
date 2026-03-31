@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAgentById, updateAgentStatus, publishAgentEvent } from '@/lib/db';
-import { guardAdmin } from '@/lib/api-guard';
+import { guardAgentWrite } from '@/lib/api-guard';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -19,10 +19,10 @@ type RouteParams = { params: Promise<{ id: string }> };
  * @returns {Promise<NextResponse>} 200 on success, 404 or 500 on error.
  */
 export async function POST(req: NextRequest, { params }: RouteParams): Promise<NextResponse> {
-  const denied = guardAdmin(req);
-  if (denied) return denied;
   try {
     const { id } = await params;
+    const denied = await guardAgentWrite(req, id);
+    if (denied) return denied;
     const agent = await getAgentById(id);
     if (!agent) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     await publishAgentEvent({ type: 'start', agentId: id });
