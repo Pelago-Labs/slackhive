@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { deleteSkill, publishAgentEvent, getAgentById, getAgentSkills, getAgentPermissions, getAgentMcpServers, createSnapshot } from '@/lib/db';
-import { guardAdmin } from '@/lib/api-guard';
+import { guardAgentWrite } from '@/lib/api-guard';
 import { getSessionFromRequest } from '@/lib/auth';
 import { skillToSnapshotSkill } from '@/lib/compile';
 
@@ -21,10 +21,10 @@ type RouteParams = { params: Promise<{ id: string; skillId: string }> };
  * @returns {Promise<NextResponse>} 204 No Content or error.
  */
 export async function DELETE(req: NextRequest, { params }: RouteParams): Promise<NextResponse> {
-  const denied = guardAdmin(req);
-  if (denied) return denied;
   try {
     const { id, skillId } = await params;
+    const denied = await guardAgentWrite(req, id);
+    if (denied) return denied;
 
     // Snapshot before deletion
     const session = getSessionFromRequest(req);

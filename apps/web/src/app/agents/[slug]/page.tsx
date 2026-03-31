@@ -39,8 +39,9 @@ const STATUS_COLOR = { running: '#16a34a', stopped: 'var(--border-2)', error: '#
  */
 export default function AgentPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
-  const { canEdit } = useAuth();
+  const { role, canManageUsers } = useAuth();
   const [agent, setAgent] = useState<Agent | null>(null);
+  const [canEdit, setCanEdit] = useState(false);
   const [tab, setTab] = useState<Tab>('overview');
   const [loading, setLoading] = useState(true);
   const [actionMsg, setActionMsg] = useState('');
@@ -48,9 +49,21 @@ export default function AgentPage({ params }: { params: Promise<{ slug: string }
   useEffect(() => {
     fetch('/api/agents')
       .then(r => r.json())
-      .then((agents: Agent[]) => setAgent(agents.find(a => a.slug === slug) ?? null))
+      .then((agents: Agent[]) => {
+        const found = agents.find(a => a.slug === slug) ?? null;
+        setAgent(found);
+        if (found) {
+          if (role === 'admin' || role === 'superadmin') {
+            setCanEdit(true);
+          } else if (role === 'editor' || role === 'viewer') {
+            fetch(`/api/agents/${found.id}/access`)
+              .then(r => r.json())
+              .then(data => setCanEdit(role === 'editor' && (data.canWrite ?? false)));
+          }
+        }
+      })
       .finally(() => setLoading(false));
-  }, [slug]);
+  }, [slug, role]);
 
   const triggerAction = async (action: 'start' | 'stop' | 'reload') => {
     if (!agent) return;

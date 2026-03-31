@@ -21,6 +21,12 @@ interface User {
   createdAt: string;
 }
 
+interface AgentBasic {
+  id: string;
+  name: string;
+  slug: string;
+}
+
 const DEFAULTS: Record<string, string> = {
   appName: 'SlackHive',
   tagline: 'Claude Code Platform',
@@ -155,15 +161,24 @@ function GeneralTab() {
 
 function UsersTab() {
   const [users, setUsers] = useState<User[]>([]);
+  const [agents, setAgents] = useState<AgentBasic[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [newUser, setNewUser] = useState({ username: '', password: '', role: 'viewer' });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [updatingRole, setUpdatingRole] = useState<string | null>(null);
+  const [expandedUser, setExpandedUser] = useState<string | null>(null);
+  // Map of userId → set of agentIds with write access
+  const [writeGrants, setWriteGrants] = useState<Record<string, Set<string>>>({});
+  const [loadingGrants, setLoadingGrants] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
-    fetch('/api/auth/users').then(r => r.json()).then(setUsers).catch(() => {}).finally(() => setLoading(false));
+    Promise.all([
+      fetch('/api/auth/users').then(r => r.json()),
+      fetch('/api/agents').then(r => r.json()),
+    ]).then(([u, a]) => { setUsers(u); setAgents(a); }).catch(() => {}).finally(() => setLoading(false));
   };
   useEffect(() => { load(); }, []);
 
@@ -187,6 +202,48 @@ function UsersTab() {
     if (!confirm(`Delete user "${username}"?`)) return;
     await fetch(`/api/auth/users/${id}`, { method: 'DELETE' });
     load();
+  };
+
+  const changeRole = async (id: string, role: string) => {
+    setUpdatingRole(id);
+    await fetch(`/api/auth/users/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role }),
+    });
+    setUpdatingRole(null);
+    load();
+  };
+
+  const toggleExpand = async (userId: string) => {
+    if (expandedUser === userId) { setExpandedUser(null); return; }
+    setExpandedUser(userId);
+    if (writeGrants[userId]) return; // already loaded
+    setLoadingGrants(userId);
+    // Load write grants for all agents for this user by checking each agent's access
+    // We use the admin access endpoint which returns writeUsers per agent
+    const grants = new Set<string>();
+    await Promise.all(agents.map(async (a) => {
+      const r = await fetch(`/api/agents/${a.id}/access`);
+      const data = await r.json();
+      if (data.writeUsers?.some((w: { userId: string }) => w.userId === userId)) {
+        grants.add(a.id);
+      }
+    }));
+    setWriteGrants(prev => ({ ...prev, [userId]: grants }));
+    setLoadingGrants(null);
+  };
+
+  const toggleWrite = async (userId: string, agentId: string, currentlyGranted: boolean) => {
+    const method = currentlyGranted ? 'DELETE' : 'POST';
+    await fetch(`/api/agents/${agentId}/access`, {
+      method, headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId }),
+    });
+    setWriteGrants(prev => {
+      const next = new Set(prev[userId]);
+      if (currentlyGranted) next.delete(agentId); else next.add(agentId);
+      return { ...prev, [userId]: next };
+    });
   };
 
   return (
@@ -237,35 +294,101 @@ function UsersTab() {
           </div>
 
           {users.map((u, i) => (
-            <div key={u.id} style={{
-              display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px',
-              borderBottom: i < users.length - 1 ? '1px solid var(--border)' : 'none',
-            }}>
-              <div style={{
-                width: 28, height: 28, borderRadius: 8, flexShrink: 0,
-                background: u.role === 'admin' ? '#171717' : u.role === 'editor' ? '#059669' : 'var(--surface-2)',
-                border: u.role === 'admin' ? 'none' : '1px solid var(--border)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 10, fontWeight: 600, color: u.role === 'admin' ? '#fff' : 'var(--text)',
-              }}>{u.username.charAt(0).toUpperCase()}</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{u.username}</div>
-                <div style={{ fontSize: 11, color: 'var(--muted)' }}>Created {new Date(u.createdAt).toLocaleDateString()}</div>
+            <div key={u.id} style={{ borderBottom: i < users.length - 1 ? '1px solid var(--border)' : 'none' }}>
+              {/* User row */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px' }}>
+                <div style={{
+                  width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+                  background: u.role === 'admin' ? '#171717' : u.role === 'editor' ? '#059669' : 'var(--surface-2)',
+                  border: u.role === 'admin' ? 'none' : '1px solid var(--border)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 10, fontWeight: 600, color: u.role === 'admin' ? '#fff' : 'var(--text)',
+                }}>{u.username.charAt(0).toUpperCase()}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{u.username}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>Created {new Date(u.createdAt).toLocaleDateString()}</div>
+                </div>
+                <select
+                  value={u.role}
+                  disabled={updatingRole === u.id}
+                  onChange={e => changeRole(u.id, e.target.value)}
+                  style={{
+                    fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 5,
+                    border: '1px solid var(--border)', cursor: 'pointer',
+                    background: u.role === 'admin' ? 'rgba(37,99,235,0.1)' : u.role === 'editor' ? 'rgba(5,150,105,0.1)' : 'var(--surface-2)',
+                    color: u.role === 'admin' ? '#2563eb' : u.role === 'editor' ? '#059669' : 'var(--muted)',
+                    fontFamily: 'var(--font-sans)', outline: 'none',
+                    opacity: updatingRole === u.id ? 0.5 : 1,
+                  }}
+                >
+                  <option value="admin">admin</option>
+                  <option value="editor">editor</option>
+                  <option value="viewer">viewer</option>
+                </select>
+                {/* Agent write access toggle — only for editor/viewer */}
+                {u.role !== 'admin' && (
+                  <button
+                    onClick={() => toggleExpand(u.id)}
+                    style={{
+                      background: expandedUser === u.id ? 'rgba(59,130,246,0.1)' : 'var(--surface-2)',
+                      border: '1px solid var(--border)', borderRadius: 6,
+                      color: expandedUser === u.id ? 'var(--accent)' : 'var(--muted)',
+                      fontSize: 11, fontWeight: 500, cursor: 'pointer', padding: '3px 10px',
+                      fontFamily: 'var(--font-sans)',
+                    }}
+                  >Agent Access</button>
+                )}
+                <button onClick={() => remove(u.id, u.username)} style={{
+                  background: 'none', border: 'none', color: '#dc2626',
+                  fontSize: 12, cursor: 'pointer', opacity: 0.6,
+                  fontFamily: 'var(--font-sans)', transition: 'opacity 0.12s',
+                }}
+                  onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+                  onMouseLeave={e => (e.currentTarget.style.opacity = '0.6')}
+                >Delete</button>
               </div>
-              <span style={{
-                fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase',
-                color: u.role === 'admin' ? '#2563eb' : u.role === 'editor' ? '#059669' : 'var(--muted)',
-                background: u.role === 'admin' ? 'rgba(37,99,235,0.1)' : u.role === 'editor' ? 'rgba(5,150,105,0.1)' : 'var(--surface-2)',
-                padding: '2px 8px', borderRadius: 4,
-              }}>{u.role}</span>
-              <button onClick={() => remove(u.id, u.username)} style={{
-                background: 'none', border: 'none', color: '#dc2626',
-                fontSize: 12, cursor: 'pointer', opacity: 0.6,
-                fontFamily: 'var(--font-sans)', transition: 'opacity 0.12s',
-              }}
-                onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-                onMouseLeave={e => (e.currentTarget.style.opacity = '0.6')}
-              >Delete</button>
+
+              {/* Expanded agent access panel */}
+              {expandedUser === u.id && (
+                <div style={{
+                  margin: '0 16px 12px', padding: '14px 16px', borderRadius: 8,
+                  background: 'var(--surface-2)', border: '1px solid var(--border)',
+                }}>
+                  <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>
+                    Write access — check agents this user can edit
+                    <span style={{ fontWeight: 400, color: 'var(--subtle)', marginLeft: 6 }}>
+                      (own created agents always have write)
+                    </span>
+                  </p>
+                  {loadingGrants === u.id ? (
+                    <p style={{ fontSize: 12, color: 'var(--subtle)', margin: 0 }}>Loading…</p>
+                  ) : (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {agents.map(a => {
+                        const granted = writeGrants[u.id]?.has(a.id) ?? false;
+                        return (
+                          <label key={a.id} style={{
+                            display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+                            fontSize: 12, color: granted ? 'var(--accent)' : 'var(--muted)',
+                            background: granted ? 'rgba(59,130,246,0.08)' : 'var(--surface)',
+                            border: `1px solid ${granted ? 'rgba(59,130,246,0.3)' : 'var(--border)'}`,
+                            borderRadius: 6, padding: '4px 10px', transition: 'all 0.12s',
+                          }}>
+                            <input
+                              type="checkbox"
+                              checked={granted}
+                              onChange={() => toggleWrite(u.id, a.id, granted)}
+                              style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
+                            />
+                            {a.name}
+                          </label>
+                        );
+                      })}
+                      {agents.length === 0 && <span style={{ fontSize: 12, color: 'var(--subtle)' }}>No agents yet</span>}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
 

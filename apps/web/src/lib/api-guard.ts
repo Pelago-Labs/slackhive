@@ -9,6 +9,7 @@
 
 import { NextResponse } from 'next/server';
 import { getSessionFromRequest, type Role } from './auth';
+import { userCanWriteAgent } from './db';
 
 const ROLE_LEVEL: Record<Role, number> = { viewer: 0, editor: 1, admin: 2, superadmin: 3 };
 
@@ -27,6 +28,23 @@ export function guardAdmin(req: Request): NextResponse | null {
   if ((ROLE_LEVEL[session.role] ?? -1) < ROLE_LEVEL.editor) {
     return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
   }
+  return null;
+}
+
+/**
+ * Returns 403 if the user cannot write to the specified agent.
+ * Admins/superadmins always pass. Editors pass only if they created the agent
+ * or have been explicitly granted write access.
+ *
+ * @param {Request} req - Incoming request.
+ * @param {string} agentId - Agent UUID to check write access for.
+ * @returns {Promise<NextResponse | null>} 403 response or null if authorized.
+ */
+export async function guardAgentWrite(req: Request, agentId: string): Promise<NextResponse | null> {
+  const session = getSessionFromRequest(req);
+  if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+  const allowed = await userCanWriteAgent(agentId, session.username, session.role);
+  if (!allowed) return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
   return null;
 }
 

@@ -9,7 +9,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAgentById, getAgentSkills, getAgentPermissions, getAgentMcpServers, setAgentMcps, publishAgentEvent, createSnapshot } from '@/lib/db';
-import { guardAdmin } from '@/lib/api-guard';
+import { guardAgentWrite } from '@/lib/api-guard';
 import { getSessionFromRequest } from '@/lib/auth';
 import { skillToSnapshotSkill } from '@/lib/compile';
 
@@ -41,10 +41,10 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<N
  * @returns {Promise<NextResponse>} 200 ok or error.
  */
 export async function PUT(req: NextRequest, { params }: RouteParams): Promise<NextResponse> {
-  const denied = guardAdmin(req);
-  if (denied) return denied;
   try {
     const { id } = await params;
+    const denied = await guardAgentWrite(req, id);
+    if (denied) return denied;
     const { mcpIds } = (await req.json()) as { mcpIds: string[] };
 
     // Snapshot before mutation

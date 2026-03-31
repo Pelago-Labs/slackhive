@@ -119,6 +119,8 @@ export interface Agent {
    * Skills are written separately to .claude/commands/ as slash commands.
    */
   claudeMd: string;
+  /** Username of the user who created this agent. 'system' for seeded agents. */
+  createdBy: string;
   createdAt: Date;
   updatedAt: Date;
 }
