@@ -166,3 +166,24 @@ describe('guardUserAdmin', () => {
     expect(res?.status).toBe(401);
   });
 });
+
+// ─── unknown role branch (ROLE_LEVEL fallback) ────────────────────────────────
+
+describe('guardAdmin — unknown role branch', () => {
+  it('returns 403 for a session with an unrecognised role string', async () => {
+    // Force an unknown role to hit the ?? -1 branch
+    const payload = { username: 'hacker', role: 'superuser' } as unknown as SessionPayload;
+    const req = makeRequest(payload);
+    const res = guardAdmin(req);
+    expect(res?.status).toBe(403);
+  });
+});
+
+describe('guardUserAdmin — unknown role branch', () => {
+  it('returns 403 for a session with an unrecognised role string', async () => {
+    const payload = { username: 'hacker', role: 'root' } as unknown as SessionPayload;
+    const req = makeRequest(payload);
+    const res = guardUserAdmin(req);
+    expect(res?.status).toBe(403);
+  });
+});
