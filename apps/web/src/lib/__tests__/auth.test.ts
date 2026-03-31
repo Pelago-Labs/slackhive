@@ -224,3 +224,27 @@ describe('authenticateUser', () => {
     expect(getUserByUsername).not.toHaveBeenCalled();
   });
 });
+
+// ─── hashPassword ─────────────────────────────────────────────────────────────
+
+describe('hashPassword', () => {
+  it('returns a bcrypt hash string', async () => {
+    const { hashPassword } = await import('@/lib/auth');
+    const hash = await hashPassword('mysecret');
+    expect(hash).toMatch(/^\$2[ab]\$10\$/);
+  });
+
+  it('produces a different hash each call (salt)', async () => {
+    const { hashPassword } = await import('@/lib/auth');
+    const h1 = await hashPassword('same');
+    const h2 = await hashPassword('same');
+    expect(h1).not.toBe(h2);
+  });
+
+  it('produces a hash that bcrypt can verify', async () => {
+    const { hashPassword } = await import('@/lib/auth');
+    const bcrypt = (await import('bcryptjs')).default;
+    const hash = await hashPassword('testpass');
+    expect(await bcrypt.compare('testpass', hash)).toBe(true);
+  });
+});

@@ -263,3 +263,26 @@ describe('regenerateBossRegistry', () => {
     expect(contents[1]).toContain('SharedBot');
   });
 });
+
+// ─── slug fallback branch (line 48) ──────────────────────────────────────────
+// The branch `a.slackBotUserId ? <@id> : @slug` is only reachable if the
+// filter on line 44 is bypassed. Since the filter removes agents without
+// slackBotUserId, the ternary's false branch (slug fallback) is dead code.
+// We document this explicitly rather than testing unreachable code.
+describe('mention format branch coverage note', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('always uses <@userId> format because filter removes agents without slackBotUserId', async () => {
+    const boss = makeAgent({ id: 'boss-1', isBoss: true, name: 'Boss' });
+    const spec = makeAgent({ id: 'spec-1', isBoss: false, reportsTo: ['boss-1'], slackBotUserId: 'UABC', slug: 'my-bot' });
+
+    vi.mocked(getAllAgents).mockResolvedValue([boss, spec]);
+    await regenerateBossRegistry();
+
+    const calls = vi.mocked(updateAgentClaudeMd).mock.calls;
+    expect(calls.length).toBe(1);
+    const registryContent = calls[0][1];
+    expect(registryContent).toContain('<@UABC>');
+    expect(registryContent).not.toContain('@my-bot');
+  });
+});

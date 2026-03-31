@@ -187,3 +187,30 @@ describe('mergeMcpConfig', () => {
     expect(existing.env.SECRET).toBe('real');
   });
 });
+
+// ─── mergeMcpConfig — header branch gaps (lines 81-84) ───────────────────────
+
+describe('mergeMcpConfig — header key deletion and new key for sse/http', () => {
+  it('removes a header key deleted by the user', () => {
+    const existing = { url: 'https://api.example.com/sse', headers: { Authorization: 'Bearer tok', 'X-Old': 'val' } };
+    const incoming = { url: 'https://api.example.com/sse', headers: { Authorization: '********' } };
+    const result = mergeMcpConfig(existing, incoming) as typeof existing;
+    expect('X-Old' in result.headers).toBe(false);
+    expect(result.headers.Authorization).toBe('Bearer tok');
+  });
+
+  it('adds a new header key introduced in the PATCH', () => {
+    const existing = { url: 'https://api.example.com/sse', headers: { Authorization: 'Bearer tok' } };
+    const incoming = { url: 'https://api.example.com/sse', headers: { Authorization: '********', 'X-New': 'newval' } };
+    const result = mergeMcpConfig(existing, incoming) as typeof existing;
+    expect(result.headers.Authorization).toBe('Bearer tok');
+    expect((result.headers as Record<string, string>)['X-New']).toBe('newval');
+  });
+
+  it('uses new real header value when not masked', () => {
+    const existing = { url: 'https://api.example.com/sse', headers: { Authorization: 'Bearer old' } };
+    const incoming = { url: 'https://api.example.com/sse', headers: { Authorization: 'Bearer new' } };
+    const result = mergeMcpConfig(existing, incoming) as typeof existing;
+    expect(result.headers.Authorization).toBe('Bearer new');
+  });
+});
