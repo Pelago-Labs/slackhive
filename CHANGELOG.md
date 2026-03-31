@@ -11,6 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.19] - 2026-03-31
+
+### Added
+
+- **MCP secret masking** — env vars and headers in MCP server configs are now masked (`"********"`) in all API responses; secrets are stored in the database but never exposed to the browser client.
+- **220+ unit tests** — comprehensive Vitest test suite covering `compile`, `diff`, `boss-registry`, `mcp-mask`, `auth`, `api-guard`, `slack-manifest`, `skill-templates`, and Slack message formatting across both `apps/web` and `apps/runner`.
+- **CI pipeline** — GitHub Actions workflow running build, type-check, unit tests, lint, and a PR test-coverage enforcement check on every push and pull request.
+- **OSS community files** — `CONTRIBUTING.md`, `CHANGELOG.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, GitHub issue templates, and PR template added for open-source readiness.
+
+### Fixed
+
+- **Boss registry empty description** — `??` operator replaced with `||` so an empty-string description correctly falls back to `"No description provided."`.
+- **Slack `formatMessage` code block corruption** — using `__CODE_BLOCK_N__` as placeholder caused the italic regex (`/__([^_]+)__/g`) to match across adjacent placeholders, corrupting multi-block messages; fixed by using null-byte delimited placeholders (`\x00CBn\x00`).
+
+### Security
+
+- MCP server configs containing env vars and HTTP headers are sanitized before any API response. Only non-secret fields (name, command, args, type) are sent in plaintext; secrets require an explicit admin PATCH to update.
+
+---
+
 ## [0.1.18] - 2026-03-31
 
 ### Added
@@ -27,5 +47,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/amansrivastava17/slackhive/compare/v0.1.18...HEAD
+[Unreleased]: https://github.com/amansrivastava17/slackhive/compare/v0.1.19...HEAD
+[0.1.19]: https://github.com/amansrivastava17/slackhive/compare/v0.1.18...v0.1.19
 [0.1.18]: https://github.com/amansrivastava17/slackhive/releases/tag/v0.1.18
