@@ -16,6 +16,10 @@ build/
 # Runtime agent workspaces (ephemeral, created by runner)
 /tmp/agents/
 
+# SQL — only schema.sql is tracked; all migrations and seeds are instance-specific
+packages/shared/src/db/*.sql
+!packages/shared/src/db/schema.sql
+
 # Logs
 logs/
 *.log
