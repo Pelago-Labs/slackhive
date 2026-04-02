@@ -241,7 +241,7 @@ describe('mergeMcpConfig — envRefs are config fields, not secrets', () => {
   it('removes envRefs when incoming omits them', () => {
     const existing = { command: 'tsx', args: [], envRefs: { DB: 'SOME_KEY' } };
     const incoming = { command: 'tsx', args: [] };
-    const result = mergeMcpConfig(existing, incoming) as Record<string, unknown>;
+    const result = mergeMcpConfig(existing, incoming) as unknown as Record<string, unknown>;
     expect(result.envRefs).toBeUndefined();
   });
 });
