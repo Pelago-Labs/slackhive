@@ -8,6 +8,9 @@ dist/
 .next/
 out/
 build/
+coverage/
+*.lcov
+lcov.info
 
 # Environment — NEVER commit secrets
 .env
