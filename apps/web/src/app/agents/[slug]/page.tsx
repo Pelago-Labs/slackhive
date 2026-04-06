@@ -218,8 +218,6 @@ function OverviewTab({ agent, onUpdate, canEdit }: { agent: Agent; onUpdate: (a:
 
   // Channel restrictions state
   const [allowedChannels, setAllowedChannels] = useState('');
-  const [restrictSaving, setRestrictSaving]   = useState(false);
-  const [restrictMsg, setRestrictMsg]         = useState('');
 
   useEffect(() => {
     fetch(`/api/agents/${agent.id}/restrictions`)
@@ -227,24 +225,19 @@ function OverviewTab({ agent, onUpdate, canEdit }: { agent: Agent; onUpdate: (a:
       .then((d: Restriction) => setAllowedChannels((d.allowedChannels ?? []).join('\n')));
   }, [agent.id]);
 
-  const saveRestrictions = async () => {
-    setRestrictSaving(true);
-    await fetch(`/api/agents/${agent.id}/restrictions`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ allowedChannels: allowedChannels.split('\n').map(s => s.trim()).filter(Boolean) }),
-    });
-    setRestrictSaving(false);
-    setRestrictMsg('Saved — changes take effect on next reload');
-    setTimeout(() => setRestrictMsg(''), 3000);
-  };
-
   const save = async () => {
     setSaving(true);
     try {
-      const r = await fetch(`/api/agents/${agent.id}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      });
+      const [r] = await Promise.all([
+        fetch(`/api/agents/${agent.id}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(form),
+        }),
+        fetch(`/api/agents/${agent.id}/restrictions`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ allowedChannels: allowedChannels.split('\n').map(s => s.trim()).filter(Boolean) }),
+        }),
+      ]);
       const data = await r.json();
       if (r.ok) { onUpdate(data); setMsg('Saved'); } else setMsg(data.error ?? 'Error');
     } finally { setSaving(false); setTimeout(() => setMsg(''), 3000); }
@@ -318,10 +311,6 @@ function OverviewTab({ agent, onUpdate, canEdit }: { agent: Agent; onUpdate: (a:
           onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
           onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
         />
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 8 }}>
-          {canEdit && <PrimaryBtn onClick={saveRestrictions} loading={restrictSaving}>Save Restrictions</PrimaryBtn>}
-          {restrictMsg && <span style={{ fontSize: 12, color: '#16a34a' }}>{restrictMsg}</span>}
-        </div>
       </Section>
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
