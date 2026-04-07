@@ -357,7 +357,16 @@ function OverviewTab({ agent, onUpdate, canEdit, allAgents, role }: { agent: Age
   const [manifest, setManifest]         = useState('');
   const [showManifest, setShowManifest] = useState(false);
   const [deleting, setDeleting]         = useState(false);
+  const [slackInfo, setSlackInfo]       = useState<{ displayName: string; handle: string; teamName: string } | null>(null);
   const router = useRouter();
+
+  useEffect(() => {
+    if (!agent.slackBotToken) return;
+    fetch(`/api/agents/${agent.id}/slack-info`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => d && setSlackInfo(d))
+      .catch(() => {});
+  }, [agent.id, agent.slackBotToken]);
 
   // Channel restrictions state
   const [allowedChannels, setAllowedChannels] = useState('');
@@ -412,7 +421,7 @@ function OverviewTab({ agent, onUpdate, canEdit, allAgents, role }: { agent: Age
       <Section title="Identity">
         <Grid2>
           <Field label="Name" value={form.name} onChange={v => setForm(f => ({ ...f, name: v }))} readOnly={!canEdit}
-            hint={<span style={{ color: '#b45309' }}>⚠ Changing the name requires creating a new Slack app with the updated bot name.</span>} />
+            hint="This is the internal agent name. To update the Slack bot display name, change it in your Slack App settings → App Home." />
           <Field label="Model" value={form.model} onChange={v => setForm(f => ({ ...f, model: v }))}
             hint="claude-opus-4-6 · claude-sonnet-4-6 · claude-haiku-4-5-20251001" readOnly={!canEdit} />
         </Grid2>
@@ -523,7 +532,29 @@ function OverviewTab({ agent, onUpdate, canEdit, allAgents, role }: { agent: Age
         <Field label="Signing Secret" value={form.slackSigningSecret}
           onChange={v => setForm(f => ({ ...f, slackSigningSecret: v }))} type="password" readOnly={!canEdit}
           hint="Basic Information → App Credentials → Signing Secret" />
-        {agent.slackBotUserId && (
+        {slackInfo && (
+          <div style={{
+            background: '#f0fdf4', border: '1px solid #bbf7d0',
+            borderRadius: 7, padding: '10px 14px', fontSize: 12,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#16a34a', flexShrink: 0 }} />
+              <span style={{ color: '#15803d', fontWeight: 600 }}>Connected to Slack</span>
+              <span style={{ color: '#86efac', marginLeft: 'auto', fontSize: 11 }}>{slackInfo.teamName}</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '4px 16px' }}>
+              <span style={{ color: '#6b7280' }}>Display name</span>
+              <span style={{ color: '#166534', fontWeight: 500 }}>{slackInfo.displayName}</span>
+              <span style={{ color: '#6b7280' }}>@handle</span>
+              <span style={{ color: '#166534', fontFamily: 'var(--font-mono)' }}>@{slackInfo.handle}</span>
+              {agent.slackBotUserId && <>
+                <span style={{ color: '#6b7280' }}>Bot User ID</span>
+                <span style={{ color: '#166534', fontFamily: 'var(--font-mono)' }}>{agent.slackBotUserId}</span>
+              </>}
+            </div>
+          </div>
+        )}
+        {!slackInfo && agent.slackBotUserId && (
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8,
             background: '#f0fdf4', border: '1px solid #bbf7d0',
@@ -532,7 +563,6 @@ function OverviewTab({ agent, onUpdate, canEdit, allAgents, role }: { agent: Age
             <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#16a34a', flexShrink: 0 }} />
             <span style={{ color: '#15803d' }}>Connected ·</span>
             <span style={{ color: '#166534', fontFamily: 'var(--font-mono)' }}>Bot User ID: {agent.slackBotUserId}</span>
-            <span style={{ color: '#86efac', marginLeft: 'auto', fontSize: 11 }}>auto-set by runner on connect</span>
           </div>
         )}
       </Section>
