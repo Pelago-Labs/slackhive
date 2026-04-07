@@ -675,7 +675,7 @@ SlackHive takes supply chain security seriously:
 
 Please **do not** open a public GitHub issue for security vulnerabilities.
 
-Email **[aman@amansrivastava.dev](mailto:aman@amansrivastava.dev)** with:
+Email **[aman@pelago.co](mailto:aman@pelago.co)** with:
 - A description of the vulnerability
 - Steps to reproduce
 - Potential impact
@@ -692,7 +692,7 @@ We aim to respond within 48 hours and issue a fix within 7 days for confirmed is
 
 ## 📄 License
 
-MIT © 2026 [Aman Srivastava](https://github.com/amansrivastava17)
+MIT © 2026 [Pelago Labs](https://github.com/pelago-labs)
 
 ---
 
