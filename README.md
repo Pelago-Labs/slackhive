@@ -14,8 +14,8 @@
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ed?logo=docker&logoColor=white)](https://docs.docker.com/compose)
 [![Claude Code SDK](https://img.shields.io/badge/Claude_Code-SDK-cc785c?logo=anthropic&logoColor=white)](https://docs.anthropic.com/en/agent-sdk)
 [![Slack](https://img.shields.io/badge/Slack-Bolt-4A154B?logo=slack&logoColor=white)](https://api.slack.com/bolt)
-[![Security Audit](https://github.com/amansrivastava17/slackhive/actions/workflows/audit.yml/badge.svg)](https://github.com/amansrivastava17/slackhive/actions/workflows/audit.yml)
-[![Dependencies](https://img.shields.io/badge/dependencies-up%20to%20date-brightgreen?logo=dependabot)](https://github.com/amansrivastava17/slackhive/security/dependabot)
+[![Security Audit](https://github.com/pelago-labs/slackhive/actions/workflows/audit.yml/badge.svg)](https://github.com/pelago-labs/slackhive/actions/workflows/audit.yml)
+[![Dependencies](https://img.shields.io/badge/dependencies-up%20to%20date-brightgreen?logo=dependabot)](https://github.com/pelago-labs/slackhive/security/dependabot)
 
 [Quick Start](#-quick-start) · [Features](#-features) · [Architecture](#-architecture) · [Documentation](#-creating-your-first-agent) · [Contributing](#-contributing)
 
@@ -186,7 +186,7 @@ The CLI will:
 #### 1. Clone & configure
 
 ```bash
-git clone https://github.com/amansrivastava17/slackhive.git
+git clone https://github.com/pelago-labs/slackhive.git
 cd slackhive
 cp .env.example .env
 ```
@@ -412,7 +412,7 @@ Every conversation is an opportunity for the agent to learn. This is the **prima
 
 ```
 Conversation
-  └─► Claude writes .claude/memory/feedback_xyz.md
+  └─► Claude writes memory/feedback_xyz.md
         └─► MemoryWatcher detects change (fs.watch)
               └─► Parses YAML frontmatter (name, type, description)
                     └─► Upserts into memories table (Postgres)
@@ -620,7 +620,7 @@ We're actively building and these are on the horizon:
 - [ ] **Conversation history UI** — browse past conversations and their outcomes in the web UI
 - [ ] **RAG integration** — connect agents to document stores for knowledge retrieval
 
-Have an idea? [Open an issue](https://github.com/amansrivastava17/slackhive/issues) — we'd love to hear it.
+Have an idea? [Open an issue](https://github.com/pelago-labs/slackhive/issues) — we'd love to hear it.
 
 ---
 
@@ -630,7 +630,7 @@ Contributions are very welcome! This project is in active development.
 
 ```bash
 # Clone and install
-git clone https://github.com/amansrivastava17/slackhive.git
+git clone https://github.com/pelago-labs/slackhive.git
 cd slackhive
 npm install
 
@@ -650,11 +650,11 @@ Please open an issue before submitting large PRs so we can discuss the approach.
 
 If you find this project useful, please consider giving it a star — it helps others discover it!
 
-<a href="https://star-history.com/#amansrivastava17/slackhive&Date">
+<a href="https://star-history.com/#pelago-labs/slackhive&Date">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=amansrivastava17/slackhive&type=Date&theme=dark" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=amansrivastava17/slackhive&type=Date" />
-    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=amansrivastava17/slackhive&type=Date" width="600" />
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=pelago-labs/slackhive&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=pelago-labs/slackhive&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=pelago-labs/slackhive&type=Date" width="600" />
   </picture>
 </a>
 
@@ -667,7 +667,7 @@ If you find this project useful, please consider giving it a star — it helps o
 SlackHive takes supply chain security seriously:
 
 - **`npm audit`** runs on every PR — critical/high vulnerabilities block merge
-- **Weekly automated fix PRs** are created by the [Security Audit workflow](https://github.com/amansrivastava17/slackhive/actions/workflows/audit.yml) if new vulnerabilities are detected
+- **Weekly automated fix PRs** are created by the [Security Audit workflow](https://github.com/pelago-labs/slackhive/actions/workflows/audit.yml) if new vulnerabilities are detected
 - **Dependabot** monitors all npm dependencies daily and opens update PRs automatically
 - All workspace packages are licensed MIT — no copyleft or proprietary transitive dependencies
 
