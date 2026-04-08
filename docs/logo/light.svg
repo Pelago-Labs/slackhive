@@ -1,3 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 32" fill="none">
-  <text x="0" y="24" font-family="system-ui,sans-serif" font-size="22" font-weight="700" fill="#6366f1">SlackHive</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <style>
+      .bg { fill: #F5F0EB; }
+      .line { fill: none; stroke: #1A1918; stroke-width: 32; stroke-linecap: round; stroke-linejoin: round; }
+      .prompt-accent { fill: none; stroke: #D97757; stroke-width: 32; stroke-linecap: round; stroke-linejoin: round; }
+      .cursor { fill: #D97757; }
+    </style>
+  </defs>
+  <rect class="bg" width="512" height="512" rx="112" />
+  <path class="line" d="M 200 140 L 200 372" />
+  <path class="line" d="M 312 140 L 312 372" />
+  <path class="line" d="M 140 200 L 372 200" />
+  <path class="prompt-accent" d="M 100 280 L 140 312 L 100 344" />
+  <path class="line" d="M 180 312 L 280 312" />
+  <rect class="cursor" x="312" y="296" width="40" height="32" rx="6" />
 </svg>
