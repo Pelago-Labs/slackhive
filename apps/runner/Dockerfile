@@ -4,10 +4,10 @@ RUN apk add --no-cache python3 make g++ curl
 
 # Install deps
 FROM base AS deps
-COPY package.json ./
+COPY package.json package-lock.json ./
 COPY packages/shared/package.json ./packages/shared/
 COPY apps/runner/package.json ./apps/runner/
-RUN npm install
+RUN npm ci --prefer-offline
 
 # Build
 FROM deps AS builder
