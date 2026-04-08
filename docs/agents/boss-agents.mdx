@@ -103,13 +103,6 @@ The generated content includes:
 
 ## Scheduled jobs
 
-Boss agents can run recurring tasks via cron schedule. Create a job from the **Jobs** page:
+Boss agents work great with scheduled jobs — set up a daily cross-team digest, a weekly summary, or an alert that fires when something needs escalation across multiple specialists.
 
-| Field | Description |
-|-------|-------------|
-| **Name** | Human-readable job name (e.g. "Daily Booking Report") |
-| **Prompt** | The message sent to the Boss on each run |
-| **Schedule** | Cron expression (e.g. `0 8 * * *` for daily at 8 AM) |
-| **Target** | Slack channel or DM to post results to |
-
-The Boss processes the scheduled prompt exactly like a normal @mention — it may delegate to specialists, run MCP tools, and post results. Run history (status, output, duration) is tracked and visible in the UI.
+→ See [Scheduled Jobs](/features/scheduled-jobs) for the full setup guide.
