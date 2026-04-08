@@ -5,8 +5,8 @@
  */
 
 import { execSync, spawn } from 'child_process';
-import { existsSync, writeFileSync } from 'fs';
-import { join, resolve } from 'path';
+import { existsSync, writeFileSync, readlinkSync } from 'fs';
+import { join, resolve, dirname } from 'path';
 import chalk from 'chalk';
 import ora from 'ora';
 import prompts from 'prompts';
@@ -16,6 +16,73 @@ const REPO_URL = 'https://github.com/pelago-labs/slackhive.git';
 interface InitOptions {
   dir: string;
   skipStart?: boolean;
+}
+
+interface ClaudeInstallation {
+  claudeBin: string;
+  claudeModulePath: string;
+}
+
+/**
+ * Cross-platform Claude installation detection.
+ * Finds both the binary and module directory automatically.
+ */
+function detectClaudeInstallation(): ClaudeInstallation {
+  // Find Claude binary
+  let claudeBin: string;
+  try {
+    claudeBin = execSync('which claude', { encoding: 'utf-8' }).trim();
+  } catch {
+    throw new Error('Claude Code not found. Please install Claude Code first.');
+  }
+
+  if (!claudeBin) {
+    throw new Error('Claude Code not found. Please install Claude Code first.');
+  }
+
+  let claudeModulePath: string;
+
+  // Check if it's a symlink and resolve it
+  if (existsSync(claudeBin)) {
+    try {
+      const target = readlinkSync(claudeBin);
+
+      // Handle relative paths
+      const resolvedTarget = target.startsWith('/') ? target : join(dirname(claudeBin), target);
+
+      // Extract module directory from cli.js path
+      claudeModulePath = dirname(resolvedTarget);
+    } catch {
+      // Not a symlink, try common installation paths
+      const possiblePaths = [
+        '/usr/local/lib/node_modules/@anthropic-ai/claude-code',
+        '/opt/homebrew/lib/node_modules/@anthropic-ai/claude-code',
+        join(process.env.HOME || '~', '.local/lib/node_modules/@anthropic-ai/claude-code'),
+        '/usr/lib/node_modules/@anthropic-ai/claude-code',
+      ];
+
+      claudeModulePath = '';
+      for (const path of possiblePaths) {
+        if (existsSync(path) && existsSync(join(path, 'cli.js'))) {
+          claudeModulePath = path;
+          break;
+        }
+      }
+    }
+  } else {
+    throw new Error(`Claude binary not found at: ${claudeBin}`);
+  }
+
+  if (!claudeModulePath || !existsSync(join(claudeModulePath, 'cli.js'))) {
+    throw new Error('Could not find Claude Code module directory.');
+  }
+
+  // Verify required files exist
+  if (!existsSync(join(claudeModulePath, 'yoga.wasm'))) {
+    throw new Error(`Warning: yoga.wasm not found in ${claudeModulePath}`);
+  }
+
+  return { claudeBin, claudeModulePath };
 }
 
 /**
@@ -109,23 +176,61 @@ export async function init(opts: InitOptions): Promise<void> {
         validate: (v: string) => v.startsWith('sk-') ? true : 'Must start with sk-',
       });
     } else {
+      // Claude subscription mode — detect installation automatically
       const claudeDir = join(process.env.HOME || '~', '.claude');
       if (!existsSync(claudeDir)) {
         console.log(chalk.yellow('\n  warning: ~/.claude not found. Run `claude login` first, then re-run `slackhive init`.'));
         process.exit(1);
       }
       console.log(chalk.green('  ✓') + ' Found ~/.claude credentials');
-      let claudeBinDefault = '/usr/local/bin/claude';
+
+      // Auto-detect Claude installation paths
+      const spinner = ora('  Detecting Claude installation...').start();
       try {
-        const found = execSync('which claude', { encoding: 'utf-8' }).trim();
-        if (found) claudeBinDefault = found;
-      } catch { /* use default */ }
-      questions.push({
-        type: 'text',
-        name: 'claudeBin',
-        message: 'Path to claude binary',
-        initial: claudeBinDefault,
-      });
+        const { claudeBin, claudeModulePath } = detectClaudeInstallation();
+        spinner.succeed(`Found Claude at ${claudeBin}`);
+
+        // Set these for the .env file
+        questions.push(
+          {
+            type: 'text',
+            name: 'claudeBin',
+            message: 'Path to claude binary',
+            initial: claudeBin,
+          },
+          {
+            type: 'text',
+            name: 'claudeModulePath',
+            message: 'Path to claude module',
+            initial: claudeModulePath,
+          }
+        );
+      } catch (error) {
+        spinner.fail('Could not detect Claude installation');
+        console.log(chalk.yellow(`  ${error}`));
+        console.log(chalk.gray('  Please provide paths manually:'));
+
+        let claudeBinDefault = '/usr/local/bin/claude';
+        try {
+          const found = execSync('which claude', { encoding: 'utf-8' }).trim();
+          if (found) claudeBinDefault = found;
+        } catch { /* use default */ }
+
+        questions.push(
+          {
+            type: 'text',
+            name: 'claudeBin',
+            message: 'Path to claude binary',
+            initial: claudeBinDefault,
+          },
+          {
+            type: 'text',
+            name: 'claudeModulePath',
+            message: 'Path to claude module directory',
+            initial: '/usr/local/lib/node_modules/@anthropic-ai/claude-code',
+          }
+        );
+      }
     }
 
     questions.push(
@@ -148,6 +253,7 @@ export async function init(opts: InitOptions): Promise<void> {
     } else {
       envContent += `# Claude Code subscription — credentials from ~/.claude\n`;
       envContent += `CLAUDE_BIN=${response.claudeBin}\n`;
+      envContent += `CLAUDE_MODULE_PATH=${response.claudeModulePath}\n`;
     }
     envContent += `\nPOSTGRES_DB=slackhive\n`;
     envContent += `POSTGRES_USER=slackhive\n`;

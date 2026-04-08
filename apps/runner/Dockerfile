@@ -20,6 +20,9 @@ RUN cd apps/runner && npx tsc --skipLibCheck || true
 FROM node:20-alpine AS runner
 ENV NODE_ENV=production
 WORKDIR /app
+# Create Claude wrapper script that runs from the correct directory
+RUN printf '#!/bin/sh\ncd /usr/local/lib/node_modules/@anthropic-ai/claude-code && exec node cli.js "$@"\n' > /usr/local/bin/claude && \
+    chmod +x /usr/local/bin/claude
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages/shared ./packages/shared
 COPY --from=builder /app/apps/runner ./apps/runner
