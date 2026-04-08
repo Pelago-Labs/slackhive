@@ -252,8 +252,11 @@ describe('hashPassword', () => {
 // ─── Production secret guard ────────────────────────────────────────────────
 
 describe('production secret guard', () => {
-  it('does not throw in test/dev environment', async () => {
-    // This test file runs with NODE_ENV=test, so the guard should not fire
-    expect(() => require('@/lib/auth')).not.toThrow();
+  it('does not throw in test/dev environment', () => {
+    // The module already loaded successfully via the top-level import.
+    // If the guard fired incorrectly, this entire test file would have
+    // failed to import. Verify the module exported the expected function.
+    expect(signSession).toBeDefined();
+    expect(typeof signSession).toBe('function');
   });
 });
