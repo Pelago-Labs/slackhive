@@ -12,7 +12,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-if (process.env.NODE_ENV === 'production' && !process.env.AUTH_SECRET) {
+if (process.env.NODE_ENV === 'production' && !process.env.CI && !process.env.AUTH_SECRET) {
   throw new Error('AUTH_SECRET must be set in production. See .env.example.');
 }
 

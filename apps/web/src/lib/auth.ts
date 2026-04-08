@@ -11,7 +11,7 @@ import * as crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { getUserByUsername } from './db';
 
-if (process.env.NODE_ENV === 'production' && (!process.env.AUTH_SECRET || !process.env.ADMIN_PASSWORD)) {
+if (process.env.NODE_ENV === 'production' && !process.env.CI && (!process.env.AUTH_SECRET || !process.env.ADMIN_PASSWORD)) {
   throw new Error('AUTH_SECRET and ADMIN_PASSWORD must be set in production. See .env.example.');
 }
 
