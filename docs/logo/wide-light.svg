@@ -1,12 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 56" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 60" fill="none">
   <!-- Icon -->
-  <rect x="0" y="4" width="48" height="48" rx="10" fill="#1A1918"/>
-  <line x1="18" y1="15" x2="18" y2="41" stroke="#EBE6E0" stroke-width="3" stroke-linecap="round"/>
-  <line x1="30" y1="15" x2="30" y2="41" stroke="#EBE6E0" stroke-width="3" stroke-linecap="round"/>
-  <line x1="11" y1="22" x2="37" y2="22" stroke="#EBE6E0" stroke-width="3" stroke-linecap="round"/>
-  <polyline points="8,30 12,34 8,38" fill="none" stroke="#D97757" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-  <line x1="16" y1="34" x2="26" y2="34" stroke="#EBE6E0" stroke-width="3" stroke-linecap="round"/>
-  <rect x="29" y="31" width="4" height="3" rx="1" fill="#D97757"/>
+  <rect x="0" y="2" width="56" height="56" rx="12" fill="#1A1918"/>
+  <line x1="20" y1="14" x2="20" y2="46" stroke="#EBE6E0" stroke-width="4" stroke-linecap="round"/>
+  <line x1="36" y1="14" x2="36" y2="46" stroke="#EBE6E0" stroke-width="4" stroke-linecap="round"/>
+  <line x1="12" y1="22" x2="44" y2="22" stroke="#EBE6E0" stroke-width="4" stroke-linecap="round"/>
+  <polyline points="8,32 14,38 8,44" fill="none" stroke="#D97757" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="18" y1="38" x2="30" y2="38" stroke="#EBE6E0" stroke-width="4" stroke-linecap="round"/>
+  <rect x="34" y="34" width="6" height="5" rx="1.5" fill="#D97757"/>
   <!-- Text -->
-  <text x="60" y="38" font-family="system-ui,-apple-system,sans-serif" font-size="28" font-weight="700" fill="#1A1918">SlackHive</text>
+  <text x="68" y="44" font-family="system-ui,-apple-system,sans-serif" font-size="38" font-weight="700" fill="#1A1918">SlackHive</text>
 </svg>
