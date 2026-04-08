@@ -16,8 +16,9 @@
 [![Slack](https://img.shields.io/badge/Slack-Bolt-4A154B?logo=slack&logoColor=white)](https://api.slack.com/bolt)
 [![Security Audit](https://github.com/pelago-labs/slackhive/actions/workflows/audit.yml/badge.svg)](https://github.com/pelago-labs/slackhive/actions/workflows/audit.yml)
 [![Dependencies](https://img.shields.io/badge/dependencies-up%20to%20date-brightgreen?logo=dependabot)](https://github.com/pelago-labs/slackhive/security/dependabot)
+[![Documentation](https://img.shields.io/badge/docs-slackhive.mintlify.app-D97757?logo=gitbook&logoColor=white)](https://slackhive.mintlify.app)
 
-[Quick Start](#-quick-start) · [Features](#-features) · [Architecture](#-architecture) · [Documentation](#-creating-your-first-agent) · [Contributing](#-contributing)
+[Quick Start](#-quick-start) · [Features](#-features) · [Architecture](#-architecture) · [Documentation](https://slackhive.mintlify.app) · [Contributing](#-contributing)
 
 </div>
 
