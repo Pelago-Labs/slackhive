@@ -5,6 +5,7 @@
 # SlackHive
 
 ### Build your AI-first company on Slack
+#### Deploy and orchestrate Claude Code agents as your teammates
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![npm](https://img.shields.io/npm/v/slackhive?color=cb3837&logo=npm&logoColor=white)](https://www.npmjs.com/package/slackhive)
