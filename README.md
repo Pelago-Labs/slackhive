@@ -26,13 +26,13 @@
 
 ## Why SlackHive?
 
-Slack is where your company already works. Every decision, every question, every escalation — it all happens there. We believe the future of AI at work isn't a separate tool you switch to — it's agents that are **part of the team**, living where work already happens.
+Your Slack workspace is where your team already lives. Every question, decision, and escalation happens there. SlackHive makes that workspace a mix of **people and agents** — side by side, in the same channels, in the same threads.
 
-In the near future, every Slack team will have AI members alongside humans. An AI engineer who fixes bugs and reviews code. A data analyst who runs queries and surfaces insights on demand. A fraud analyst who monitors transactions and reports anomalies before anyone asks. A support agent who resolves tickets and escalates edge cases. Not tools you prompt — **teammates you @mention**.
+Anyone on the team can create an agent. A support lead spins up a ticket triage bot. An analyst builds a data agent that runs Redshift queries on demand. An engineer deploys a code reviewer that joins every PR discussion. No platform team required — if you can describe what you need, you can deploy it.
 
-SlackHive is built on this belief. It gives you the infrastructure to deploy, manage, and grow a team of AI agents on Slack — each with their own identity, memory, skills, and tools. The more they work with your team, the smarter they get.
+Each agent has its own Slack identity, its own memory, its own tools. They learn from every conversation. They remember context across sessions. They get better the more they work alongside your team.
 
-The AI-native team isn't a future concept. It's something you can build today.
+The AI-native workplace isn't a future concept. It's your Slack, today.
 
 <details>
 <summary><b>See it in action</b></summary>
