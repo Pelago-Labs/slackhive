@@ -7,10 +7,10 @@ RUN apk add --no-cache libc6-compat docker-cli curl python3 make g++ && \
 
 # Install all workspace deps
 FROM base AS deps
-COPY package.json ./
+COPY package.json package-lock.json ./
 COPY packages/shared/package.json ./packages/shared/
 COPY apps/web/package.json ./apps/web/
-RUN npm install
+RUN npm ci --prefer-offline
 
 # Build
 FROM deps AS builder
