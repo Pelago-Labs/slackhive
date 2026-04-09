@@ -15,6 +15,10 @@ FROM deps AS builder
 COPY packages/shared ./packages/shared
 COPY apps/web ./apps/web
 RUN cd packages/shared && npx tsc --skipLibCheck || true
+ARG AUTH_SECRET
+ARG ADMIN_PASSWORD
+ENV AUTH_SECRET=$AUTH_SECRET
+ENV ADMIN_PASSWORD=$ADMIN_PASSWORD
 RUN cd apps/web && npx next build
 
 # Runtime
