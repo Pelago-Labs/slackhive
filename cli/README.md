@@ -216,7 +216,7 @@ Mount `~/.claude` into the runner container and leave `ANTHROPIC_API_KEY` unset.
 - [x] Version control with diff view
 - [x] Encrypted environment variables
 - [x] Channel restrictions
-- [ ] Multi-workspace support
+- [x] Multi-workspace support
 - [ ] Webhook triggers (GitHub, Jira, PagerDuty → agent actions)
 - [ ] Agent-to-agent direct messaging
 - [ ] Analytics dashboard
