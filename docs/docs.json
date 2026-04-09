@@ -59,6 +59,7 @@
             "pages": [
               "features/scheduled-jobs",
               "features/multi-workspace",
+              "features/import-export",
               "features/logs",
               "features/history",
               "features/users"
