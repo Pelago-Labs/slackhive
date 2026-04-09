@@ -20,7 +20,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { query, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources';
-import type { Agent, McpServer, McpServerConfig, McpStdioConfig, Permission } from '@slackhive/shared';
+import type { Agent, McpServer, McpServerConfig, McpServerType, McpStdioConfig, Permission } from '@slackhive/shared';
 import {
   getSession,
   upsertSession,
@@ -325,7 +325,7 @@ export class ClaudeHandler {
    * @param {McpServerConfig} config - Raw config from the DB.
    * @returns {McpServerConfig} Resolved config safe to pass to the SDK.
    */
-  private resolveServerConfig(serverName: string, config: McpServerConfig): McpServerConfig {
+  private resolveServerConfig(serverName: string, config: McpServerConfig, serverType: McpServerType): McpServerConfig {
     const c = config as McpStdioConfig & Record<string, unknown>;
 
     if (c.tsSource) {
@@ -344,7 +344,10 @@ export class ClaudeHandler {
     if (c.envRefs && Object.keys(c.envRefs as object).length > 0) {
       const resolvedEnv = this.resolveEnvRefs(c);
       const { envRefs: _, tsSource: __, ...rest } = c;
-      const resolved = { ...rest };
+      const resolved: Record<string, unknown> = { ...rest };
+
+      // Inject type so the SDK can distinguish HTTP/SSE from stdio
+      if (serverType === 'http' || serverType === 'sse') resolved.type = serverType;
 
       // For HTTP/SSE servers, resolve envRefs into headers
       if (resolved.headers && typeof resolved.headers === 'object') {
@@ -352,7 +355,6 @@ export class ClaudeHandler {
         for (const [key, value] of Object.entries(resolved.headers as Record<string, string>)) {
           const envKey = (c.envRefs as Record<string, string>)[key];
           if (envKey && this.envVarValues[envKey]) {
-            // Prepend existing header value (e.g. "Bearer ") to the env var value
             resolvedHeaders[key] = value ? `${value}${this.envVarValues[envKey]}` : this.envVarValues[envKey];
           } else {
             resolvedHeaders[key] = value;
@@ -362,7 +364,12 @@ export class ClaudeHandler {
       }
 
       if (Object.keys(resolvedEnv).length > 0) resolved.env = resolvedEnv;
-      return resolved as McpServerConfig;
+      return resolved as unknown as McpServerConfig;
+    }
+
+    // Passthrough — inject type for HTTP/SSE so SDK recognises the transport
+    if (serverType === 'http' || serverType === 'sse') {
+      return { ...config, type: serverType } as unknown as McpServerConfig;
     }
 
     return config;
@@ -442,7 +449,7 @@ export class ClaudeHandler {
     };
 
     const userMcpEntries = this.mcpServers.length > 0
-      ? Object.fromEntries(this.mcpServers.map((server) => [server.name, this.resolveServerConfig(server.name, server.config)]))
+      ? Object.fromEntries(this.mcpServers.map((server) => [server.name, this.resolveServerConfig(server.name, server.config, server.type)]))
       : {};
 
     options.mcpServers = { memory: builtinMemoryMcp, ...userMcpEntries };
@@ -498,7 +505,14 @@ If there IS something worth remembering, write it to \`memory/{type}_{name}.md\`
       await this.syncSessionMemories(sessionWorkDir);
       this.log.info('Reflection complete', { sessionKey });
     } catch (err) {
-      this.log.warn('Reflection failed', { sessionKey, error: (err as Error).message });
+      const msg = (err as Error).message ?? '';
+      if (msg.includes('No conversation found') || msg.includes('session')) {
+        // Session expired before reflection fired — normal, not an error
+        this.sessionCache.delete(sessionKey);
+        this.log.debug('Reflection skipped — session expired', { sessionKey });
+      } else {
+        this.log.warn('Reflection failed', { sessionKey, error: msg });
+      }
     }
   }
 
