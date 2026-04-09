@@ -17,6 +17,7 @@
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import { query, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources';
 import type { Agent, McpServer, McpServerConfig, McpStdioConfig, Permission } from '@slackhive/shared';
@@ -196,13 +197,23 @@ export class ClaudeHandler {
     sessionKey: string,
     abortController?: AbortController
   ): AsyncGenerator<SDKMessage, void, unknown> {
-    // Resolve existing Claude session ID
+    // Compute current MCP hash to detect config changes
+    const currentMcpHash = crypto
+      .createHash('sha1')
+      .update(JSON.stringify(this.mcpServers.map((s) => ({ name: s.name, config: s.config }))))
+      .digest('hex');
+
+    // Resolve existing Claude session ID — invalidate if MCPs changed
     let claudeSessionId = this.sessionCache.get(sessionKey);
     if (!claudeSessionId) {
       const persisted = await getSession(this.agent.id, sessionKey);
       if (persisted?.claudeSessionId) {
-        claudeSessionId = persisted.claudeSessionId;
-        this.sessionCache.set(sessionKey, claudeSessionId);
+        if (persisted.mcpHash && persisted.mcpHash !== currentMcpHash) {
+          this.log.info('MCP config changed, starting fresh session', { sessionKey });
+        } else {
+          claudeSessionId = persisted.claudeSessionId;
+          this.sessionCache.set(sessionKey, claudeSessionId);
+        }
       }
     }
 
@@ -246,7 +257,7 @@ export class ClaudeHandler {
             newSessionId = (message as any).session_id;
             if (newSessionId) {
               this.sessionCache.set(sessionKey, newSessionId);
-              await upsertSession(this.agent.id, sessionKey, newSessionId);
+              await upsertSession(this.agent.id, sessionKey, newSessionId, currentMcpHash);
               this.log.debug('Session created', { sessionKey, sessionId: newSessionId, cwd: sessionWorkDir });
             }
           }
@@ -272,7 +283,7 @@ export class ClaudeHandler {
       }
     }
 
-    await upsertSession(this.agent.id, sessionKey, newSessionId ?? claudeSessionId);
+    await upsertSession(this.agent.id, sessionKey, newSessionId ?? claudeSessionId, currentMcpHash);
     await this.syncSessionMemories(sessionWorkDir);
   }
 

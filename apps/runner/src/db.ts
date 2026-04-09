@@ -182,6 +182,7 @@ function rowToSession(row: Record<string, unknown>): Session {
     agentId: row.agent_id as string,
     sessionKey: row.session_key as string,
     claudeSessionId: row.claude_session_id as string | undefined,
+    mcpHash: row.mcp_hash as string | undefined,
     lastActivity: row.last_activity as Date,
   };
 }
@@ -504,16 +505,18 @@ export async function getSession(agentId: string, sessionKey: string): Promise<S
 export async function upsertSession(
   agentId: string,
   sessionKey: string,
-  claudeSessionId?: string
+  claudeSessionId?: string,
+  mcpHash?: string
 ): Promise<Session> {
   const result = await getPool().query(
-    `INSERT INTO sessions (agent_id, session_key, claude_session_id, last_activity)
-     VALUES ($1, $2, $3, now())
+    `INSERT INTO sessions (agent_id, session_key, claude_session_id, mcp_hash, last_activity)
+     VALUES ($1, $2, $3, $4, now())
      ON CONFLICT (agent_id, session_key) DO UPDATE
        SET claude_session_id = COALESCE(EXCLUDED.claude_session_id, sessions.claude_session_id),
+           mcp_hash = COALESCE(EXCLUDED.mcp_hash, sessions.mcp_hash),
            last_activity = now()
      RETURNING *`,
-    [agentId, sessionKey, claudeSessionId ?? null]
+    [agentId, sessionKey, claudeSessionId ?? null, mcpHash ?? null]
   );
   return rowToSession(result.rows[0]);
 }

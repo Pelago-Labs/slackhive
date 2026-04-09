@@ -24,6 +24,14 @@ interface EnvEntry {
   val: string; // raw value (mode=value) or env_vars key name (mode=ref)
 }
 
+/** A single HTTP header row — value is either a static string or pulled from an env var */
+interface HeaderEntry {
+  name: string;
+  mode: 'value' | 'ref';
+  val: string;    // static value (mode=value) or env_vars key name (mode=ref)
+  prefix: string; // prepended to env var value, e.g. "Bearer " (mode=ref only)
+}
+
 interface McpFormState {
   name: string;
   uiType: UiTransportType;
@@ -37,14 +45,14 @@ interface McpFormState {
   tsSource: string;
   // sse/http fields
   url: string;
-  headers: string;
+  headerEntries: HeaderEntry[];
 }
 
 const DEFAULT_FORM: McpFormState = {
   name: '', uiType: 'stdio', description: '', enabled: true,
   command: '', args: '', envEntries: [],
   tsSource: '// MCP server TypeScript source\n// See: https://modelcontextprotocol.io/docs\n',
-  url: '', headers: '{}',
+  url: '', headerEntries: [] as HeaderEntry[],
 };
 
 // ─── Page ────────────────────────────────────────────────────────────────────
@@ -97,10 +105,18 @@ export default function McpSettingsPage() {
     }
     // sse / http
     const cfg: Record<string, unknown> = { url: f.url };
-    try { const h = JSON.parse(f.headers); if (Object.keys(h).length > 0) cfg.headers = h; } catch { /* ok */ }
-    const env = entriesToEnv(f.envEntries);
-    const envRefs = entriesToRefs(f.envEntries);
-    if (Object.keys(env).length > 0) cfg.env = env;
+    const headers: Record<string, string> = {};
+    const envRefs: Record<string, string> = {};
+    for (const h of f.headerEntries) {
+      if (!h.name) continue;
+      if (h.mode === 'value') {
+        headers[h.name] = h.val;
+      } else {
+        headers[h.name] = h.prefix; // e.g. "Bearer " — runner prepends this to env var value
+        envRefs[h.name] = h.val;
+      }
+    }
+    if (Object.keys(headers).length > 0) cfg.headers = headers;
     if (Object.keys(envRefs).length > 0) cfg.envRefs = envRefs;
     return cfg;
   };
@@ -174,6 +190,15 @@ export default function McpSettingsPage() {
       ...Object.entries(envRefsObj).map(([k, v]) => ({ key: k, mode: 'ref' as const, val: v })),
     ];
 
+    const headersObj = (cfg.headers as Record<string, string>) ?? {};
+    const envRefsObj2 = (cfg.envRefs as Record<string, string>) ?? {};
+    const headerEntries: HeaderEntry[] = Object.entries(headersObj).map(([name, rawVal]) => {
+      if (envRefsObj2[name] !== undefined) {
+        return { name, mode: 'ref' as const, val: envRefsObj2[name], prefix: rawVal };
+      }
+      return { name, mode: 'value' as const, val: rawVal, prefix: '' };
+    });
+
     setForm({
       name: server.name,
       uiType: isTs ? 'typescript' : server.type,
@@ -184,7 +209,7 @@ export default function McpSettingsPage() {
       envEntries,
       tsSource: isTs ? (cfg.tsSource as string) : DEFAULT_FORM.tsSource,
       url: (cfg.url as string) ?? '',
-      headers: cfg.headers ? JSON.stringify(cfg.headers, null, 2) : '{}',
+      headerEntries,
     });
     setEditingId(server.id);
     setShowForm(true);
@@ -200,6 +225,11 @@ export default function McpSettingsPage() {
   const removeEnvEntry = (i: number) => setForm(prev => ({ ...prev, envEntries: prev.envEntries.filter((_, idx) => idx !== i) }));
   const updateEnvEntry = (i: number, patch: Partial<EnvEntry>) =>
     setForm(prev => ({ ...prev, envEntries: prev.envEntries.map((e, idx) => idx === i ? { ...e, ...patch } : e) }));
+
+  const addHeaderEntry = () => setForm(prev => ({ ...prev, headerEntries: [...prev.headerEntries, { name: '', mode: 'value', val: '', prefix: '' }] }));
+  const removeHeaderEntry = (i: number) => setForm(prev => ({ ...prev, headerEntries: prev.headerEntries.filter((_, idx) => idx !== i) }));
+  const updateHeaderEntry = (i: number, patch: Partial<HeaderEntry>) =>
+    setForm(prev => ({ ...prev, headerEntries: prev.headerEntries.map((e, idx) => idx === i ? { ...e, ...patch } : e) }));
 
   // ─── Render ──────────────────────────────────────────────────────────────────
 
@@ -351,12 +381,10 @@ export default function McpSettingsPage() {
                   <input value={form.url} onChange={e => f('url', e.target.value)}
                     placeholder="https://mcp.example.com/sse" required type="url" {...inputStyle('var(--font-mono)')} />
                 </FField>
-                <FField label="Headers (JSON)" style={{ marginBottom: 14 }}>
-                  <textarea value={form.headers} onChange={e => f('headers', e.target.value)}
-                    rows={3} placeholder={'{\n  "Authorization": "Bearer ..."\n}'} {...inputStyle('var(--font-mono)')} />
-                </FField>
-                <EnvEntriesEditor entries={form.envEntries} envVarKeys={envVarKeys}
-                  onAdd={addEnvEntry} onRemove={removeEnvEntry} onUpdate={updateEnvEntry} />
+                <HeaderEntriesEditor
+                  entries={form.headerEntries} envVarKeys={envVarKeys}
+                  onAdd={addHeaderEntry} onRemove={removeHeaderEntry} onUpdate={updateHeaderEntry}
+                />
               </>
             )}
 
@@ -476,6 +504,119 @@ function EnvEntriesEditor({
                 background: 'none', border: 'none', color: '#ef4444', fontSize: 14,
                 cursor: 'pointer', padding: '4px 6px', lineHeight: 1,
               }}>×</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Header entries editor ────────────────────────────────────────────────────
+
+function HeaderEntriesEditor({
+  entries, envVarKeys, onAdd, onRemove, onUpdate,
+}: {
+  entries: HeaderEntry[];
+  envVarKeys: string[];
+  onAdd: () => void;
+  onRemove: (i: number) => void;
+  onUpdate: (i: number, patch: Partial<HeaderEntry>) => void;
+}) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)' }}>Headers</label>
+        <button type="button" onClick={onAdd} style={{
+          background: 'none', border: '1px solid var(--border)', borderRadius: 5,
+          color: 'var(--muted)', fontSize: 11, padding: '2px 10px', cursor: 'pointer',
+          fontFamily: 'var(--font-sans)',
+        }}>+ Add</button>
+      </div>
+
+      {entries.length === 0 ? (
+        <p style={{ fontSize: 12, color: 'var(--subtle)', margin: 0, fontStyle: 'italic' }}>
+          No headers — click + Add to include HTTP headers (e.g. Authorization).
+        </p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {entries.map((entry, i) => (
+            <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr auto', gap: 6, alignItems: 'center' }}>
+                {/* Header name */}
+                <input
+                  value={entry.name}
+                  onChange={e => onUpdate(i, { name: e.target.value })}
+                  placeholder="Authorization"
+                  style={{
+                    background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 6,
+                    padding: '6px 9px', color: 'var(--text)', fontSize: 12.5,
+                    fontFamily: 'var(--font-mono)', outline: 'none',
+                  }}
+                />
+                {/* Mode toggle */}
+                <select
+                  value={entry.mode}
+                  onChange={e => onUpdate(i, { mode: e.target.value as 'value' | 'ref', val: '', prefix: '' })}
+                  style={{
+                    background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 6,
+                    padding: '6px 8px', color: 'var(--muted)', fontSize: 11.5,
+                    fontFamily: 'var(--font-sans)', cursor: 'pointer', outline: 'none',
+                  }}
+                >
+                  <option value="value">Static value</option>
+                  <option value="ref">From env var</option>
+                </select>
+                {/* Value or env var picker */}
+                {entry.mode === 'value' ? (
+                  <input
+                    value={entry.val}
+                    onChange={e => onUpdate(i, { val: e.target.value })}
+                    placeholder={entry.name.toLowerCase() === 'authorization' ? 'Bearer sk-...' : 'value'}
+                    style={{
+                      background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 6,
+                      padding: '6px 9px', color: 'var(--text)', fontSize: 12.5,
+                      fontFamily: 'var(--font-mono)', outline: 'none',
+                    }}
+                  />
+                ) : (
+                  <select
+                    value={entry.val}
+                    onChange={e => onUpdate(i, { val: e.target.value })}
+                    style={{
+                      background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 6,
+                      padding: '6px 9px', color: entry.val ? 'var(--text)' : 'var(--subtle)', fontSize: 12.5,
+                      fontFamily: 'var(--font-mono)', outline: 'none', cursor: 'pointer',
+                    }}
+                  >
+                    <option value="">— pick env var —</option>
+                    {envVarKeys.map(k => <option key={k} value={k}>{k}</option>)}
+                    {envVarKeys.length === 0 && <option disabled>No env vars — add in Settings → Env Vars</option>}
+                  </select>
+                )}
+                {/* Remove */}
+                <button type="button" onClick={() => onRemove(i)} style={{
+                  background: 'none', border: 'none', color: '#ef4444', fontSize: 14,
+                  cursor: 'pointer', padding: '4px 6px', lineHeight: 1,
+                }}>×</button>
+              </div>
+              {/* Optional prefix for env var mode */}
+              {entry.mode === 'ref' && (
+                <div style={{ paddingLeft: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 11, color: 'var(--subtle)', whiteSpace: 'nowrap' }}>Prefix (optional):</span>
+                  <input
+                    value={entry.prefix}
+                    onChange={e => onUpdate(i, { prefix: e.target.value })}
+                    placeholder='e.g. "Bearer "'
+                    style={{
+                      background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 6,
+                      padding: '4px 9px', color: 'var(--text)', fontSize: 12,
+                      fontFamily: 'var(--font-mono)', outline: 'none', width: 180,
+                    }}
+                  />
+                  <span style={{ fontSize: 11, color: 'var(--subtle)' }}>+ value of env var</span>
+                </div>
+              )}
             </div>
           ))}
         </div>

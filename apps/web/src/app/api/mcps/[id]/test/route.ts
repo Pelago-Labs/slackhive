@@ -49,8 +49,17 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<N
     }
 
     // SSE / HTTP — just check the URL is reachable
-    const cfg = server.config as McpSseConfig;
+    const cfg = server.config as McpSseConfig & { envRefs?: Record<string, string> };
     const headers: Record<string, string> = { ...(cfg.headers ?? {}) };
+    if (cfg.envRefs && Object.keys(cfg.envRefs).length > 0) {
+      try {
+        const envVarValues = await getEnvVarValues();
+        for (const [headerKey, storeKey] of Object.entries(cfg.envRefs)) {
+          const val = envVarValues[storeKey];
+          if (val) headers[headerKey] = headers[headerKey] ? `${headers[headerKey]}${val}` : val;
+        }
+      } catch { /* skip if env vars unavailable */ }
+    }
     const res = await fetch(cfg.url, {
       method: 'GET',
       headers,
