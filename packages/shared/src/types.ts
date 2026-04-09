@@ -326,6 +326,8 @@ export interface Session {
   claudeSessionId?: string;
   /** Last time this session had activity. Used for cleanup of stale sessions. */
   lastActivity: Date;
+  /** Hash of MCP config at session creation — used to detect config changes requiring session invalidation. */
+  mcpHash?: string;
 }
 
 // =============================================================================
