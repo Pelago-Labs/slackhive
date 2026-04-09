@@ -30,7 +30,6 @@ import {
 import { agentLogger } from './logger';
 import { parseMemoryFile } from './memory-watcher';
 import { McpProcessManager } from './mcp-process-manager.js';
-import { MEMORY_MCP_SOURCE } from './memory-mcp.js';
 import type { Logger } from 'winston';
 
 const SESSION_MAX_AGE_MS = 30 * 60 * 1_000;
@@ -422,9 +421,9 @@ export class ClaudeHandler {
     const denied: string[] = this.permissions?.deniedTools ?? [];
     const mcpToolPrefixes = this.mcpServers.map((s) => `mcp__${s.name}`);
 
-    // Read and Write are always available — Read for project context, Write for the memory system.
+    // Read and Write are always available — Read for reading memory/skill files, Write for saving memories.
     // These cannot be overridden by agent permissions.
-    const alwaysAllowed = ['Read', 'Write', 'mcp__memory'];
+    const alwaysAllowed = ['Read', 'Write'];
     const availableTools = [...new Set([...alwaysAllowed, ...baseAllowed, ...mcpToolPrefixes])].filter(
       (tool) => !denied.includes(tool)
     );
@@ -432,29 +431,11 @@ export class ClaudeHandler {
     options.tools = availableTools;
     options.allowedTools = availableTools;
 
-    // Build the memory MCP script path and write source to disk
-    const memoryScriptDir = path.join(this.workDir, '.mcp-scripts');
-    const memoryScriptPath = path.join(memoryScriptDir, 'memory.js');
-    fs.mkdirSync(memoryScriptDir, { recursive: true });
-    fs.writeFileSync(memoryScriptPath, MEMORY_MCP_SOURCE, 'utf8');
-
-    const builtinMemoryMcp = {
-      command: '/app/node_modules/.bin/tsx',
-      args: [memoryScriptPath],
-      env: {
-        NODE_PATH: '/app/node_modules',
-        DATABASE_URL: process.env.DATABASE_URL ?? '',
-        MEMORY_AGENT_ID: this.agent.id,
-      },
-    };
-
-    const userMcpEntries = this.mcpServers.length > 0
-      ? Object.fromEntries(this.mcpServers.map((server) => [server.name, this.resolveServerConfig(server.name, server.config, server.type)]))
-      : {};
-
-    options.mcpServers = { memory: builtinMemoryMcp, ...userMcpEntries };
     if (this.mcpServers.length > 0) {
-      this.log.debug('MCP servers configured', { servers: ['memory', ...this.mcpServers.map((s) => s.name)] });
+      options.mcpServers = Object.fromEntries(
+        this.mcpServers.map((server) => [server.name, this.resolveServerConfig(server.name, server.config, server.type)])
+      );
+      this.log.debug('MCP servers configured', { servers: this.mcpServers.map((s) => s.name) });
     }
 
     if (claudeSessionId) {
@@ -462,58 +443,6 @@ export class ClaudeHandler {
     }
 
     return options;
-  }
-
-  /**
-   * Runs an end-of-session reflection query on an existing session.
-   * Reviews the full conversation and writes memories only if the user
-   * explicitly guided, corrected, or shared context during the session.
-   *
-   * @param {string} sessionKey - The session to reflect on.
-   * @returns {Promise<void>}
-   */
-  async reflect(sessionKey: string): Promise<void> {
-    const claudeSessionId = this.sessionCache.get(sessionKey);
-    if (!claudeSessionId) return; // No active session — nothing to reflect on
-
-    const sessionWorkDir = this.getSessionWorkDir(sessionKey);
-    const options = this.buildSdkOptions(sessionWorkDir, claudeSessionId);
-
-    const reflectPrompt = `Review this conversation from the beginning.
-
-Only write a memory if the **user explicitly guided, corrected, or shared context** during this conversation — for example:
-- "don't do X" or "always do Y" → feedback memory
-- "I'm a data engineer at Pelago" → user memory
-- "we use BigQuery, not Redshift" → reference memory
-- "this bug is blocking the KF release" → project memory
-
-Do NOT write memories for:
-- Things you (the assistant) figured out independently
-- General task execution or code you wrote
-- Casual mentions or one-off details
-- Anything already in your memory
-
-If the user gave no explicit guidance, do nothing — do not write any files.
-
-If there IS something worth remembering, write it to \`memory/{type}_{name}.md\` with proper frontmatter.`;
-
-    this.log.info('Running end-of-session reflection', { sessionKey });
-    try {
-      for await (const _ of query({ prompt: reflectPrompt, options })) {
-        // consume stream
-      }
-      await this.syncSessionMemories(sessionWorkDir);
-      this.log.info('Reflection complete', { sessionKey });
-    } catch (err) {
-      const msg = (err as Error).message ?? '';
-      if (msg.includes('No conversation found') || msg.includes('session')) {
-        // Session expired before reflection fired — normal, not an error
-        this.sessionCache.delete(sessionKey);
-        this.log.debug('Reflection skipped — session expired', { sessionKey });
-      } else {
-        this.log.warn('Reflection failed', { sessionKey, error: msg });
-      }
-    }
   }
 
   /**

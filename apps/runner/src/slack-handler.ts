@@ -90,23 +90,6 @@ export function registerSlackHandlers(
   /** Track current emoji reaction per session to avoid duplicate add calls. */
   const currentReactions = new Map<string, string>();
 
-  /** Idle timers: fire end-of-session reflection when thread goes quiet. */
-  const reflectionTimers = new Map<string, NodeJS.Timeout>();
-
-  const REFLECTION_IDLE_MS = 5 * 60 * 1_000; // 5 minutes
-
-  function scheduleReflection(sessionKey: string): void {
-    const existing = reflectionTimers.get(sessionKey);
-    if (existing) clearTimeout(existing);
-    const timer = setTimeout(() => {
-      reflectionTimers.delete(sessionKey);
-      claudeHandler.reflect(sessionKey).catch((err) =>
-        log.warn('End-of-session reflection failed', { sessionKey, error: (err as Error).message })
-      );
-    }, REFLECTION_IDLE_MS);
-    reflectionTimers.set(sessionKey, timer);
-  }
-
   /**
    * Swaps the emoji reaction on a message without leaving duplicate reactions.
    * Removes the current reaction (if any) before adding the new one.
@@ -141,7 +124,7 @@ export function registerSlackHandlers(
   app.event('app_mention', async ({ event, client }) => {
     await handleMessage({
       app, agent, claudeHandler, correctionHandler, client, log,
-      activeControllers, currentReactions, reflectionTimers, scheduleReflection, updateReaction,
+      activeControllers, currentReactions, updateReaction,
       userId: event.user ?? 'unknown',
       channelId: event.channel,
       threadTs: event.thread_ts ?? event.ts,
@@ -158,7 +141,7 @@ export function registerSlackHandlers(
     if (!('user' in msg)) return;
     await handleMessage({
       app, agent, claudeHandler, correctionHandler, client, log,
-      activeControllers, currentReactions, reflectionTimers, scheduleReflection, updateReaction,
+      activeControllers, currentReactions, updateReaction,
       userId: (msg as any).user,
       channelId: (msg as any).channel,
       threadTs: (msg as any).thread_ts,
@@ -227,8 +210,6 @@ interface HandleMessageOpts {
   log: Logger;
   activeControllers: Map<string, AbortController>;
   currentReactions: Map<string, string>;
-  reflectionTimers: Map<string, NodeJS.Timeout>;
-  scheduleReflection: (sessionKey: string) => void;
   updateReaction: (client: any, channelId: string, messageTs: string, sessionKey: string, emoji: string) => Promise<void>;
   userId: string;
   channelId: string;
@@ -241,8 +222,7 @@ interface HandleMessageOpts {
 
 async function handleMessage(opts: HandleMessageOpts): Promise<void> {
   const { app, agent, claudeHandler, correctionHandler, client, log, activeControllers, currentReactions,
-    reflectionTimers, scheduleReflection, updateReaction,
-    userId, channelId, threadTs, messageTs, rawText, files, restrictions } = opts;
+    updateReaction, userId, channelId, threadTs, messageTs, rawText, files, restrictions } = opts;
 
   const userText = stripBotMention(rawText, agent.slackBotUserId).trim();
   if (!userText && (!files || files.length === 0)) return;
@@ -265,9 +245,7 @@ async function handleMessage(opts: HandleMessageOpts): Promise<void> {
 
   log.info('Processing message', { userId, channelId, threadTs, sessionKey, textLength: userText.length });
 
-  // Cancel pending reflection and abort any in-flight request (user sent a new message)
-  const existingReflectionTimer = reflectionTimers.get(sessionKey);
-  if (existingReflectionTimer) { clearTimeout(existingReflectionTimer); reflectionTimers.delete(sessionKey); }
+  // Abort any in-flight request for this session (user sent a new message)
   activeControllers.get(sessionKey)?.abort();
   const abortController = new AbortController();
   activeControllers.set(sessionKey, abortController);
@@ -405,8 +383,6 @@ async function handleMessage(opts: HandleMessageOpts): Promise<void> {
     }
     await updateReaction(client, channelId, messageTs, sessionKey, 'white_check_mark');
 
-    // Schedule end-of-session reflection (fires after 5 min idle)
-    scheduleReflection(sessionKey);
 
   } catch (error: any) {
     if (error?.name === 'AbortError') {

@@ -25,12 +25,22 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import type { Agent, Skill } from '@slackhive/shared';
+import type { Agent, Skill, Memory } from '@slackhive/shared';
 import { getAgentSkills } from './db';
 import { logger } from './logger';
 
 /** Base directory for ephemeral agent workspaces. */
 const AGENTS_TMP_DIR = process.env.AGENTS_TMP_DIR ?? '/tmp/agents';
+
+/**
+ * Built-in /recall skill — injected for every agent automatically.
+ * Reads memory files from the agent's memory directory on disk.
+ */
+const RECALL_SKILL = `Search your memory files for context relevant to: $ARGUMENTS
+
+Use the Read tool to read files from the \`memory/\` directory (relative to your working directory).
+First list what's available by reading \`memory/MEMORY.md\` if it exists, then read specific memory files that match the topic.
+If no relevant memories are found, say so briefly and continue.`;
 
 /**
  * Memory system instructions injected into every agent's CLAUDE.md.
@@ -71,15 +81,21 @@ Good:
 
 const MEMORY_SYSTEM_SECTION = `# Memory System
 
-You have a persistent memory system. Use the built-in \`memory\` MCP tools to recall relevant context from past conversations:
+You have a persistent memory system. Use the \`/recall\` skill to retrieve relevant context from past conversations when needed.
 
-- \`mcp__memory__list_memories\` — see what you know (names + preview), optionally filtered by type
-- \`mcp__memory__search_memories(query)\` — find memories by keyword
-- \`mcp__memory__get_memory(name)\` — read the full content of a specific memory
+**When to recall:** When a user references something you may have learned before, or when context about the user/project would help — run \`/recall <topic>\` to search your memories.
 
-**When to recall:** At the start of a conversation, search for memories relevant to the user or topic. When a user references something you may have learned before, look it up.
+**How to save a memory:** Use the Write tool to create \`memory/{type}_{name}.md\` with frontmatter:
+\`\`\`
+---
+name: short_snake_case_name
+description: one-line description
+type: user|feedback|project|reference
+---
+Content here...
+\`\`\`
 
-**Do not write memories yourself** — the system automatically reflects on the conversation after it ends and saves anything worth remembering.`;
+Only save memories when the user explicitly guides, corrects, or shares lasting context. Do not save ephemeral task details.`;
 
 
 /**
@@ -152,6 +168,9 @@ export async function compileClaudeMd(agent: Agent, overrideClaudeMd?: string): 
     fs.rmSync(path.join(commandsDir, existing), { force: true });
   }
 
+  // Built-in recall skill — always injected, not user-visible in Skills tab
+  fs.writeFileSync(path.join(commandsDir, 'recall.md'), RECALL_SKILL, 'utf-8');
+
   for (const skill of skills) {
     const filename = skill.filename.endsWith('.md') ? skill.filename : `${skill.filename}.md`;
     fs.writeFileSync(path.join(commandsDir, filename), skill.content, 'utf-8');
@@ -181,6 +200,7 @@ export async function compileClaudeMd(agent: Agent, overrideClaudeMd?: string): 
       for (const existing of fs.readdirSync(sessionCommandsDir)) {
         fs.rmSync(path.join(sessionCommandsDir, existing), { force: true });
       }
+      fs.writeFileSync(path.join(sessionCommandsDir, 'recall.md'), RECALL_SKILL, 'utf-8');
       for (const skill of skills) {
         const filename = skill.filename.endsWith('.md') ? skill.filename : `${skill.filename}.md`;
         fs.writeFileSync(path.join(sessionCommandsDir, filename), skill.content, 'utf-8');
@@ -191,6 +211,25 @@ export async function compileClaudeMd(agent: Agent, overrideClaudeMd?: string): 
   return workDir;
 }
 
+
+/**
+ * Materializes memory files from the database to the agent's temp workspace.
+ * These files are read by the /recall skill when the agent needs past context.
+ */
+export function materializeMemoryFiles(agent: Agent, memories: Memory[]): void {
+  const memoryDir = path.join(getAgentWorkDir(agent.slug), 'memory');
+  fs.mkdirSync(memoryDir, { recursive: true });
+
+  const index: string[] = ['# Memory Index', ''];
+  for (const memory of memories) {
+    const filename = `${memory.type}_${sanitizeFilename(memory.name)}.md`;
+    fs.writeFileSync(path.join(memoryDir, filename), memory.content, 'utf-8');
+    index.push(`- [${memory.name}](${filename}) — ${memory.type}`);
+  }
+  fs.writeFileSync(path.join(memoryDir, 'MEMORY.md'), index.join('\n'), 'utf-8');
+
+  logger.debug('Memory files materialized', { agent: agent.slug, count: memories.length });
+}
 
 // =============================================================================
 // Private helpers
