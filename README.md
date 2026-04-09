@@ -200,6 +200,24 @@ ANTHROPIC_API_KEY=sk-ant-api03-...
 Billed per token via the Anthropic API. Best for teams and production.
 
 **Option B — Claude Pro or Max Subscription**
+
+First, install Claude Code on your host machine:
+
+> **Note:** Do not install via `npm` — the npm package is deprecated and incompatible with SlackHive.
+
+MacOS/Linux (Recommended):
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
+Homebrew (macOS/Linux):
+```bash
+brew install --cask claude-code
+```
+
+For more installation options, uninstall steps, and troubleshooting, see the [setup documentation](https://docs.anthropic.com/en/docs/claude-code/setup).
+
+Then log in:
 ```bash
 claude login    # run on host machine, saves credentials to ~/.claude/
 ```
