@@ -98,6 +98,10 @@ export default function McpSettingsPage() {
     // sse / http
     const cfg: Record<string, unknown> = { url: f.url };
     try { const h = JSON.parse(f.headers); if (Object.keys(h).length > 0) cfg.headers = h; } catch { /* ok */ }
+    const env = entriesToEnv(f.envEntries);
+    const envRefs = entriesToRefs(f.envEntries);
+    if (Object.keys(env).length > 0) cfg.env = env;
+    if (Object.keys(envRefs).length > 0) cfg.envRefs = envRefs;
     return cfg;
   };
 
@@ -351,6 +355,8 @@ export default function McpSettingsPage() {
                   <textarea value={form.headers} onChange={e => f('headers', e.target.value)}
                     rows={3} placeholder={'{\n  "Authorization": "Bearer ..."\n}'} {...inputStyle('var(--font-mono)')} />
                 </FField>
+                <EnvEntriesEditor entries={form.envEntries} envVarKeys={envVarKeys}
+                  onAdd={addEnvEntry} onRemove={removeEnvEntry} onUpdate={updateEnvEntry} />
               </>
             )}
 

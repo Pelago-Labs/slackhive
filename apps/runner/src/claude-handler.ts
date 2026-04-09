@@ -333,6 +333,22 @@ export class ClaudeHandler {
       const resolvedEnv = this.resolveEnvRefs(c);
       const { envRefs: _, tsSource: __, ...rest } = c;
       const resolved = { ...rest };
+
+      // For HTTP/SSE servers, resolve envRefs into headers
+      if (resolved.headers && typeof resolved.headers === 'object') {
+        const resolvedHeaders: Record<string, string> = {};
+        for (const [key, value] of Object.entries(resolved.headers as Record<string, string>)) {
+          const envKey = (c.envRefs as Record<string, string>)[key];
+          if (envKey && this.envVarValues[envKey]) {
+            // Prepend existing header value (e.g. "Bearer ") to the env var value
+            resolvedHeaders[key] = value ? `${value}${this.envVarValues[envKey]}` : this.envVarValues[envKey];
+          } else {
+            resolvedHeaders[key] = value;
+          }
+        }
+        resolved.headers = resolvedHeaders;
+      }
+
       if (Object.keys(resolvedEnv).length > 0) resolved.env = resolvedEnv;
       return resolved as McpServerConfig;
     }
