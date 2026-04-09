@@ -419,7 +419,7 @@ export async function init(opts: InitOptions): Promise<void> {
  */
 function runDockerBuild(cwd: string, displayDir: string): Promise<void> {
   return new Promise((resolve) => {
-    const proc = spawn('docker', ['compose', 'up', '-d', '--build', '--progress', 'plain'], {
+    const proc = spawn('docker', ['compose', '--progress', 'plain', 'up', '-d', '--build'], {
       cwd,
       env: { ...process.env },
     });
