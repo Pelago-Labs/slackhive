@@ -231,6 +231,12 @@ export async function init(opts: InitOptions): Promise<void> {
       }
     } catch { /* non-fatal */ }
 
+    // Remove stale Postgres volume if it exists — prevents password mismatch
+    // when re-running init with new credentials
+    try {
+      execSync('docker compose down -v', { cwd: dir, stdio: 'ignore' });
+    } catch { /* non-fatal — may not exist yet */ }
+
     const buildOk = await runDockerBuild(dir, opts.dir);
 
     if (buildOk) {
