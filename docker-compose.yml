@@ -54,6 +54,9 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        AUTH_SECRET: ${AUTH_SECRET:-change-this-secret-in-production}
+        ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
     restart: unless-stopped
     ports:
       - "3001:3000"
