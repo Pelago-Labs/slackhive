@@ -55,7 +55,7 @@ export default function LoginPage() {
       background: 'var(--bg)',
     }}>
       <div style={{
-        width: 360, background: '#fff', borderRadius: 14,
+        width: 360, background: 'var(--surface)', borderRadius: 14,
         border: '1px solid var(--border)', boxShadow: 'var(--shadow-lg)',
         padding: '36px 32px',
       }}>

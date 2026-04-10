@@ -62,7 +62,7 @@ export function Sidebar({ children, mobileOpen, onMobileClose }: { children?: Re
         }} />
       )}
       <aside style={{
-        width: W_OPEN, flexShrink: 0, background: '#fff',
+        width: W_OPEN, flexShrink: 0, background: 'var(--surface)',
         borderRight: '1px solid var(--border)',
         display: 'flex', flexDirection: 'column',
         position: 'fixed', top: 0, bottom: 0, zIndex: 50,
@@ -155,7 +155,7 @@ export function Sidebar({ children, mobileOpen, onMobileClose }: { children?: Re
                   <div className={agent.status === 'running' ? 'status-running' : ''} style={{
                     position: 'absolute', bottom: -1, right: -1,
                     width: 8, height: 8, borderRadius: '50%',
-                    background: dot, border: '2px solid #fff',
+                    background: dot, border: '2px solid var(--surface)',
                   }} />
                 </div>
                 {!collapsed && (
@@ -279,7 +279,7 @@ export function Sidebar({ children, mobileOpen, onMobileClose }: { children?: Re
           >
             <div style={{
               width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
-              background: '#171717',
+              background: 'var(--accent)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 12, fontWeight: 600, color: '#fff',
             }}>
@@ -308,7 +308,7 @@ export function Sidebar({ children, mobileOpen, onMobileClose }: { children?: Re
               bottom: collapsed ? 60 : 64,
               left: collapsed ? 8 : 12,
               right: collapsed ? 8 : 12,
-              background: '#fff',
+              background: 'var(--surface)',
               border: '1px solid var(--border)',
               borderRadius: 10,
               boxShadow: 'var(--shadow-lg)',

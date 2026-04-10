@@ -63,6 +63,13 @@
   --shadow-modal: 0 20px 60px rgba(0,0,0,0.5);
 }
 
+/* ─── Form elements — inherit theme ─────────────────────────────────────────── */
+input, textarea, select {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border);
+}
+
 /* ─── Reset ──────────────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }

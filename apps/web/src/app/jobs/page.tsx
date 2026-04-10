@@ -158,7 +158,7 @@ export default function JobsPage() {
       ) : jobs.length === 0 ? (
         <div style={{
           textAlign: 'center', padding: '60px 20px',
-          border: '1px solid var(--border)', borderRadius: 12, background: '#fff',
+          border: '1px solid var(--border)', borderRadius: 12, background: 'var(--surface)',
         }}>
           <CalendarClock size={32} style={{ marginBottom: 12, color: 'var(--border-2)' }} />
           <p style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 600, color: 'var(--text)' }}>No scheduled jobs</p>
@@ -170,7 +170,7 @@ export default function JobsPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {jobs.map(job => (
             <div key={job.id} style={{
-              background: '#fff', border: '1px solid var(--border)',
+              background: 'var(--surface)', border: '1px solid var(--border)',
               borderRadius: 12, boxShadow: 'var(--shadow-sm)', overflow: 'hidden',
             }}>
               {/* Job row */}
@@ -329,7 +329,7 @@ export default function JobsPage() {
                               margin: '4px 0 0', fontSize: 11, color: 'var(--text)',
                               whiteSpace: 'pre-wrap', wordBreak: 'break-word',
                               fontFamily: 'var(--font-mono)', maxHeight: 100, overflow: 'auto',
-                              background: '#fff', padding: '6px 8px', borderRadius: 6,
+                              background: 'var(--surface)', padding: '6px 8px', borderRadius: 6,
                               border: '1px solid var(--border)',
                             }}>{run.output.slice(0, 500)}</pre>
                           )}
@@ -414,7 +414,7 @@ function JobFormModal({ job, agents, onClose, onSaved }: {
       backdropFilter: 'blur(2px)',
     }}>
       <div style={{
-        background: '#fff', borderRadius: 14, border: '1px solid var(--border)',
+        background: 'var(--surface)', borderRadius: 14, border: '1px solid var(--border)',
         padding: 28, width: 480, maxWidth: '100%', boxShadow: 'var(--shadow-lg)',
         display: 'flex', flexDirection: 'column', gap: 16,
         flexShrink: 0,
@@ -517,7 +517,7 @@ function JobFormModal({ job, agents, onClose, onSaved }: {
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button onClick={onClose} style={{
             padding: '8px 16px', borderRadius: 7, border: '1px solid var(--border)',
-            background: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-sans)',
+            background: 'var(--surface)', fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-sans)',
           }}>Cancel</button>
           <button onClick={save} disabled={saving} style={{
             padding: '8px 18px', borderRadius: 7, border: 'none',

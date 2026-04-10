@@ -278,7 +278,7 @@ function UsersTab() {
             background: 'var(--surface-2)',
           }}>
             <div style={{
-              width: 28, height: 28, borderRadius: 8, background: '#171717', flexShrink: 0,
+              width: 28, height: 28, borderRadius: 8, background: 'var(--accent)', flexShrink: 0,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 10, fontWeight: 600, color: '#fff',
             }}>S</div>
@@ -416,7 +416,7 @@ function UsersTab() {
           backdropFilter: 'blur(2px)',
         }}>
           <div style={{
-            background: '#fff', borderRadius: 14, border: '1px solid var(--border)',
+            background: 'var(--surface)', borderRadius: 14, border: '1px solid var(--border)',
             padding: 28, width: 380, boxShadow: 'var(--shadow-lg)',
             display: 'flex', flexDirection: 'column', gap: 16,
             maxHeight: '90vh', overflow: 'auto',
@@ -439,7 +439,7 @@ function UsersTab() {
             <div>
               <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--muted)', marginBottom: 5 }}>Role</label>
               <select value={newUser.role} onChange={e => setNewUser(u => ({ ...u, role: e.target.value }))}
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 13, outline: 'none', fontFamily: 'var(--font-sans)', background: '#fff' }}>
+                style={{ width: '100%', padding: '8px 12px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 13, outline: 'none', fontFamily: 'var(--font-sans)', background: 'var(--surface)' }}>
                 <option value="viewer">Viewer — read-only access</option>
                 <option value="editor">Editor — create/edit agents, jobs, settings</option>
                 <option value="admin">Admin — full access including user management</option>
@@ -448,7 +448,7 @@ function UsersTab() {
             {error && <div style={{ fontSize: 12, color: '#dc2626', background: 'rgba(220,38,38,0.06)', padding: '6px 10px', borderRadius: 6 }}>{error}</div>}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button onClick={() => { setShowForm(false); setError(''); }}
-                style={{ padding: '8px 16px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-sans)' }}>Cancel</button>
+                style={{ padding: '8px 16px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-sans)' }}>Cancel</button>
               <button onClick={create} disabled={saving}
                 style={{ padding: '8px 18px', borderRadius: 7, border: 'none', background: 'var(--accent)', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'var(--font-sans)' }}>
                 {saving ? 'Creating...' : 'Create User'}
