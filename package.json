@@ -13,8 +13,13 @@
   },
   "scripts": {
     "dev": "sh scripts/dev.sh",
-    "build": "npm run build --workspaces --if-present"
+    "build": "npm run build --workspaces --if-present",
+    "prepare": "npm run build -w cli"
   },
+  "files": [
+    "cli/dist",
+    "README.md"
+  ],
   "engines": {
     "node": ">=20.0.0"
   },
