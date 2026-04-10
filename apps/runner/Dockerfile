@@ -7,6 +7,8 @@ FROM base AS deps
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json ./packages/shared/
 COPY apps/runner/package.json ./apps/runner/
+COPY cli/package.json ./cli/
+COPY cli/src ./cli/src
 RUN npm ci
 
 # Build
