@@ -248,7 +248,7 @@ function buildClaudeMd(agent: Agent, overrideClaudeMd?: string): string {
 
 Use /recall <topic> proactively — at the start of each conversation and whenever the topic shifts. Don't wait to be asked. Past memories contain user preferences, corrections, and learned patterns that let you pick up where you left off instead of starting from scratch.
 
-**When to save a memory** — use the Write tool to create \`memory/{type}_{name}.md\` (IMPORTANT: you MUST actually call the Write tool — do not just say you saved it). Include this frontmatter at the top, followed by the memory content:
+**When to save a memory** — you MUST use the Write tool to create the file. Saying "I'll remember that" or "Saved" without calling Write does NOTHING — the memory is lost when the session ends. Call Write now, not later. Create \`memory/{type}_{name}.md\` with this frontmatter:
 \`\`\`
 ---
 name: {name}

@@ -64,9 +64,13 @@ export class MemoryWatcher {
   start(): void {
     if (this.watchers.length > 0) return;
 
-    // Only watch session memory dirs — root memory dir is read-only (materialized from DB on startup)
+    // Watch both session memory dirs and the root memory dir.
+    // The root memory dir is materialized from DB on startup, but agents may also
+    // write directly to it (e.g. when cwd resolves to the workdir root).
     fs.mkdirSync(this.sessionsDir, { recursive: true });
+    fs.mkdirSync(this.memoryDir, { recursive: true });
     this.watchSessionsRoot();
+    this.watchDir(this.memoryDir);
 
     this.log.info('Memory watcher started', { sessionsDir: this.sessionsDir });
   }
