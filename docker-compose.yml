@@ -105,11 +105,18 @@ services:
     volumes:
       # Ephemeral per-agent working directories (CLAUDE.md + memory watch)
       - /tmp/agents:/tmp/agents
-      # Mount host Claude config
+      # Mount host Claude config (read-only for credentials safety)
       - ${HOME}/.claude:/root/.claude:ro
+      # Writable overlays for SDK runtime state (session-env, shell-snapshots)
+      - claude-session-env:/root/.claude/session-env
+      - claude-shell-snapshots:/root/.claude/shell-snapshots
       # Mount host home so MCP server paths resolve inside container
       - ${HOME}:${HOME}:ro
 
 volumes:
   pgdata:
+    driver: local
+  claude-session-env:
+    driver: local
+  claude-shell-snapshots:
     driver: local
