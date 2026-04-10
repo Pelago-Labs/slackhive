@@ -419,7 +419,7 @@ export class ClaudeHandler {
       options.settings = {
         permissions: {
           allow: bashRules,
-          deny: [...denied, 'Bash(rm *)','Bash(curl *)','Bash(wget *)','Bash(chmod *)','Bash(sudo *)','Bash(kill *)'],
+          deny: [...denied, 'Bash(rm *)','Bash(curl *)','Bash(wget *)','Bash(chmod *)','Bash(sudo *)','Bash(kill *)','Bash(cat /tmp/agents/*)','Bash(ls /tmp/agents/*)','Bash(find /tmp/agents/*)','Bash(grep * /tmp/agents/*)'],
         },
       };
     }
