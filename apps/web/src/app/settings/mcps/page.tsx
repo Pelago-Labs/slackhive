@@ -8,7 +8,7 @@
  * @module web/settings/mcps/page
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { McpServer, McpServerType } from '@slackhive/shared';
 import { useAuth } from '@/lib/auth-context';
 import { Settings } from 'lucide-react';
@@ -68,8 +68,14 @@ export default function McpSettingsPage() {
   const [showForm, setShowForm]     = useState(false);
   const [envVarKeys, setEnvVarKeys] = useState<string[]>([]);
   const [testResults, setTestResults] = useState<Record<string, { ok: boolean; message?: string; error?: string } | 'testing'>>({});
+  const formRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (showForm && formRef.current) {
+      formRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [showForm]);
   useEffect(() => {
     // Load available env var keys for the ref dropdown
     fetch('/api/env-vars').then(r => r.json()).then((rows: { key: string }[]) => setEnvVarKeys(rows.map(r => r.key))).catch(() => {});
@@ -299,7 +305,7 @@ export default function McpSettingsPage() {
 
       {/* Add/Edit form */}
       {showForm && (
-        <div style={{
+        <div ref={formRef} style={{
           background: 'var(--surface)', border: '1px solid var(--border)',
           borderRadius: 14, padding: '28px', marginTop: 4,
         }}>
