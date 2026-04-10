@@ -409,16 +409,20 @@ export class ClaudeHandler {
     );
 
     // `tools` controls which tools the model can see/use.
+    // `allowedTools` controls auto-execution (no prompting). Both use plain tool names.
     options.tools = availableTools;
+    options.allowedTools = availableTools;
 
-    // Build permissions.allow: always-allowed tools + Bash patterns (or plain Bash if no rules).
-    const permissionAllow: string[] = [
-      ...alwaysAllowed,
-      ...mcpToolPrefixes.map((p) => `${p}__*`),
-      ...(hasBashRules ? bashRules : plainTools.includes('Bash') ? ['Bash(*)'] : []),
-    ];
-    const permissionDeny: string[] = denied;
-    options.permissions = { allow: permissionAllow, deny: permissionDeny };
+    // Bash(pattern) rules go into settings.permissions.allow — this is the only place
+    // the SDK supports command-level scoping (not in allowedTools/tools).
+    if (hasBashRules) {
+      options.settings = {
+        permissions: {
+          allow: bashRules,
+          deny: [...denied, 'Bash(rm *)','Bash(curl *)','Bash(wget *)','Bash(chmod *)','Bash(sudo *)','Bash(kill *)'],
+        },
+      };
+    }
 
     if (this.mcpServers.length > 0) {
       options.mcpServers = Object.fromEntries(
