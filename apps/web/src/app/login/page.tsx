@@ -134,7 +134,7 @@ export default function LoginPage() {
             style={{
               width: '100%', padding: '10px', borderRadius: 8, border: 'none',
               background: loading ? 'var(--border-2)' : 'var(--accent)',
-              color: '#fff', fontSize: 14, fontWeight: 600,
+              color: 'var(--accent-fg)', fontSize: 14, fontWeight: 600,
               cursor: loading ? 'not-allowed' : 'pointer',
               fontFamily: 'var(--font-sans)',
               transition: 'opacity 0.15s',

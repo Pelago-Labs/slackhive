@@ -14,6 +14,7 @@
   --border-2:  #d4d4d4;
   --accent:    #171717;
   --accent-2:  #404040;
+  --accent-fg: #ffffff;
   --blue:      #2563eb;
   --green:     #059669;
   --red:       #dc2626;
@@ -35,6 +36,10 @@
   --radius-md:    14px;
   --radius-lg:    20px;
   --radius-xl:    28px;
+  --red-soft-bg:  #fef2f2;
+  --red-soft-border: #fecaca;
+  --amber-soft-bg: #fffbeb;
+  --amber-soft-border: #fde68a;
 }
 
 /* ─── Design Tokens — Dark ───────────────────────────────────────────────────── */
@@ -45,8 +50,9 @@
   --surface-3: #262626;
   --border:    #2a2a2a;
   --border-2:  #3a3a3a;
-  --accent:    #e5e5e5;
+  --accent:    #f5f5f5;
   --accent-2:  #d4d4d4;
+  --accent-fg: #0a0a0a;
   --blue:      #3b82f6;
   --green:     #10b981;
   --red:       #ef4444;
@@ -61,6 +67,10 @@
   --shadow-card:  rgba(255,255,255,0.03) 0px 0px 0px 1px, rgba(0,0,0,0.2) 0px 2px 6px, rgba(0,0,0,0.3) 0px 4px 12px;
   --shadow-hover: rgba(0,0,0,0.4) 0px 8px 24px;
   --shadow-modal: 0 20px 60px rgba(0,0,0,0.5);
+  --red-soft-bg:  rgba(239,68,68,0.1);
+  --red-soft-border: rgba(239,68,68,0.25);
+  --amber-soft-bg: rgba(245,158,11,0.1);
+  --amber-soft-border: rgba(245,158,11,0.25);
 }
 
 /* ─── Form elements — inherit theme ─────────────────────────────────────────── */

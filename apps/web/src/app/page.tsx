@@ -86,7 +86,7 @@ export default function Dashboard() {
           {canEdit && (
             <Link href="/agents/new" style={{
               display: 'inline-flex', alignItems: 'center', gap: 7,
-              background: 'var(--accent)', color: '#fff',
+              background: 'var(--accent)', color: 'var(--accent-fg)',
               padding: '10px 20px', borderRadius: 8,
               fontSize: 13.5, fontWeight: 500, textDecoration: 'none',
               boxShadow: 'var(--shadow-sm)',
@@ -553,7 +553,7 @@ function EmptyState() {
       {canEdit && (
         <Link href="/agents/new" style={{
           display: 'inline-flex', alignItems: 'center', gap: 7,
-          background: 'var(--accent)', color: '#fff',
+          background: 'var(--accent)', color: 'var(--accent-fg)',
           padding: '10px 22px', borderRadius: 8,
           fontSize: 14, fontWeight: 500, textDecoration: 'none',
           boxShadow: 'var(--shadow-sm)',

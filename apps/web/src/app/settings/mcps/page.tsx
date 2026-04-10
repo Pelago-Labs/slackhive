@@ -255,7 +255,7 @@ export default function McpSettingsPage() {
         {canEdit && !showForm && (
           <button onClick={() => setShowForm(true)} style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
-            background: 'var(--accent)', color: '#fff',
+            background: 'var(--accent)', color: 'var(--accent-fg)',
             padding: '8px 16px', borderRadius: 8, border: 'none',
             fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'var(--font-sans)',
             transition: 'opacity 0.15s',
@@ -281,7 +281,7 @@ export default function McpSettingsPage() {
           <p style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 500, color: 'var(--muted)' }}>No MCP servers yet</p>
           <p style={{ margin: '0 0 16px', fontSize: 13 }}>Add servers to the catalog to enable agent tools.</p>
           {canEdit && <button onClick={() => setShowForm(true)} style={{
-            background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8,
+            background: 'var(--accent)', color: 'var(--accent-fg)', border: 'none', borderRadius: 8,
             padding: '8px 20px', fontSize: 13, fontWeight: 500, cursor: 'pointer',
             fontFamily: 'var(--font-sans)',
           }}>Add First Server</button>}
@@ -405,7 +405,7 @@ export default function McpSettingsPage() {
             <div style={{ display: 'flex', gap: 10 }}>
               <button type="submit" disabled={saving} style={{
                 background: saving ? 'var(--border)' : 'var(--accent)',
-                color: '#fff', border: 'none', borderRadius: 7,
+                color: 'var(--accent-fg)', border: 'none', borderRadius: 7,
                 padding: '9px 22px', fontSize: 13, fontWeight: 500,
                 cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-sans)',
                 transition: 'opacity 0.15s',

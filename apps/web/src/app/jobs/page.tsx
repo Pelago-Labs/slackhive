@@ -139,7 +139,7 @@ export default function JobsPage() {
         {canEdit && (
           <button onClick={openCreate} style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
-            background: 'var(--accent)', color: '#fff',
+            background: 'var(--accent)', color: 'var(--accent-fg)',
             padding: '9px 18px', borderRadius: 8,
             fontSize: 13, fontWeight: 500, border: 'none', cursor: 'pointer',
             fontFamily: 'var(--font-sans)',
@@ -467,7 +467,7 @@ function JobFormModal({ job, agents, onClose, onSaved }: {
                 style={{
                   padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 500,
                   border: cronSchedule === p.cron ? '1px solid var(--accent)' : '1px solid var(--border)',
-                  background: cronSchedule === p.cron ? 'rgba(23,23,23,0.06)' : '#fff',
+                  background: cronSchedule === p.cron ? 'var(--surface-2)' : '#fff',
                   color: cronSchedule === p.cron ? 'var(--text)' : 'var(--muted)',
                   cursor: 'pointer', fontFamily: 'var(--font-sans)',
                 }}>{p.label}</button>
@@ -489,7 +489,7 @@ function JobFormModal({ job, agents, onClose, onSaved }: {
                 display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
                 border: targetType === t ? '1px solid var(--accent)' : '1px solid var(--border)',
                 borderRadius: 7, cursor: 'pointer', fontSize: 13,
-                background: targetType === t ? 'rgba(23,23,23,0.06)' : '#fff',
+                background: targetType === t ? 'var(--surface-2)' : '#fff',
                 color: targetType === t ? 'var(--text)' : 'var(--muted)',
               }}>
                 <input type="radio" name="targetType" checked={targetType === t} onChange={() => setTargetType(t)} style={{ display: 'none' }} />
@@ -521,7 +521,7 @@ function JobFormModal({ job, agents, onClose, onSaved }: {
           }}>Cancel</button>
           <button onClick={save} disabled={saving} style={{
             padding: '8px 18px', borderRadius: 7, border: 'none',
-            background: 'var(--accent)', color: '#fff', fontSize: 13, fontWeight: 500,
+            background: 'var(--accent)', color: 'var(--accent-fg)', fontSize: 13, fontWeight: 500,
             cursor: 'pointer', fontFamily: 'var(--font-sans)',
           }}>{saving ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Job'}</button>
         </div>

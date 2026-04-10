@@ -232,33 +232,34 @@ export function Sidebar({ children, mobileOpen, onMobileClose }: { children?: Re
             </svg>
           }>Settings</NavItem>
 
-          {/* Theme toggle */}
-          <div
+        </div>
+        </div>
+
+        {/* ── Theme toggle ──────────────────────────────────────────────── */}
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '6px 0' }}>
+          <button
             onClick={toggleTheme}
+            title={theme === 'light' ? 'Dark mode' : 'Light mode'}
             style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              padding: collapsed ? '8px 0' : '7px 12px',
-              justifyContent: collapsed ? 'center' : 'flex-start',
-              borderRadius: 8, cursor: 'pointer',
-              fontSize: 13, color: 'var(--muted)',
-              transition: 'background 0.12s',
+              width: 30, height: 30, borderRadius: 8,
+              border: '1px solid var(--border)', background: 'var(--surface-2)',
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: 'var(--muted)', transition: 'background 0.12s',
             }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-3)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'var(--surface-2)')}
           >
             {theme === 'light' ? (
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M8 1.5v1M8 13.5v1M1.5 8h1M13.5 8h1M3.4 3.4l.7.7M11.9 11.9l.7.7M3.4 12.6l.7-.7M11.9 4.1l.7-.7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-                <circle cx="8" cy="8" r="3" stroke="currentColor" strokeWidth="1.2"/>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <path d="M14 9.2A6 6 0 116.8 2a4.8 4.8 0 007.2 7.2z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
               </svg>
             ) : (
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M14 9.2A6 6 0 116.8 2a4.8 4.8 0 007.2 7.2z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <path d="M8 1.5v1M8 13.5v1M1.5 8h1M13.5 8h1M3.4 3.4l.7.7M11.9 11.9l.7.7M3.4 12.6l.7-.7M11.9 4.1l.7-.7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                <circle cx="8" cy="8" r="3" stroke="currentColor" strokeWidth="1.3"/>
               </svg>
             )}
-            {!collapsed && <span>{theme === 'light' ? 'Dark mode' : 'Light mode'}</span>}
-          </div>
-        </div>
+          </button>
         </div>
 
         {/* ── Footer — Profile ──────────────────────────────────────────── */}
@@ -281,7 +282,7 @@ export function Sidebar({ children, mobileOpen, onMobileClose }: { children?: Re
               width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
               background: 'var(--accent)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 12, fontWeight: 600, color: '#fff',
+              fontSize: 12, fontWeight: 600, color: 'var(--accent-fg)',
             }}>
               {(username || '?').charAt(0).toUpperCase()}
             </div>

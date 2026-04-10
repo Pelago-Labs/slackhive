@@ -229,7 +229,7 @@ export default function NewAgentWizard() {
                 onClick={next} disabled={!canNext()}
                 style={{
                   background: canNext() ? 'var(--accent)' : 'var(--border)',
-                  color: '#fff', border: 'none', borderRadius: 'var(--radius)',
+                  color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius)',
                   padding: '10px 24px', fontSize: 14, fontWeight: 600,
                   cursor: canNext() ? 'pointer' : 'not-allowed',
                   fontFamily: 'var(--font-sans)', transition: 'opacity 0.15s, transform 0.15s',
@@ -245,7 +245,7 @@ export default function NewAgentWizard() {
                 disabled={submitting || !state.slackBotToken || !state.slackAppToken || !state.slackSigningSecret}
                 style={{
                   background: submitting ? 'var(--border)' : '#16a34a',
-                  color: '#fff', border: 'none', borderRadius: 'var(--radius)',
+                  color: 'var(--accent-fg)', border: 'none', borderRadius: 'var(--radius)',
                   padding: '10px 24px', fontSize: 14, fontWeight: 600,
                   cursor: submitting ? 'not-allowed' : 'pointer',
                   fontFamily: 'var(--font-sans)', transition: 'opacity 0.15s, transform 0.15s',
@@ -572,7 +572,7 @@ function Step2SlackApp({ state }: { state: WizardState }) {
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 32, flexShrink: 0 }}>
               <div style={{
                 width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
-                background: 'var(--accent)', color: '#fff',
+                background: 'var(--accent)', color: 'var(--accent-fg)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 11, fontWeight: 700, zIndex: 1,
               }}>{n}</div>
@@ -767,7 +767,7 @@ const slackStyles = {
   } as React.CSSProperties,
   chrome: {
     background: 'var(--surface-2)', padding: '6px 10px',
-    borderBottom: '1px solid #ddd', display: 'flex', alignItems: 'center', gap: 8,
+    borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8,
   } as React.CSSProperties,
   urlBar: {
     flex: 1, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4,
@@ -783,7 +783,7 @@ const slackStyles = {
   label: { fontSize: 11.5, color: '#616061' } as React.CSSProperties,
   token: { fontSize: 11, fontFamily: 'monospace', color: '#1d1c1d', letterSpacing: 1 } as React.CSSProperties,
   greenBtn: {
-    background: '#007a5a', color: '#fff', border: 'none', borderRadius: 4,
+    background: 'var(--green)', color: 'var(--accent-fg)', border: 'none', borderRadius: 4,
     padding: '5px 10px', fontSize: 11, fontWeight: 700, cursor: 'default',
     boxShadow: '0 0 0 3px rgba(0,122,90,0.25)',
   } as React.CSSProperties,
@@ -838,7 +838,7 @@ function BotTokenScreenshot() {
   return (
     <SlackLayout url="api.slack.com/apps/A.../oauth" activeNav="OAuth & Permissions">
       {/* Install notice */}
-      <div style={{ background: '#fff8e6', border: '1px solid #f5c842', borderRadius: 5, padding: '7px 10px', marginBottom: 10, fontSize: 11, color: '#7a5c00', lineHeight: 1.5, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+      <div style={{ background: 'var(--surface-2)', border: '1px solid var(--amber)', borderRadius: 5, padding: '7px 10px', marginBottom: 10, fontSize: 11, color: 'var(--amber)', lineHeight: 1.5, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
         <AlertTriangle size={12} style={{ flexShrink: 0, marginTop: 1 }} />
         <span>Token only appears after <strong>Install to Workspace</strong> (sidebar → Install App)</span>
       </div>
