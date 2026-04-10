@@ -6,7 +6,7 @@
     "slackhive": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "esbuild src/index.ts --bundle --platform=node --outfile=dist/index.js",
     "dev": "ts-node src/index.ts"
   },
   "keywords": [
@@ -32,6 +32,7 @@
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/prompts": "^2.4.9",
+    "esbuild": "^0.28.0",
     "typescript": "^5.3.0"
   },
   "engines": {
