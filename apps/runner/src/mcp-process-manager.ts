@@ -85,9 +85,12 @@ export class McpProcessManager {
       const scriptPath = path.join(scriptDir, `${name}.ts`);
       fs.mkdirSync(scriptDir, { recursive: true });
       fs.writeFileSync(scriptPath, config.tsSource as string, 'utf8');
-      command = '/app/node_modules/.bin/tsx';
+      // Resolve tsx from the project's node_modules (works in Docker and native)
+      const projectRoot = path.resolve(__dirname, '..');
+      const tsxPath = path.join(projectRoot, 'node_modules', '.bin', 'tsx');
+      command = fs.existsSync(tsxPath) ? tsxPath : 'tsx';
       args = [scriptPath];
-      env.NODE_PATH = '/app/node_modules';
+      env.NODE_PATH = path.join(projectRoot, 'node_modules');
     }
 
     // Connect to the stdio MCP process

@@ -9,27 +9,46 @@
  */
 
 import winston from 'winston';
+import * as path from 'path';
+import * as fs from 'fs';
 
 const { combine, timestamp, json, colorize, simple } = winston.format;
 
 const isDev = process.env.NODE_ENV !== 'production';
 
+// In native (non-Docker) mode, also write logs to a file for the web UI to stream.
+const transports: winston.transport[] = [
+  new winston.transports.Console(),
+];
+
+const isNativeMode = process.env.DATABASE_TYPE === 'sqlite' || !process.env.DATABASE_URL;
+if (isNativeMode) {
+  const logDir = process.env.LOG_DIR ?? path.join(
+    process.env.HOME ?? process.env.USERPROFILE ?? '/tmp',
+    '.slackhive', 'logs'
+  );
+  fs.mkdirSync(logDir, { recursive: true });
+  transports.push(
+    new winston.transports.File({
+      filename: path.join(logDir, 'runner.log'),
+      maxsize: 10 * 1024 * 1024, // 10MB
+      maxFiles: 3,
+      format: combine(timestamp(), json()),
+    })
+  );
+}
+
 /**
  * The shared logger instance for the runner service.
- * Use this for all logging throughout the runner.
- *
- * @example
- * logger.info('Agent started', { agent: 'gilfoyle' });
- * logger.error('Failed to compile CLAUDE.md', { agent: 'boss', error: err.message });
+ * In native mode, also writes JSON logs to ~/.slackhive/logs/runner.log
+ * for the web UI to stream via SSE.
  */
 export const logger = winston.createLogger({
   level: process.env.LOG_LEVEL ?? (isDev ? 'debug' : 'info'),
   format: isDev
     ? combine(timestamp(), colorize(), simple())
     : combine(timestamp(), json()),
-  transports: [
-    new winston.transports.Console(),
-  ],
+  transports,
 });
 
 /**

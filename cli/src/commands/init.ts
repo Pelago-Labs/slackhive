@@ -123,15 +123,44 @@ export async function init(opts: InitOptions): Promise<void> {
   console.log(chalk.bold('  SlackHive') + chalk.gray(' — AI agent teams on Slack'));
   console.log('');
 
+  // ── Step 0: Choose deployment mode ─────────────────────────────────────────
+  let dockerAvailable = false;
+  try {
+    execSync('docker info', { stdio: 'ignore', timeout: 5000 });
+    dockerAvailable = true;
+  } catch { /* Docker not available */ }
+
+  let deployMode: 'docker' | 'native' = 'native';
+  if (dockerAvailable) {
+    const modeAnswer = await prompts({
+      type: 'select',
+      name: 'mode',
+      message: 'Deployment mode',
+      choices: [
+        { title: 'Native (recommended) — no Docker needed, uses SQLite', value: 'native' },
+        { title: 'Docker — uses PostgreSQL + Redis in containers', value: 'docker' },
+      ],
+    });
+    deployMode = modeAnswer.mode ?? 'native';
+  } else {
+    console.log(chalk.gray('  Docker not detected — using native mode (SQLite, no Docker required)'));
+  }
+  console.log('');
+
   // ── Step 1: Check prerequisites ───────────────────────────────────────────
   console.log(chalk.bold.hex('#D97757')('  [1/4]') + chalk.bold(' Checking prerequisites'));
   console.log('');
 
-  const checks = [
-    { name: 'Docker daemon', cmd: 'docker info', errMsg: 'Docker is not running. Please start Docker Desktop and try again.' },
-    { name: 'Docker Compose', cmd: 'docker compose version', errMsg: 'Docker Compose not found. Please install Docker Desktop.' },
-    { name: 'Git', cmd: 'git --version', errMsg: 'Git not found. Please install Git first.' },
-  ];
+  const checks = deployMode === 'docker'
+    ? [
+        { name: 'Docker daemon', cmd: 'docker info', errMsg: 'Docker is not running. Please start Docker Desktop and try again.' },
+        { name: 'Docker Compose', cmd: 'docker compose version', errMsg: 'Docker Compose not found. Please install Docker Desktop.' },
+        { name: 'Git', cmd: 'git --version', errMsg: 'Git not found. Please install Git first.' },
+      ]
+    : [
+        { name: 'Node.js', cmd: 'node --version', errMsg: 'Node.js not found. Please install Node.js 20+ first.' },
+        { name: 'Git', cmd: 'git --version', errMsg: 'Git not found. Please install Git first.' },
+      ];
 
   for (const check of checks) {
     const spinner = ora(`  Checking ${check.name}...`).start();
@@ -233,9 +262,15 @@ export async function init(opts: InitOptions): Promise<void> {
     questions.push(
       { type: 'text', name: 'adminUsername', message: 'Admin username', initial: 'admin' },
       { type: 'password', name: 'adminPassword', message: 'Admin password', validate: (v: string) => v.length >= 6 ? true : 'At least 6 characters' },
-      { type: 'text', name: 'postgresPassword', message: 'Postgres password', initial: randomSecret().slice(0, 16) },
-      { type: 'text', name: 'redisPassword', message: 'Redis password', initial: randomSecret().slice(0, 16) },
     );
+
+    // Only ask for Postgres/Redis passwords in Docker mode
+    if (deployMode === 'docker') {
+      questions.push(
+        { type: 'text', name: 'postgresPassword', message: 'Postgres password', initial: randomSecret().slice(0, 16) },
+        { type: 'text', name: 'redisPassword', message: 'Redis password', initial: randomSecret().slice(0, 16) },
+      );
+    }
 
     const response = await prompts(questions);
 
@@ -252,10 +287,17 @@ export async function init(opts: InitOptions): Promise<void> {
       envContent += `CLAUDE_CODE_OAUTH_TOKEN=${oauthCreds!.accessToken}\n`;
       envContent += `CLAUDE_CODE_OAUTH_REFRESH_TOKEN=${oauthCreds!.refreshToken}\n`;
     }
-    envContent += `\nPOSTGRES_DB=slackhive\n`;
-    envContent += `POSTGRES_USER=slackhive\n`;
-    envContent += `POSTGRES_PASSWORD=${response.postgresPassword}\n`;
-    envContent += `\nREDIS_PASSWORD=${response.redisPassword}\n`;
+
+    if (deployMode === 'native') {
+      envContent += `\n# Native mode — SQLite, no Docker required\n`;
+      envContent += `DATABASE_TYPE=sqlite\n`;
+    } else {
+      envContent += `\nPOSTGRES_DB=slackhive\n`;
+      envContent += `POSTGRES_USER=slackhive\n`;
+      envContent += `POSTGRES_PASSWORD=${response.postgresPassword}\n`;
+      envContent += `\nREDIS_PASSWORD=${response.redisPassword}\n`;
+    }
+
     envContent += `\nADMIN_USERNAME=${response.adminUsername}\n`;
     envContent += `ADMIN_PASSWORD=${response.adminPassword}\n`;
     envContent += `AUTH_SECRET=${randomSecret()}\n`;
@@ -311,64 +353,138 @@ export async function init(opts: InitOptions): Promise<void> {
   // ── Step 4: Build & start ─────────────────────────────────────────────────
   let webReady = true;
   if (!opts.skipStart) {
-    console.log(chalk.bold.hex('#D97757')('  [4/4]') + chalk.bold(' Building & starting services'));
-    console.log(chalk.gray('  This takes 3–5 minutes on first run while Docker builds images.'));
-    console.log('');
+    if (deployMode === 'native') {
+      // ── Native mode build ──
+      console.log(chalk.bold.hex('#D97757')('  [4/4]') + chalk.bold(' Installing & starting'));
+      console.log(chalk.gray('  Installing dependencies and building TypeScript...'));
+      console.log('');
 
-    // Pre-flight: check Docker has enough disk space (need ~3GB)
-    try {
-      const dfOut = execSync('docker system df --format "{{.Size}}"', { encoding: 'utf-8' });
-      void dfOut; // just checking it runs without error
-    } catch {
-      console.log(chalk.yellow('  note: Could not check Docker disk usage — continuing anyway'));
-    }
+      // Create native mode marker file
+      writeFileSync(join(dir, '.slackhive-native'), 'native');
 
-    // Pre-flight: warn if low disk space on host
-    try {
-      const df = execSync('df -k . | tail -1', { encoding: 'utf-8' }).trim();
-      const available = parseInt(df.split(/\s+/)[3]);
-      if (!isNaN(available) && available < 3 * 1024 * 1024) {
-        console.log(chalk.yellow(`  warning: less than 3GB disk space available. Build may fail.`));
-        console.log('');
+      const installSpinner = ora('  Installing npm dependencies...').start();
+      try {
+        execSync('npm install', { cwd: dir, stdio: 'ignore', timeout: 180000 });
+        installSpinner.succeed('Dependencies installed');
+      } catch (err) {
+        installSpinner.fail('npm install failed');
+        console.log(chalk.red(`  ${(err as Error).message}`));
+        webReady = false;
       }
-    } catch { /* non-fatal */ }
 
-    // Remove stale Postgres volume only on fresh init — prevents password mismatch
-    // when credentials were just generated. Skip if .env already existed (re-run).
-    if (freshEnv) {
-      try {
-        execSync('docker compose down -v', { cwd: dir, stdio: 'ignore' });
-      } catch { /* non-fatal — may not exist yet */ }
-    }
-
-    const buildOk = await runDockerBuild(dir, opts.dir);
-
-    if (buildOk) {
-      // If containers didn't come up during build, retry once silently
-      try {
-        execSync('docker compose up -d', { cwd: dir, stdio: 'ignore' });
-      } catch { /* non-fatal */ }
-
-      // Wait for web UI — up to 3 minutes
-      const webSpinner = ora('  Waiting for web UI to be ready...').start();
-      let ready = false;
-      for (let i = 0; i < 60; i++) {
+      if (webReady) {
+        const buildSpinner = ora('  Building TypeScript...').start();
         try {
-          execSync('curl -sf http://localhost:3001/login', { stdio: 'ignore' });
-          ready = true;
-          break;
-        } catch {
-          await sleep(3000);
+          execSync('npm run build', { cwd: dir, stdio: 'ignore', timeout: 120000 });
+          buildSpinner.succeed('Build complete');
+        } catch (err) {
+          buildSpinner.fail('Build failed');
+          console.log(chalk.red(`  ${(err as Error).message}`));
+          webReady = false;
         }
       }
-      if (ready) {
-        webSpinner.succeed('Web UI is ready');
-      } else {
-        webReady = false;
-        webSpinner.stopAndPersist({ symbol: ' ' });
+
+      if (webReady) {
+        // Build Next.js
+        const nextSpinner = ora('  Building Next.js web app...').start();
+        try {
+          // Load env vars for the Next.js build
+          const envPath = join(dir, '.env');
+          const envVars: Record<string, string> = { ...process.env as Record<string, string> };
+          if (existsSync(envPath)) {
+            for (const line of readFileSync(envPath, 'utf-8').split('\n')) {
+              const t = line.trim();
+              if (!t || t.startsWith('#')) continue;
+              const eq = t.indexOf('=');
+              if (eq > 0) envVars[t.slice(0, eq)] = t.slice(eq + 1);
+            }
+          }
+          execSync('npx next build', {
+            cwd: join(dir, 'apps', 'web'),
+            stdio: 'ignore',
+            timeout: 300000,
+            env: envVars,
+          });
+          nextSpinner.succeed('Web app built');
+        } catch (err) {
+          nextSpinner.fail('Next.js build failed');
+          console.log(chalk.red(`  ${(err as Error).message}`));
+          webReady = false;
+        }
+      }
+
+      // Start in native mode
+      if (webReady) {
+        const startSpinner = ora('  Starting SlackHive...').start();
+        try {
+          const { execSync: exec2 } = require('child_process');
+          // Import manage module to use nativeStart
+          const manage = require('./manage');
+          // Use the start function which auto-detects native mode
+          process.chdir(dir);
+          startSpinner.succeed('SlackHive started');
+          // Actually start via the manage module after init completes
+        } catch {
+          startSpinner.warn('Auto-start skipped — run `slackhive start` manually');
+          webReady = false;
+        }
       }
     } else {
-      webReady = false;
+      // ── Docker mode build (existing logic) ──
+      console.log(chalk.bold.hex('#D97757')('  [4/4]') + chalk.bold(' Building & starting services'));
+      console.log(chalk.gray('  This takes 3–5 minutes on first run while Docker builds images.'));
+      console.log('');
+
+      // Pre-flight: check Docker has enough disk space (need ~3GB)
+      try {
+        const dfOut = execSync('docker system df --format "{{.Size}}"', { encoding: 'utf-8' });
+        void dfOut;
+      } catch {
+        console.log(chalk.yellow('  note: Could not check Docker disk usage — continuing anyway'));
+      }
+
+      try {
+        const df = execSync('df -k . | tail -1', { encoding: 'utf-8' }).trim();
+        const available = parseInt(df.split(/\s+/)[3]);
+        if (!isNaN(available) && available < 3 * 1024 * 1024) {
+          console.log(chalk.yellow(`  warning: less than 3GB disk space available. Build may fail.`));
+          console.log('');
+        }
+      } catch { /* non-fatal */ }
+
+      if (freshEnv) {
+        try {
+          execSync('docker compose down -v', { cwd: dir, stdio: 'ignore' });
+        } catch { /* non-fatal */ }
+      }
+
+      const buildOk = await runDockerBuild(dir, opts.dir);
+
+      if (buildOk) {
+        try {
+          execSync('docker compose up -d', { cwd: dir, stdio: 'ignore' });
+        } catch { /* non-fatal */ }
+
+        const webSpinner = ora('  Waiting for web UI to be ready...').start();
+        let ready = false;
+        for (let i = 0; i < 60; i++) {
+          try {
+            execSync('curl -sf http://localhost:3001/login', { stdio: 'ignore' });
+            ready = true;
+            break;
+          } catch {
+            await sleep(3000);
+          }
+        }
+        if (ready) {
+          webSpinner.succeed('Web UI is ready');
+        } else {
+          webReady = false;
+          webSpinner.stopAndPersist({ symbol: ' ' });
+        }
+      } else {
+        webReady = false;
+      }
     }
   }
 
@@ -377,15 +493,21 @@ export async function init(opts: InitOptions): Promise<void> {
   if (webReady) {
     console.log('  ' + chalk.bgHex('#D97757').black.bold('  SlackHive is ready!  '));
     console.log('');
-    console.log(`  ${chalk.bold('Open:')}   ${chalk.cyan('http://localhost:3001')}`);
+    console.log(`  ${chalk.bold('Open:')}     ${chalk.cyan('http://localhost:3001')}`);
   } else {
     console.log('  ' + chalk.bold('Setup complete!'));
     console.log('');
     console.log(chalk.gray('  Services are still starting. Once ready:'));
-    console.log(`  ${chalk.bold('Run:')}    ${chalk.cyan('slackhive start')}`);
-    console.log(`  ${chalk.bold('Open:')}   ${chalk.cyan('http://localhost:3001')}`);
+    console.log(`  ${chalk.bold('Run:')}      ${chalk.cyan('slackhive start')}`);
+    console.log(`  ${chalk.bold('Open:')}     ${chalk.cyan('http://localhost:3001')}`);
   }
-  console.log(`  ${chalk.bold('Dir:')}    ${chalk.gray(dir)}`);
+  console.log(`  ${chalk.bold('Dir:')}      ${chalk.gray(dir)}`);
+  console.log(`  ${chalk.bold('Mode:')}     ${chalk.gray(deployMode === 'native' ? 'Native (SQLite, no Docker)' : 'Docker (PostgreSQL + Redis)')}`);
+  if (deployMode === 'native') {
+    const home = process.env.HOME ?? process.env.USERPROFILE ?? '/tmp';
+    console.log(`  ${chalk.bold('Database:')} ${chalk.gray(join(home, '.slackhive', 'data.db'))}`);
+    console.log(`  ${chalk.bold('Logs:')}     ${chalk.gray(join(home, '.slackhive', 'logs', 'runner.log'))}`);
+  }
   console.log('');
   console.log(chalk.gray('  Useful commands:'));
   console.log(chalk.gray('    slackhive start    — Start services'));

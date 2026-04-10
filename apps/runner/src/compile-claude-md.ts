@@ -30,7 +30,11 @@ import { getAgentSkills } from './db';
 import { logger } from './logger';
 
 /** Base directory for ephemeral agent workspaces. */
-const AGENTS_TMP_DIR = process.env.AGENTS_TMP_DIR ?? '/tmp/agents';
+const AGENTS_TMP_DIR = process.env.AGENTS_TMP_DIR ?? (
+  process.env.DATABASE_TYPE === 'sqlite'
+    ? path.join(process.env.HOME ?? process.env.USERPROFILE ?? '/tmp', '.slackhive', 'agents')
+    : '/tmp/agents'
+);
 
 
 /**

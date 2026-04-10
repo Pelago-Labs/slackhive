@@ -6,3 +6,10 @@
  */
 
 export * from './types';
+export { initDb, getDb, closeDb, setDb } from './db/adapter';
+export type { DbAdapter, DbResult, DbRow } from './db/adapter';
+export { encrypt, decrypt } from './db/crypto';
+export { getEventBus, setEventBus, closeEventBus } from './event-bus';
+export type { EventBus } from './event-bus';
+export { MCP_TEMPLATES, MCP_CATEGORIES, getTemplateById, getTemplatesByCategory, searchTemplates } from './mcp-templates';
+export type { McpTemplate, McpEnvKey, McpCategory } from './mcp-templates';

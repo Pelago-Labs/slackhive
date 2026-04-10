@@ -1,10 +1,10 @@
 /**
  * @fileoverview GET /api/agents/[id]/logs
  * Server-Sent Events (SSE) stream of live runner logs for a specific agent.
- * Reads from the runner container's stdout via Docker logs API.
  *
- * NOTE: In Docker Compose, this uses `docker logs --follow --tail=100 <runner>`.
- * The runner prefixes each log line with `[agentSlug]` so we filter by agent.
+ * Supports two modes:
+ * - Docker mode: reads from runner container's stdout via `docker logs`
+ * - Native mode: reads from the log file at ~/.slackhive/logs/runner.log
  *
  * @module web/api/agents/[id]/logs
  */
@@ -12,14 +12,12 @@
 import { NextRequest } from 'next/server';
 import { getAgentById } from '@/lib/db';
 import { spawn } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
 
 /**
  * GET /api/agents/[id]/logs
  * Returns an SSE stream of filtered log lines for the agent.
- *
- * @param {NextRequest} _req
- * @param {{ params: Promise<{ id: string }> }} ctx
- * @returns {Response} SSE stream.
  */
 export async function GET(
   _req: NextRequest,
@@ -30,47 +28,65 @@ export async function GET(
   const slug = agent?.slug ?? id;
 
   const encoder = new TextEncoder();
+  const isDocker = process.env.DATABASE_TYPE !== 'sqlite' && fs.existsSync('/var/run/docker.sock');
 
   const stream = new ReadableStream({
     start(controller) {
-      // Tail the runner container logs, filtering for lines containing [slug]
-      const proc = spawn('docker', [
-        'logs', '--follow', '--tail=200',
-        'slackhive-runner-1',
-      ]);
-
       function send(line: string) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(line)}\n\n`));
       }
 
-      let buffer = '';
-      proc.stdout.on('data', (chunk: Buffer) => {
-        buffer += chunk.toString();
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
+      function processLines(data: string, partialBuffer: { value: string }) {
+        partialBuffer.value += data;
+        const lines = partialBuffer.value.split('\n');
+        partialBuffer.value = lines.pop() ?? '';
         for (const line of lines) {
           if (line.includes(`"agent":"${slug}"`)) send(line);
         }
-      });
+      }
 
-      proc.stderr.on('data', (chunk: Buffer) => {
-        buffer += chunk.toString();
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-        for (const line of lines) {
-          if (line.includes(`"agent":"${slug}"`)) send(line);
+      if (isDocker) {
+        // Docker mode: tail container logs
+        const proc = spawn('docker', [
+          'logs', '--follow', '--tail=200',
+          'slackhive-runner-1',
+        ]);
+
+        const buffer = { value: '' };
+        proc.stdout.on('data', (chunk: Buffer) => processLines(chunk.toString(), buffer));
+        proc.stderr.on('data', (chunk: Buffer) => processLines(chunk.toString(), buffer));
+        proc.on('close', () => {
+          try { controller.close(); } catch { /* already closed */ }
+        });
+        _req.signal.addEventListener('abort', () => {
+          proc.kill();
+          try { controller.close(); } catch { /* already closed */ }
+        });
+      } else {
+        // Native mode: tail the log file
+        const logDir = process.env.LOG_DIR ?? path.join(
+          process.env.HOME ?? process.env.USERPROFILE ?? '/tmp',
+          '.slackhive', 'logs'
+        );
+        const logFile = path.join(logDir, 'runner.log');
+
+        if (!fs.existsSync(logFile)) {
+          send(JSON.stringify({ level: 'info', message: 'Waiting for runner logs...' }));
         }
-      });
 
-      proc.on('close', () => {
-        try { controller.close(); } catch { /* already closed */ }
-      });
+        // Use tail -f to stream the log file
+        const proc = spawn('tail', ['-n', '200', '-f', logFile]);
 
-      // Clean up if client disconnects
-      _req.signal.addEventListener('abort', () => {
-        proc.kill();
-        try { controller.close(); } catch { /* already closed */ }
-      });
+        const buffer = { value: '' };
+        proc.stdout.on('data', (chunk: Buffer) => processLines(chunk.toString(), buffer));
+        proc.on('close', () => {
+          try { controller.close(); } catch { /* already closed */ }
+        });
+        _req.signal.addEventListener('abort', () => {
+          proc.kill();
+          try { controller.close(); } catch { /* already closed */ }
+        });
+      }
     },
   });
 

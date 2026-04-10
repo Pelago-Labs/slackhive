@@ -21,9 +21,8 @@
  */
 
 import { App, LogLevel } from '@slack/bolt';
-import { createClient, type RedisClientType } from 'redis';
 import type { Agent } from '@slackhive/shared';
-import { AGENT_EVENTS_CHANNEL, type AgentEvent } from '@slackhive/shared';
+import { type AgentEvent, getEventBus, type EventBus } from '@slackhive/shared';
 import { JobScheduler } from './job-scheduler';
 import {
   getAllAgents,
@@ -67,8 +66,8 @@ export class AgentRunner {
   /** Scheduled job executor. */
   private jobScheduler: JobScheduler;
 
-  /** Redis subscriber client for hot-reload events. */
-  private redisSubscriber: RedisClientType | null = null;
+  /** Event bus for hot-reload events (Redis or in-memory). */
+  private eventBus: EventBus | null = null;
 
   constructor() {
     this.jobScheduler = new JobScheduler((agentId: string) => this.getRunningAgent(agentId));
@@ -94,7 +93,7 @@ export class AgentRunner {
   async start(): Promise<void> {
     logger.info('AgentRunner starting...');
 
-    await this.connectRedis();
+    await this.connectEventBus();
     await this.loadAllAgents();
     await this.jobScheduler.start();
     this.registerShutdownHandlers();
@@ -121,10 +120,9 @@ export class AgentRunner {
     );
     await Promise.all(stopPromises);
 
-    if (this.redisSubscriber) {
-      await this.redisSubscriber.unsubscribe();
-      await this.redisSubscriber.disconnect();
-      this.redisSubscriber = null;
+    if (this.eventBus) {
+      await this.eventBus.close();
+      this.eventBus = null;
     }
 
     logger.info('AgentRunner stopped');
@@ -300,78 +298,48 @@ export class AgentRunner {
   }
 
   // ===========================================================================
-  // Redis pub/sub
+  // Event bus (Redis or in-memory)
   // ===========================================================================
 
   /**
-   * Connects to Redis and subscribes to agent lifecycle events.
+   * Connects to the event bus and subscribes to agent lifecycle events.
+   * Uses Redis if REDIS_URL is set, otherwise falls back to in-memory EventEmitter.
    *
    * @returns {Promise<void>}
-   * @throws {Error} If REDIS_URL is not set or connection fails.
    */
-  private async connectRedis(): Promise<void> {
-    const redisUrl = process.env.REDIS_URL;
-    if (!redisUrl) {
-      logger.warn('REDIS_URL not set — hot reload disabled');
-      return;
-    }
+  private async connectEventBus(): Promise<void> {
+    this.eventBus = getEventBus();
 
-    this.redisSubscriber = createClient({ url: redisUrl }) as RedisClientType;
+    await this.eventBus.subscribe((event: AgentEvent) => {
+      logger.info('Received agent event', { event });
 
-    this.redisSubscriber.on('error', (err) => {
-      logger.warn('Redis subscriber error', { error: err.message });
-    });
-
-    await this.redisSubscriber.connect();
-
-    await this.redisSubscriber.subscribe(AGENT_EVENTS_CHANNEL, (message) => {
-      this.handleAgentEvent(message);
-    });
-
-    logger.info('Redis subscriber connected', { channel: AGENT_EVENTS_CHANNEL });
-  }
-
-  /**
-   * Handles an agent lifecycle event received from Redis.
-   *
-   * @param {string} rawMessage - JSON-encoded AgentEvent.
-   * @returns {void}
-   */
-  private handleAgentEvent(rawMessage: string): void {
-    let event: AgentEvent;
-    try {
-      event = JSON.parse(rawMessage) as AgentEvent;
-    } catch {
-      logger.warn('Received malformed agent event', { rawMessage });
-      return;
-    }
-
-    logger.info('Received agent event', { event });
-
-    switch (event.type) {
-      case 'reload':
-        this.reloadAgent(event.agentId).catch((err) =>
-          logger.error('Failed to reload agent', { agentId: event.agentId, error: err.message })
-        );
-        break;
-      case 'start':
-        getAgentById(event.agentId)
-          .then((agent) => agent && this.startAgent(agent))
-          .catch((err) =>
-            logger.error('Failed to start agent', { agentId: event.agentId, error: err.message })
+      switch (event.type) {
+        case 'reload':
+          this.reloadAgent(event.agentId).catch((err) =>
+            logger.error('Failed to reload agent', { agentId: event.agentId, error: err.message })
           );
-        break;
-      case 'stop':
-        this.stopAgent(event.agentId).catch((err) =>
-          logger.error('Failed to stop agent', { agentId: event.agentId, error: err.message })
-        );
-        break;
-      case 'reload-jobs':
-        this.jobScheduler.reload().catch((err) =>
-          logger.error('Failed to reload jobs', { error: (err as Error).message })
-        );
-        break;
-    }
+          break;
+        case 'start':
+          getAgentById(event.agentId)
+            .then((agent) => agent && this.startAgent(agent))
+            .catch((err) =>
+              logger.error('Failed to start agent', { agentId: event.agentId, error: err.message })
+            );
+          break;
+        case 'stop':
+          this.stopAgent(event.agentId).catch((err) =>
+            logger.error('Failed to stop agent', { agentId: event.agentId, error: err.message })
+          );
+          break;
+        case 'reload-jobs':
+          this.jobScheduler.reload().catch((err) =>
+            logger.error('Failed to reload jobs', { error: (err as Error).message })
+          );
+          break;
+      }
+    });
+
+    logger.info('Event bus connected', { type: this.eventBus.type });
   }
 
   // ===========================================================================
