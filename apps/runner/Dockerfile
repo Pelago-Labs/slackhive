@@ -20,6 +20,10 @@ RUN cd apps/runner && npx tsc --skipLibCheck || true
 FROM node:20-alpine AS runner
 ENV NODE_ENV=production
 WORKDIR /app
+# Install git, Python, pip and graphify for Bash-enabled agents
+RUN apk add --no-cache git python3 py3-pip && \
+    pip3 install --break-system-packages graphifyy && \
+    graphify install
 COPY --from=builder /app/node_modules ./node_modules
 # Create claude wrapper that uses the SDK's bundled CLI
 RUN printf '#!/bin/sh\ncd /app/node_modules/@anthropic-ai/claude-agent-sdk && exec node cli.js "$@"\n' > /usr/local/bin/claude && \
