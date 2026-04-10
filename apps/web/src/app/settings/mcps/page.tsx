@@ -75,7 +75,7 @@ export default function McpSettingsPage() {
     if (showForm && formRef.current) {
       formRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
-  }, [showForm]);
+  }, [showForm, editingId]);
   useEffect(() => {
     // Load available env var keys for the ref dropdown
     fetch('/api/env-vars').then(r => r.json()).then((rows: { key: string }[]) => setEnvVarKeys(rows.map(r => r.key))).catch(() => {});

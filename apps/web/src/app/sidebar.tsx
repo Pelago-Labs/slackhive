@@ -12,6 +12,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState, createContext } from 'react';
 import type { Agent } from '@slackhive/shared';
 import { useAuth } from '@/lib/auth-context';
+import { useTheme } from '@/lib/theme-context';
 
 const STATUS_DOT: Record<string, string> = {
   running: '#059669', stopped: '#d4d4d4', error: '#dc2626',
@@ -30,6 +31,7 @@ export function Sidebar({ children, mobileOpen, onMobileClose }: { children?: Re
   const [isMobile, setIsMobile] = useState(false);
   const [branding, setBranding] = useState({ appName: 'SlackHive', tagline: 'AI agent teams on Slack', logoUrl: '' });
   const { username, role, canEdit, logout } = useAuth();
+  const { theme, toggle: toggleTheme } = useTheme();
   const w = isMobile ? 0 : (collapsed ? W_CLOSED : W_OPEN);
 
   useEffect(() => {
@@ -229,6 +231,33 @@ export function Sidebar({ children, mobileOpen, onMobileClose }: { children?: Re
               <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.2"/>
             </svg>
           }>Settings</NavItem>
+
+          {/* Theme toggle */}
+          <div
+            onClick={toggleTheme}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: collapsed ? '8px 0' : '7px 12px',
+              justifyContent: collapsed ? 'center' : 'flex-start',
+              borderRadius: 8, cursor: 'pointer',
+              fontSize: 13, color: 'var(--muted)',
+              transition: 'background 0.12s',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+          >
+            {theme === 'light' ? (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M8 1.5v1M8 13.5v1M1.5 8h1M13.5 8h1M3.4 3.4l.7.7M11.9 11.9l.7.7M3.4 12.6l.7-.7M11.9 4.1l.7-.7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+                <circle cx="8" cy="8" r="3" stroke="currentColor" strokeWidth="1.2"/>
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M14 9.2A6 6 0 116.8 2a4.8 4.8 0 007.2 7.2z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
+              </svg>
+            )}
+            {!collapsed && <span>{theme === 'light' ? 'Dark mode' : 'Light mode'}</span>}
+          </div>
         </div>
         </div>
 
