@@ -385,21 +385,40 @@ export class ClaudeHandler {
       abortController: abortController ?? new AbortController(),
     };
 
-    const baseAllowed: string[] = this.permissions?.allowedTools?.length
+    const rawAllowed: string[] = this.permissions?.allowedTools?.length
       ? this.permissions.allowedTools
       : [];
     const denied: string[] = this.permissions?.deniedTools ?? [];
     const mcpToolPrefixes = this.mcpServers.map((s) => `mcp__${s.name}`);
 
-    // Read and Write are always available — Read for reading memory/skill files, Write for saving memories.
-    // These cannot be overridden by agent permissions.
+    // Read and Write are always available — cannot be overridden.
     const alwaysAllowed = ['Read', 'Write'];
-    const availableTools = [...new Set([...alwaysAllowed, ...baseAllowed, ...mcpToolPrefixes])].filter(
+
+    // Separate Bash(pattern) rules from plain tool names.
+    // e.g. "Bash(git *)" is a permission rule, "Bash" is a plain tool name.
+    const bashRules = rawAllowed.filter((t) => t.startsWith('Bash('));
+    const plainTools = rawAllowed.filter((t) => !t.startsWith('Bash('));
+
+    // If there are Bash rules, add plain "Bash" to the tool list so the model can see/use it,
+    // but scope auto-execution via options.permissions.allow patterns.
+    const hasBashRules = bashRules.length > 0;
+    const baseTools = hasBashRules ? [...plainTools, 'Bash'] : plainTools;
+
+    const availableTools = [...new Set([...alwaysAllowed, ...baseTools, ...mcpToolPrefixes])].filter(
       (tool) => !denied.includes(tool)
     );
-    // `tools` controls which tools the model can see/use; `allowedTools` controls auto-execution.
+
+    // `tools` controls which tools the model can see/use.
     options.tools = availableTools;
-    options.allowedTools = availableTools;
+
+    // Build permissions.allow: always-allowed tools + Bash patterns (or plain Bash if no rules).
+    const permissionAllow: string[] = [
+      ...alwaysAllowed,
+      ...mcpToolPrefixes.map((p) => `${p}__*`),
+      ...(hasBashRules ? bashRules : plainTools.includes('Bash') ? ['Bash(*)'] : []),
+    ];
+    const permissionDeny: string[] = denied;
+    options.permissions = { allow: permissionAllow, deny: permissionDeny };
 
     if (this.mcpServers.length > 0) {
       options.mcpServers = Object.fromEntries(
