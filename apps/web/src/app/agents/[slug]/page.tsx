@@ -1306,11 +1306,11 @@ function parseLine(raw: string): ParsedLog {
 }
 
 const LOG_META: Record<LogLevel, { label: string; color: string; bg: string; border: string; rowBg: string }> = {
-  all:   { label: 'ALL',   color: '#6b7280', bg: '#f3f4f6', border: '#e5e7eb', rowBg: 'transparent' },
-  info:  { label: 'INFO',  color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe', rowBg: 'transparent' },
-  debug: { label: 'DEBUG', color: '#9ca3af', bg: '#f9fafb', border: '#e5e7eb', rowBg: 'transparent' },
-  warn:  { label: 'WARN',  color: '#92400e', bg: 'var(--amber-soft-bg)', border: 'var(--amber-soft-border)', rowBg: 'var(--amber-soft-bg)' },
-  error: { label: 'ERR',   color: '#991b1b', bg: 'var(--red-soft-bg)', border: 'var(--red-soft-border)', rowBg: 'var(--red-soft-bg)' },
+  all:   { label: 'ALL',   color: 'var(--muted)',  bg: 'var(--surface-2)', border: 'var(--border)',             rowBg: 'transparent' },
+  info:  { label: 'INFO',  color: 'var(--blue)',   bg: 'var(--surface-2)', border: 'var(--blue)',               rowBg: 'transparent' },
+  debug: { label: 'DEBUG', color: 'var(--subtle)',  bg: 'var(--surface-2)', border: 'var(--border)',             rowBg: 'transparent' },
+  warn:  { label: 'WARN',  color: 'var(--amber)',  bg: 'var(--amber-soft-bg)', border: 'var(--amber-soft-border)', rowBg: 'var(--amber-soft-bg)' },
+  error: { label: 'ERR',   color: 'var(--red)',    bg: 'var(--red-soft-bg)',   border: 'var(--red-soft-border)',   rowBg: 'var(--red-soft-bg)' },
 };
 
 function CopyLogsBtn({ lines }: { lines: ParsedLog[] }) {
@@ -1339,7 +1339,7 @@ function LogRow({ log }: { log: ParsedLog }) {
   const [hovered, setHovered]   = useState(false);
   const m = LOG_META[log.level];
   const hasFields = Object.keys(log.fields).length > 0;
-  const msgColor = log.level === 'error' ? '#7f1d1d' : log.level === 'warn' ? '#78350f' : log.level === 'debug' ? '#9ca3af' : 'var(--text)';
+  const msgColor = log.level === 'error' ? 'var(--red)' : log.level === 'warn' ? 'var(--amber)' : log.level === 'debug' ? 'var(--subtle)' : 'var(--text)';
 
   return (
     <div
