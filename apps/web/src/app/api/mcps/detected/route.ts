@@ -57,6 +57,8 @@ export async function GET(): Promise<NextResponse> {
         const url = v.serverUrl ?? '';
         const hasToken = !!(v.accessToken && v.accessToken.length > 0 && v.expiresAt > Date.now());
 
+        // Only include if token is valid; skip empty/expired OAuth entries
+        if (!hasToken) continue;
         // Don't duplicate if already in settings
         if (!detected.find(d => d.url === url || d.name === name)) {
           detected.push({ name, type: 'http', url, hasToken });
