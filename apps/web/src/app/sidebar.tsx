@@ -41,7 +41,7 @@ export function Sidebar({ children, mobileOpen, onMobileClose }: { children?: Re
     return () => window.removeEventListener('resize', check);
   }, []);
 
-  useEffect(() => {
+  const loadSidebarData = () => {
     fetch('/api/agents').then(r => r.json()).then(setAgents).catch(() => {});
     fetch('/api/settings').then(r => r.json()).then((s: Record<string, string>) => {
       setBranding(prev => ({
@@ -50,6 +50,13 @@ export function Sidebar({ children, mobileOpen, onMobileClose }: { children?: Re
         logoUrl: s.logoUrl ?? prev.logoUrl,
       }));
     }).catch(() => {});
+  };
+
+  useEffect(() => {
+    loadSidebarData();
+    // Poll every 5 seconds to keep sidebar in sync after mutations
+    const interval = setInterval(loadSidebarData, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   return (
