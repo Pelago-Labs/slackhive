@@ -10,6 +10,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import type { McpServer, McpServerType } from '@slackhive/shared';
+import { MCP_TEMPLATES } from '@slackhive/shared';
 import { useAuth } from '@/lib/auth-context';
 import { Plug, Library, Search, X, Check, Loader2 } from 'lucide-react';
 import { Portal } from '@/lib/portal';
@@ -930,6 +931,9 @@ function ServerRow({
   testResult?: { ok: boolean; message?: string; error?: string } | 'testing';
   canEdit: boolean;
 }) {
+  // Match against template for logo
+  const tpl = MCP_TEMPLATES.find(t => t.id === server.name || t.name.toLowerCase() === server.name.toLowerCase());
+
   const cfg = server.config as unknown as Record<string, unknown>;
   const isTs = typeof cfg.tsSource === 'string';
   const preview = server.type === 'stdio'
@@ -952,12 +956,20 @@ function ServerRow({
         onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.02)'}
         onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
       >
-        {/* Type badge */}
-        <span style={{
-          fontSize: 10.5, fontFamily: 'var(--font-mono)', fontWeight: 500,
-          background: 'var(--border)', color: 'var(--muted)',
-          padding: '2px 8px', borderRadius: 5, flexShrink: 0, letterSpacing: '0.02em',
-        }}>{isTs ? 'ts' : server.type}</span>
+        {/* Icon — template logo or type badge */}
+        {tpl?.logo ? (
+          <span style={{ width: 28, height: 28, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <img className="icon-adaptive" src={`https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/${tpl.logo}.svg`}
+              alt="" width={20} height={20} style={{ borderRadius: 3, opacity: 0.8 }}
+              onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+          </span>
+        ) : (
+          <span style={{
+            fontSize: 10.5, fontFamily: 'var(--font-mono)', fontWeight: 500,
+            background: 'var(--border)', color: 'var(--muted)',
+            padding: '2px 8px', borderRadius: 5, flexShrink: 0, letterSpacing: '0.02em',
+          }}>{isTs ? 'ts' : server.type}</span>
+        )}
 
         {/* Info */}
         <div style={{ flex: 1, minWidth: 0 }}>
