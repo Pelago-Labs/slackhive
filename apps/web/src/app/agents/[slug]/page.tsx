@@ -857,101 +857,66 @@ function InstructionsTab({ agent, canEdit }: { agent: Agent; canEdit: boolean })
 }
 
 function ClaudeMdSection({ agentId, canEdit }: { agentId: string; canEdit: boolean }) {
-  const [content, setContent] = useState<string>('');
-  const [draft, setDraft] = useState<string>('');
-  const [editing, setEditing] = useState(false);
+  const [content, setContent] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
+  const [dirty, setDirty] = useState(false);
 
-  const load = () => {
+  useEffect(() => {
     setLoading(true);
     fetch(`/api/agents/${agentId}/claude-md`)
       .then(r => r.text())
-      .then(t => { setContent(t); setDraft(t); })
-      .catch(() => setContent('Failed to load CLAUDE.md'))
+      .then(t => { setContent(t); setDirty(false); })
+      .catch(() => {})
       .finally(() => setLoading(false));
-  };
-
-  useEffect(() => { load(); }, [agentId]);
+  }, [agentId]);
 
   const save = async () => {
     setSaving(true);
     try {
       const res = await fetch(`/api/agents/${agentId}/claude-md`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'text/plain' },
-        body: draft,
+        method: 'PUT', headers: { 'Content-Type': 'text/plain' }, body: content,
       });
       if (!res.ok) throw new Error(await res.text());
-      setContent(draft);
-      setEditing(false);
-      setMsg('Saved — agent will use this on next reload.');
-      setTimeout(() => setMsg(''), 4000);
+      setDirty(false);
+      setMsg('Saved');
+      setTimeout(() => setMsg(''), 3000);
     } catch (e: any) {
       setMsg(`Error: ${e.message}`);
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
   if (loading) return <p style={{ color: 'var(--muted)', fontSize: 14 }}>Loading...</p>;
 
   return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <div>
-          <p style={{ margin: 0, fontSize: 13, color: 'var(--muted)' }}>
-            {editing ? 'Editing system prompt — defines the agent\'s core behavior.' : ''}
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {!editing && (
-            <span style={{ fontSize: 12, color: 'var(--muted)', background: 'var(--surface-2)', padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)' }}>
-              {(content.length / 1024).toFixed(1)} KB · {content.split('\n').length} lines
-            </span>
-          )}
-          {editing ? (
-            <>
-              <button onClick={() => { setEditing(false); setDraft(content); }} style={{ padding: '6px 14px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontSize: 13, cursor: 'pointer' }}>
-                Cancel
-              </button>
-              <button onClick={save} disabled={saving} style={{ padding: '6px 16px', borderRadius: 7, border: 'none', background: 'var(--accent)', color: 'var(--accent-fg)', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: saving ? 0.7 : 1 }}>
-                {saving ? 'Saving…' : 'Save'}
-              </button>
-            </>
-          ) : (
-            canEdit && <button onClick={() => setEditing(true)} style={{ padding: '6px 16px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontSize: 13, cursor: 'pointer' }}>
-              Edit
-            </button>
-          )}
-        </div>
-      </div>
-
-      {msg && <p style={{ fontSize: 13, color: msg.startsWith('Error') ? 'var(--danger)' : 'var(--success)', marginBottom: 12 }}>{msg}</p>}
-
-      {editing ? (
-        <textarea
-          value={draft}
-          onChange={e => setDraft(e.target.value)}
-          style={{
-            width: '100%', height: '70vh', background: 'var(--surface)',
-            border: '1px solid var(--accent)', borderRadius: 10,
-            padding: '20px 24px', fontSize: 12.5, lineHeight: 1.7,
-            color: 'var(--text)', fontFamily: 'var(--font-mono)',
-            resize: 'vertical', outline: 'none', boxSizing: 'border-box',
-          }}
-        />
-      ) : (
-        <pre style={{
-          background: 'var(--surface-2)', border: '1px solid var(--border)',
-          borderRadius: 10, padding: '20px 24px', fontSize: 12.5, lineHeight: 1.7,
-          overflowX: 'auto', overflowY: 'auto', maxHeight: '70vh', margin: 0,
-          whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+    <div style={{ position: 'relative' }}>
+      <textarea
+        value={content}
+        onChange={e => { setContent(e.target.value); setDirty(true); }}
+        readOnly={!canEdit}
+        placeholder="Write the agent's core instructions here — rules, workflows, response style..."
+        style={{
+          width: '100%', minHeight: 120, maxHeight: '50vh',
+          background: 'var(--surface)', border: '1px solid var(--border)',
+          borderRadius: 8, padding: '14px 16px', fontSize: 12.5, lineHeight: 1.7,
           color: 'var(--text)', fontFamily: 'var(--font-mono)',
-        }}>
-          {content}
-        </pre>
+          resize: 'vertical', outline: 'none', boxSizing: 'border-box',
+        }}
+        onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+        onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+      />
+      {(dirty || msg) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+          {canEdit && dirty && (
+            <button onClick={save} disabled={saving} style={{
+              background: 'var(--accent)', color: 'var(--accent-fg)', border: 'none',
+              borderRadius: 6, padding: '5px 14px', fontSize: 12, fontWeight: 500,
+              cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-sans)',
+            }}>{saving ? 'Saving...' : 'Save'}</button>
+          )}
+          {msg && <span style={{ fontSize: 12, color: msg.startsWith('Error') ? 'var(--red)' : 'var(--green)' }}>{msg}</span>}
+        </div>
       )}
     </div>
   );
