@@ -819,7 +819,7 @@ function InstructionsTab({ agent, canEdit }: { agent: Agent; canEdit: boolean })
           <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
             System Prompt
           </div>
-          {canEdit && (
+          {canEdit && !agent.isBoss && (
             <button onClick={runOptimize} disabled={optimizing} style={{
               display: 'inline-flex', alignItems: 'center', gap: 5,
               background: optimizing ? 'var(--surface-2)' : 'var(--surface)',
@@ -836,10 +836,21 @@ function InstructionsTab({ agent, canEdit }: { agent: Agent; canEdit: boolean })
             </button>
           )}
         </div>
-        <p style={{ fontSize: 12, color: 'var(--subtle)', margin: '0 0 10px' }}>
-          Define how this agent should behave — its rules, workflows, and response style. This is always in the agent&apos;s context.
-        </p>
-        <ClaudeMdSection agentId={agent.id} canEdit={canEdit} />
+        {agent.isBoss ? (
+          <>
+            <p style={{ fontSize: 12, color: 'var(--subtle)', margin: '0 0 10px' }}>
+              Auto-generated from your team roster. Updates automatically when agents are added or removed.
+            </p>
+            <ClaudeMdSection agentId={agent.id} canEdit={false} />
+          </>
+        ) : (
+          <>
+            <p style={{ fontSize: 12, color: 'var(--subtle)', margin: '0 0 10px' }}>
+              Define how this agent should behave — its rules, workflows, and response style. This is always in the agent&apos;s context.
+            </p>
+            <ClaudeMdSection agentId={agent.id} canEdit={canEdit} />
+          </>
+        )}
       </div>
 
       {/* ── Skills ──────────────────────────────────────────────────────── */}
