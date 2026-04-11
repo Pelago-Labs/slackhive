@@ -1313,6 +1313,27 @@ const LOG_META: Record<LogLevel, { label: string; color: string; bg: string; bor
   error: { label: 'ERR',   color: '#991b1b', bg: 'var(--red-soft-bg)', border: 'var(--red-soft-border)', rowBg: 'var(--red-soft-bg)' },
 };
 
+function CopyLogsBtn({ lines }: { lines: ParsedLog[] }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    const text = lines.map(l => {
+      const fields = Object.entries(l.fields).map(([k, v]) => `${k}=${v}`).join(' ');
+      return `${l.time} [${l.level.toUpperCase()}] ${l.message}${fields ? ' ' + fields : ''}`;
+    }).join('\n');
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+  return (
+    <button onClick={copy} disabled={lines.length === 0} style={{
+      background: 'none', border: 'none', cursor: lines.length ? 'pointer' : 'default',
+      fontSize: 11, color: copied ? '#16a34a' : 'var(--subtle)', fontFamily: 'var(--font-sans)',
+      opacity: lines.length ? 1 : 0.4,
+    }}>{copied ? 'Copied!' : 'Copy'}</button>
+  );
+}
+
 function LogRow({ log }: { log: ParsedLog }) {
   const [expanded, setExpanded] = useState(false);
   const [hovered, setHovered]   = useState(false);
@@ -1464,10 +1485,13 @@ function LogsTab({ agentId, slug }: { agentId: string; slug: string }) {
             fontSize: 11, fontFamily: 'var(--font-mono)', background: 'transparent',
             color: 'var(--text)', outline: 'none', width: 180,
           }} />
-        <button onClick={() => setLines([])} style={{
-          marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer',
-          fontSize: 11, color: 'var(--subtle)', fontFamily: 'var(--font-sans)',
-        }}>Clear</button>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+          <CopyLogsBtn lines={visibleLines} />
+          <button onClick={() => setLines([])} style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            fontSize: 11, color: 'var(--subtle)', fontFamily: 'var(--font-sans)',
+          }}>Clear</button>
+        </div>
       </div>
 
       {/* Log pane */}
