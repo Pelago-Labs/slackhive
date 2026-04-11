@@ -399,3 +399,24 @@ export async function getAllEnvVarValues(): Promise<Record<string, string>> {
     return result;
   }
 }
+
+// =============================================================================
+// Optimize Results (stored in settings table with namespaced key)
+// =============================================================================
+
+export async function setOptimizeResult(requestId: string, result: string): Promise<void> {
+  const id = randomUUID();
+  await getDb().query(
+    `INSERT INTO settings (key, value) VALUES ($1, $2)
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+    [`optimize:${requestId}`, result]
+  );
+}
+
+export async function getOptimizeResult(requestId: string): Promise<string | null> {
+  const r = await getDb().query(
+    'SELECT value FROM settings WHERE key = $1',
+    [`optimize:${requestId}`]
+  );
+  return r.rows.length ? r.rows[0].value as string : null;
+}

@@ -18,7 +18,7 @@ import { Portal } from '@/lib/portal';
 import { useAuth } from '@/lib/auth-context';
 import { lineDiff, type DiffLine } from '@/lib/diff';
 
-type Tab = 'overview' | 'skills' | 'claude-md' | 'tools' | 'memory' | 'logs' | 'history';
+type Tab = 'overview' | 'instructions' | 'tools' | 'memory' | 'logs' | 'history';
 
 interface AgentExportPayload {
   version: number;
@@ -28,13 +28,12 @@ interface AgentExportPayload {
 }
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'overview',     label: 'Overview'     },
-  { id: 'skills',       label: 'Skills'       },
-  { id: 'claude-md',    label: 'System Prompt' },
-  { id: 'tools',        label: 'Tools'         },
-  { id: 'memory',       label: 'Memory'       },
-  { id: 'logs',         label: 'Logs'         },
-  { id: 'history',      label: 'History'      },
+  { id: 'overview',      label: 'Overview'      },
+  { id: 'instructions',  label: 'Instructions'  },
+  { id: 'tools',         label: 'Tools'         },
+  { id: 'memory',        label: 'Memory'        },
+  { id: 'logs',          label: 'Logs'          },
+  { id: 'history',       label: 'History'       },
 ];
 
 const STATUS_COLOR = { running: '#16a34a', stopped: 'var(--border-2)', error: '#ef4444' } as const;
@@ -325,10 +324,9 @@ export default function AgentPage({ params }: { params: Promise<{ slug: string }
 
       {/* ── Tab content ──────────────────────────────────────────────────── */}
       <div style={{ padding: '28px 36px' }}>
-        {tab === 'overview'    && <OverviewTab    agent={agent} onUpdate={setAgent} canEdit={canEdit} allAgents={allAgents} role={role} />}
-        {tab === 'skills'      && <SkillsTab      agentId={agent.id} canEdit={canEdit} />}
-        {tab === 'claude-md'   && <ClaudeMdTab    agentId={agent.id} canEdit={canEdit} />}
-        {tab === 'tools'       && <ToolsTab        agentId={agent.id} canEdit={canEdit} />}
+        {tab === 'overview'      && <OverviewTab      agent={agent} onUpdate={setAgent} canEdit={canEdit} allAgents={allAgents} role={role} />}
+        {tab === 'instructions'  && <InstructionsTab  agent={agent} canEdit={canEdit} />}
+        {tab === 'tools'         && <ToolsTab          agentId={agent.id} canEdit={canEdit} />}
         {tab === 'memory'      && <MemoryTab      agentId={agent.id} canEdit={canEdit} />}
         {tab === 'logs'        && <LogsTab        agentId={agent.id} slug={agent.slug} />}
         {tab === 'history'     && <HistoryTab     agentId={agent.id} canEdit={canEdit} />}
@@ -658,7 +656,209 @@ function OverviewTab({ agent, onUpdate, canEdit, allAgents, role }: { agent: Age
 
 // ─── CLAUDE.md viewer ─────────────────────────────────────────────────────────
 
-function ClaudeMdTab({ agentId, canEdit }: { agentId: string; canEdit: boolean }) {
+function InstructionsTab({ agent, canEdit }: { agent: Agent; canEdit: boolean }) {
+  const [optimizing, setOptimizing] = useState(false);
+  const [optimizeResult, setOptimizeResult] = useState<any>(null);
+  const [optimizeError, setOptimizeError] = useState('');
+
+  const runOptimize = async () => {
+    setOptimizing(true);
+    setOptimizeResult(null);
+    setOptimizeError('');
+    try {
+      const r = await fetch(`/api/agents/${agent.id}/optimize`, { method: 'POST' });
+      if (!r.ok) {
+        const err = await r.json();
+        setOptimizeError(err.error || 'Failed to start optimization');
+        setOptimizing(false);
+        return;
+      }
+      const { requestId } = await r.json();
+
+      // Poll for result
+      for (let i = 0; i < 60; i++) {
+        await new Promise(res => setTimeout(res, 2000));
+        const poll = await fetch(`/api/agents/${agent.id}/optimize?requestId=${requestId}`);
+        const data = await poll.json();
+        if (data.status === 'done') {
+          setOptimizeResult(data);
+          setOptimizing(false);
+          return;
+        }
+        if (data.status === 'error') {
+          setOptimizeError(data.error || 'Optimization failed');
+          setOptimizing(false);
+          return;
+        }
+      }
+      setOptimizeError('Optimization timed out. Try again.');
+    } catch (err) {
+      setOptimizeError((err as Error).message);
+    } finally {
+      setOptimizing(false);
+    }
+  };
+
+  return (
+    <div className="fade-up">
+      {/* ── Header with Optimize button ──────────────────────────────── */}
+      {canEdit && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+          <button onClick={runOptimize} disabled={optimizing} style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            background: optimizing ? 'var(--surface-2)' : 'var(--surface)',
+            border: '1px solid var(--border)', borderRadius: 8,
+            padding: '7px 14px', fontSize: 12.5, fontWeight: 500,
+            cursor: optimizing ? 'wait' : 'pointer', fontFamily: 'var(--font-sans)',
+            color: optimizing ? 'var(--muted)' : 'var(--text)',
+          }}>
+            {optimizing ? (
+              <><span style={{ display: 'inline-block', animation: 'spin 1s linear infinite', fontSize: 14 }}>&#9881;</span> Analyzing...</>
+            ) : (
+              <><span style={{ fontSize: 14 }}>&#10024;</span> Optimize</>
+            )}
+          </button>
+        </div>
+      )}
+
+      {/* ── Optimize error ───────────────────────────────────────────── */}
+      {optimizeError && (
+        <div style={{
+          background: 'var(--red-soft-bg)', border: '1px solid var(--red-soft-border)',
+          borderRadius: 8, padding: '10px 14px', marginBottom: 16,
+          fontSize: 12.5, color: 'var(--red)',
+        }}>
+          {optimizeError}
+        </div>
+      )}
+
+      {/* ── Optimize results ─────────────────────────────────────────── */}
+      {optimizeResult && (
+        <div style={{
+          background: 'var(--surface)', border: '1px solid var(--border)',
+          borderRadius: 10, padding: '18px 20px', marginBottom: 20,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 14 }}>&#10024;</span>
+              <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>Optimization Suggestions</span>
+            </div>
+            <div style={{
+              fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 12,
+              background: optimizeResult.score >= 70 ? 'rgba(16,185,129,0.1)' : optimizeResult.score >= 40 ? 'var(--amber-soft-bg)' : 'var(--red-soft-bg)',
+              color: optimizeResult.score >= 70 ? 'var(--green)' : optimizeResult.score >= 40 ? 'var(--amber)' : 'var(--red)',
+            }}>
+              Score: {optimizeResult.score}/100
+            </div>
+          </div>
+          <p style={{ fontSize: 13, color: 'var(--muted)', margin: '0 0 14px', lineHeight: 1.5 }}>{optimizeResult.summary}</p>
+
+          {/* System prompt suggestion */}
+          {optimizeResult.systemPrompt?.suggestion && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>System Prompt</div>
+              {optimizeResult.systemPrompt.issues?.length > 0 && (
+                <ul style={{ margin: '0 0 8px', paddingLeft: 18, fontSize: 12, color: 'var(--amber)' }}>
+                  {optimizeResult.systemPrompt.issues.map((issue: string, i: number) => <li key={i}>{issue}</li>)}
+                </ul>
+              )}
+              <pre style={{
+                background: 'var(--surface-2)', border: '1px solid var(--border)',
+                borderRadius: 6, padding: '10px 12px', fontSize: 11.5, color: 'var(--text)',
+                whiteSpace: 'pre-wrap', lineHeight: 1.5, maxHeight: 200, overflow: 'auto',
+                fontFamily: 'var(--font-mono)',
+              }}>{optimizeResult.systemPrompt.suggestion}</pre>
+              <p style={{ fontSize: 11, color: 'var(--subtle)', margin: '4px 0 6px' }}>{optimizeResult.systemPrompt.explanation}</p>
+              <button onClick={async () => {
+                await fetch(`/api/agents/${agent.id}/claude-md`, { method: 'PUT', headers: { 'Content-Type': 'text/plain' }, body: optimizeResult.systemPrompt.suggestion });
+                window.location.reload();
+              }} style={{
+                fontSize: 11.5, fontWeight: 500, padding: '5px 12px', borderRadius: 6,
+                background: 'var(--accent)', color: 'var(--accent-fg)', border: 'none', cursor: 'pointer',
+                fontFamily: 'var(--font-sans)',
+              }}>Apply System Prompt</button>
+            </div>
+          )}
+
+          {/* Skill suggestions */}
+          {optimizeResult.skills?.length > 0 && (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Skills</div>
+              {optimizeResult.skills.map((s: any, i: number) => (
+                <div key={i} style={{
+                  background: 'var(--surface-2)', border: '1px solid var(--border)',
+                  borderRadius: 6, padding: '10px 12px', marginBottom: 8,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                    <span style={{
+                      fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 3,
+                      background: s.action === 'create' ? 'rgba(16,185,129,0.1)' : s.action === 'delete' ? 'var(--red-soft-bg)' : 'var(--amber-soft-bg)',
+                      color: s.action === 'create' ? 'var(--green)' : s.action === 'delete' ? 'var(--red)' : 'var(--amber)',
+                    }}>{s.action.toUpperCase()}</span>
+                    <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>{s.category}/{s.filename}</span>
+                  </div>
+                  <p style={{ fontSize: 11.5, color: 'var(--subtle)', margin: '2px 0 6px' }}>{s.explanation}</p>
+                  {s.suggestion && s.action !== 'delete' && (
+                    <button onClick={async () => {
+                      await fetch(`/api/agents/${agent.id}/skills`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ category: s.category, filename: s.filename, content: s.suggestion }),
+                      });
+                      window.location.reload();
+                    }} style={{
+                      fontSize: 11, fontWeight: 500, padding: '4px 10px', borderRadius: 5,
+                      background: 'var(--surface)', border: '1px solid var(--border)', cursor: 'pointer',
+                      fontFamily: 'var(--font-sans)', color: 'var(--text)',
+                    }}>Apply</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Tips */}
+          {optimizeResult.tips?.length > 0 && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Tips</div>
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: 'var(--muted)', lineHeight: 1.7 }}>
+                {optimizeResult.tips.map((tip: string, i: number) => <li key={i}>{tip}</li>)}
+              </ul>
+            </div>
+          )}
+
+          <button onClick={() => setOptimizeResult(null)} style={{
+            marginTop: 12, fontSize: 11, color: 'var(--subtle)', background: 'none', border: 'none',
+            cursor: 'pointer', fontFamily: 'var(--font-sans)',
+          }}>Dismiss</button>
+        </div>
+      )}
+
+      {/* ── System Prompt ───────────────────────────────────────────────── */}
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 4 }}>
+          System Prompt
+        </div>
+        <p style={{ fontSize: 12, color: 'var(--subtle)', margin: '0 0 10px' }}>
+          Define how this agent should behave — its rules, workflows, and response style. This is always in the agent&apos;s context.
+        </p>
+        <ClaudeMdSection agentId={agent.id} canEdit={canEdit} />
+      </div>
+
+      {/* ── Skills ──────────────────────────────────────────────────────── */}
+      <div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 4 }}>
+          Skills
+        </div>
+        <p style={{ fontSize: 12, color: 'var(--subtle)', margin: '0 0 10px' }}>
+          Specialized knowledge files the agent uses on demand via /commands. Add domain expertise, workflows, or reference docs.
+        </p>
+        <SkillsTab agentId={agent.id} canEdit={canEdit} />
+      </div>
+    </div>
+  );
+}
+
+function ClaudeMdSection({ agentId, canEdit }: { agentId: string; canEdit: boolean }) {
   const [content, setContent] = useState<string>('');
   const [draft, setDraft] = useState<string>('');
   const [editing, setEditing] = useState(false);

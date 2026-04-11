@@ -31,8 +31,10 @@ import {
   getAgentPermissions,
   getAgentRestrictions,
   getAgentMemories,
+  getAgentSkills,
   getAllEnvVarValues,
   updateAgentStatus,
+  setOptimizeResult,
 } from './db';
 import { compileClaudeMd, materializeMemoryFiles } from './compile-claude-md';
 import { ClaudeHandler } from './claude-handler';
@@ -336,10 +338,157 @@ export class AgentRunner {
             logger.error('Failed to reload jobs', { error: (err as Error).message })
           );
           break;
+        case 'optimize':
+          this.optimizeAgent(event.agentId, event.requestId).catch((err) =>
+            logger.error('Failed to optimize agent', { agentId: event.agentId, error: err.message })
+          );
+          break;
       }
     });
 
     logger.info('Event bus connected', { type: this.eventBus.type });
+  }
+
+  // ===========================================================================
+  // Optimize agent instructions via Claude
+  // ===========================================================================
+
+  /**
+   * Calls Claude to analyze and suggest improvements for an agent's instructions.
+   * Result is stored in the DB for the web UI to poll.
+   */
+  private async optimizeAgent(agentId: string, requestId: string): Promise<void> {
+    logger.info('Optimizing agent instructions', { agentId, requestId });
+
+    try {
+      const agent = await getAgentById(agentId);
+      if (!agent) {
+        await setOptimizeResult(requestId, JSON.stringify({ status: 'error', error: 'Agent not found' }));
+        return;
+      }
+
+      const [skills, memories] = await Promise.all([
+        getAgentSkills(agentId),
+        getAgentMemories(agentId),
+      ]);
+
+      // Build the optimization prompt
+      const skillsList = skills.map(s =>
+        `### ${s.category}/${s.filename}\n\`\`\`\n${s.content}\n\`\`\``
+      ).join('\n\n');
+
+      const optimizationPrompt = `You are an expert at writing Claude Code agent instructions for Slack-based AI agents.
+
+Review this agent's configuration and suggest concrete improvements. Return ONLY valid JSON (no markdown fences).
+
+## Agent
+Name: ${agent.name}
+Description: ${agent.description || '(none)'}
+Persona: ${agent.persona || '(none)'}
+
+## Current System Prompt
+${agent.claudeMd || '(empty — agent is using auto-generated identity from persona)'}
+
+## Current Skills (${skills.length} files)
+${skillsList || '(no skills yet)'}
+
+## Memories: ${memories.length} entries
+
+## Your Task
+Analyze the system prompt and skills. Return JSON with this exact shape:
+{
+  "score": <number 0-100>,
+  "summary": "<2-3 sentence assessment>",
+  "systemPrompt": {
+    "issues": ["<specific problem>", ...],
+    "suggestion": "<improved full system prompt text>",
+    "explanation": "<why this is better>"
+  },
+  "skills": [
+    {
+      "filename": "<existing-or-new.md>",
+      "category": "<category>",
+      "action": "improve" | "create" | "delete",
+      "currentContent": "<current content if improving, empty if creating>",
+      "suggestion": "<improved or new content>",
+      "explanation": "<why>"
+    }
+  ],
+  "tips": ["<actionable tip>", ...]
+}
+
+Guidelines:
+- Be specific — show exact improved text, not vague advice
+- If the system prompt is empty, suggest a good starting prompt based on the persona/description
+- If skills are missing, suggest 1-2 useful ones based on the agent's purpose
+- Score 0-30: needs major work, 30-60: decent but improvable, 60-80: good, 80+: excellent
+- Keep suggestions practical for a Slack bot context (concise responses, formatting for Slack)`;
+
+      // Mark as running
+      await setOptimizeResult(requestId, JSON.stringify({ status: 'running' }));
+
+      // Call Claude SDK
+      const { query } = await import('@anthropic-ai/claude-agent-sdk');
+      let fullResponse = '';
+
+      for await (const msg of query({
+        prompt: optimizationPrompt,
+        options: {
+          maxTurns: 1,
+          tools: [],
+          allowedTools: [],
+        },
+      })) {
+        // Collect text from assistant messages
+        if (msg.type === 'assistant') {
+          const content: any[] = (msg as any).message?.content ?? [];
+          for (const block of content) {
+            if (block.type === 'text') fullResponse += block.text;
+          }
+        }
+        // Also check result messages
+        if (msg.type === 'result') {
+          const resultText = (msg as any).result as string | undefined;
+          if (resultText) fullResponse = resultText;
+        }
+      }
+
+      // Parse the JSON response
+      // Try to extract JSON from the response (Claude might wrap it in markdown)
+      let jsonStr = fullResponse;
+      const fenceMatch = fullResponse.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+      if (fenceMatch) jsonStr = fenceMatch[1];
+
+      // Try to find JSON object in the response
+      const braceStart = jsonStr.indexOf('{');
+      const braceEnd = jsonStr.lastIndexOf('}');
+      if (braceStart >= 0 && braceEnd > braceStart) {
+        jsonStr = jsonStr.slice(braceStart, braceEnd + 1);
+      }
+
+      const parsed = JSON.parse(jsonStr);
+      await setOptimizeResult(requestId, JSON.stringify({ status: 'done', ...parsed }));
+      logger.info('Optimization complete', { agentId, requestId, score: parsed.score });
+
+    } catch (err) {
+      const message = (err as Error).message ?? String(err);
+      logger.error('Optimization failed', { agentId, requestId, error: message });
+
+      let userError = 'Optimization failed. ';
+      if (message.includes('401') || message.includes('auth') || message.includes('credentials')) {
+        userError += 'Claude not authenticated. Check your API key or run `claude login`.';
+      } else if (message.includes('timeout') || message.includes('ETIMEDOUT')) {
+        userError += 'Request timed out. Try again.';
+      } else if (message.includes('rate') || message.includes('429')) {
+        userError += 'Rate limited. Wait a moment and try again.';
+      } else if (message.includes('JSON')) {
+        userError += 'Claude returned an unexpected format. Try again.';
+      } else {
+        userError += message;
+      }
+
+      await setOptimizeResult(requestId, JSON.stringify({ status: 'error', error: userError }));
+    }
   }
 
   // ===========================================================================

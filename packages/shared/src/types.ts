@@ -378,8 +378,15 @@ export interface JobsReloadEvent {
   type: 'reload-jobs';
 }
 
+/** Event to trigger agent instruction optimization via Claude. */
+export interface AgentOptimizeEvent {
+  type: 'optimize';
+  agentId: string;
+  requestId: string;
+}
+
 /** Union of all lifecycle events published on Redis. */
-export type AgentEvent = AgentReloadEvent | AgentStartEvent | AgentStopEvent | JobsReloadEvent;
+export type AgentEvent = AgentReloadEvent | AgentStartEvent | AgentStopEvent | JobsReloadEvent | AgentOptimizeEvent;
 
 /** Redis channel name for agent lifecycle events. */
 export const AGENT_EVENTS_CHANNEL = 'agent:events';
