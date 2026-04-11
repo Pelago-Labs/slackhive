@@ -1073,7 +1073,7 @@ export async function createSnapshot(
          SELECT id FROM agent_snapshots
          WHERE agent_id = $1 AND trigger != 'manual'
          ORDER BY created_at DESC
-         OFFSET 10
+         LIMIT -1 OFFSET 10
        )`,
       [agentId]
     );
