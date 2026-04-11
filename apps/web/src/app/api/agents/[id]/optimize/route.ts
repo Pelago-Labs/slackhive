@@ -10,8 +10,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
-import { getAgentById, getSetting, setSetting } from '@/lib/db';
-import { getEventBus } from '@slackhive/shared';
+import { getAgentById, getSetting, setSetting, getAllSettings } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,19 +28,25 @@ export async function POST(
 
   const requestId = randomUUID();
 
-  // Store initial status
-  await setSetting(`optimize:${requestId}`, JSON.stringify({ status: 'pending' }));
-
-  // Publish optimize event to runner
-  try {
-    const bus = getEventBus();
-    await bus.publish({ type: 'optimize', agentId: id, requestId });
-  } catch (err) {
-    return NextResponse.json(
-      { error: 'Failed to reach runner. Is it running?' },
-      { status: 503 }
-    );
+  // Cancel any previous pending/running optimize requests for this agent
+  const allSettings = await getAllSettings();
+  for (const [key, value] of Object.entries(allSettings)) {
+    if (key.startsWith('optimize:')) {
+      try {
+        const data = JSON.parse(value);
+        if (data.agentId === id && (data.status === 'pending' || data.status === 'running')) {
+          await setSetting(key, JSON.stringify({ ...data, status: 'cancelled' }));
+        }
+      } catch { /* skip */ }
+    }
   }
+
+  // Store new request in DB — runner polls for pending optimize requests
+  await setSetting(`optimize:${requestId}`, JSON.stringify({
+    status: 'pending',
+    agentId: id,
+    createdAt: new Date().toISOString(),
+  }));
 
   return NextResponse.json({ requestId });
 }

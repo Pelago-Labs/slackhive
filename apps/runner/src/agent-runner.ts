@@ -35,6 +35,7 @@ import {
   getAllEnvVarValues,
   updateAgentStatus,
   setOptimizeResult,
+  getPendingOptimizeRequests,
 } from './db';
 import { compileClaudeMd, materializeMemoryFiles } from './compile-claude-md';
 import { ClaudeHandler } from './claude-handler';
@@ -71,6 +72,9 @@ export class AgentRunner {
   /** Event bus for hot-reload events (Redis or in-memory). */
   private eventBus: EventBus | null = null;
 
+  /** Timer for polling pending optimize requests from DB. */
+  private optimizePollerTimer: NodeJS.Timeout | null = null;
+
   constructor() {
     this.jobScheduler = new JobScheduler((agentId: string) => this.getRunningAgent(agentId));
   }
@@ -98,6 +102,7 @@ export class AgentRunner {
     await this.connectEventBus();
     await this.loadAllAgents();
     await this.jobScheduler.start();
+    this.startOptimizePoller();
     this.registerShutdownHandlers();
 
     logger.info('AgentRunner started', { agents: this.runningAgents.size });
@@ -110,6 +115,9 @@ export class AgentRunner {
    */
   async stop(): Promise<void> {
     logger.info('AgentRunner stopping...');
+
+    // Stop optimize poller
+    if (this.optimizePollerTimer) { clearInterval(this.optimizePollerTimer); this.optimizePollerTimer = null; }
 
     // Stop job scheduler
     await this.jobScheduler.stop();
@@ -350,6 +358,24 @@ export class AgentRunner {
   }
 
   // ===========================================================================
+  // Optimize poller — checks DB for pending requests (cross-process safe)
+  // ===========================================================================
+
+  private startOptimizePoller(): void {
+    this.optimizePollerTimer = setInterval(async () => {
+      try {
+        const pending = await getPendingOptimizeRequests();
+        for (const { requestId, agentId } of pending) {
+          logger.info('Found pending optimize request', { requestId, agentId });
+          this.optimizeAgent(agentId, requestId).catch(err =>
+            logger.error('Optimize failed', { requestId, error: err.message })
+          );
+        }
+      } catch { /* ignore poll errors */ }
+    }, 3000);
+  }
+
+  // ===========================================================================
   // Optimize agent instructions via Claude
   // ===========================================================================
 
@@ -367,106 +393,114 @@ export class AgentRunner {
         return;
       }
 
-      const [skills, memories] = await Promise.all([
+      const [skills, memories, mcpServers] = await Promise.all([
         getAgentSkills(agentId),
         getAgentMemories(agentId),
+        getAgentMcpServers(agentId),
       ]);
 
-      // Build the optimization prompt
+      // Build context
       const skillsList = skills.map(s =>
         `### ${s.category}/${s.filename}\n\`\`\`\n${s.content}\n\`\`\``
       ).join('\n\n');
 
-      const optimizationPrompt = `You are an expert at writing Claude Code agent instructions for Slack-based AI agents.
+      const mcpList = mcpServers.length > 0
+        ? mcpServers.map(m => `- **${m.name}** (${m.type}) — ${m.description || 'no description'}`).join('\n')
+        : '(none connected)';
 
-Review this agent's configuration and suggest concrete improvements. Return ONLY valid JSON (no markdown fences).
+      const optimizationPrompt = `You are an expert at optimizing Claude Code agent configurations for Slack-based AI teams.
 
-## Agent
+CRITICAL: Your entire response must be a single JSON object. No text before or after. No markdown fences. Start with { end with }.
+
+## How SlackHive agents work
+
+An agent has two types of instructions:
+
+1. **System Prompt** (CLAUDE.md) — Always in context for every conversation. Put here:
+   - Core identity and role definition
+   - Response rules and formatting guidelines
+   - Workflow steps the agent should always follow
+   - References to connected MCP tools and how to use them
+   - Channel-specific behavior rules
+
+2. **Skills** — Separate /command files the agent invokes on demand. Put here:
+   - Domain-specific knowledge (schema docs, API references)
+   - Specialized workflows for specific tasks
+   - Reference material the agent looks up when relevant
+   - NOT basic identity — that goes in the system prompt
+
+Additionally, the agent automatically gets:
+- A /recall command that reads from persistent memory files
+- Slack formatting instructions (built-in, not visible)
+- Memory save instructions (built-in, not visible)
+
+## Agent being optimized
 Name: ${agent.name}
-Description: ${agent.description || '(none)'}
-Persona: ${agent.persona || '(none)'}
+Description: ${agent.description || '(none set)'}
+Persona: ${agent.persona || '(none set)'}
+Model: ${agent.model}
+
+## Connected MCP Tools
+${mcpList}
+${mcpServers.length > 0 ? '\nThe system prompt should reference these tools and explain when/how to use them.' : ''}
 
 ## Current System Prompt
-${agent.claudeMd || '(empty — agent is using auto-generated identity from persona)'}
+${agent.claudeMd || '(empty — the agent has no custom system prompt yet)'}
 
 ## Current Skills (${skills.length} files)
-${skillsList || '(no skills yet)'}
+${skillsList || '(no skills created yet)'}
 
-## Memories: ${memories.length} entries
+## Learned Memories: ${memories.length} entries
 
-## Your Task
-Analyze the system prompt and skills. Return JSON with this exact shape:
+## Return this JSON structure:
 {
-  "score": <number 0-100>,
-  "summary": "<2-3 sentence assessment>",
+  "score": <0-100>,
+  "summary": "<2-3 sentence assessment of current state>",
   "systemPrompt": {
-    "issues": ["<specific problem>", ...],
-    "suggestion": "<improved full system prompt text>",
+    "issues": ["<specific problem>"],
+    "suggestion": "<complete improved system prompt text>",
     "explanation": "<why this is better>"
   },
   "skills": [
     {
-      "filename": "<existing-or-new.md>",
-      "category": "<category>",
+      "filename": "<name>.md",
+      "category": "00-core",
       "action": "improve" | "create" | "delete",
-      "currentContent": "<current content if improving, empty if creating>",
-      "suggestion": "<improved or new content>",
+      "suggestion": "<full content>",
       "explanation": "<why>"
     }
   ],
-  "tips": ["<actionable tip>", ...]
+  "tips": ["<actionable tip>"]
 }
 
 Guidelines:
-- Be specific — show exact improved text, not vague advice
-- If the system prompt is empty, suggest a good starting prompt based on the persona/description
-- If skills are missing, suggest 1-2 useful ones based on the agent's purpose
-- Score 0-30: needs major work, 30-60: decent but improvable, 60-80: good, 80+: excellent
-- Keep suggestions practical for a Slack bot context (concise responses, formatting for Slack)`;
+- If system prompt is empty, write a complete one based on persona/description/MCPs
+- If MCPs are connected, the system prompt MUST mention them and explain usage patterns
+- Move domain knowledge from system prompt to skills (keep system prompt focused on behavior)
+- Skills should be self-contained reference docs, not behavior rules
+- Score: 0-30 needs major work, 30-60 decent, 60-80 good, 80+ excellent
+- Keep suggestions practical for a Slack bot (concise replies, Slack markdown)
+- NEVER suggest changes to identity.md — it is auto-generated and read-only
+- Use the identity (persona/description) as context to improve OTHER skills and the system prompt`;
 
       // Mark as running
       await setOptimizeResult(requestId, JSON.stringify({ status: 'running' }));
 
-      // Call Claude SDK
-      const { query } = await import('@anthropic-ai/claude-agent-sdk');
-      let fullResponse = '';
+      // Call Claude SDK with auth retry chain
+      const fullResponse = await this.callClaudeWithRetry(optimizationPrompt);
 
-      for await (const msg of query({
-        prompt: optimizationPrompt,
-        options: {
-          maxTurns: 1,
-          tools: [],
-          allowedTools: [],
-        },
-      })) {
-        // Collect text from assistant messages
-        if (msg.type === 'assistant') {
-          const content: any[] = (msg as any).message?.content ?? [];
-          for (const block of content) {
-            if (block.type === 'text') fullResponse += block.text;
-          }
-        }
-        // Also check result messages
-        if (msg.type === 'result') {
-          const resultText = (msg as any).result as string | undefined;
-          if (resultText) fullResponse = resultText;
-        }
+      // Parse JSON from response — try multiple extraction strategies
+      let parsed: any = null;
+      const strategies = [
+        () => JSON.parse(fullResponse),                                           // Raw JSON
+        () => { const m = fullResponse.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/); return m ? JSON.parse(m[1]) : null; },  // Fenced
+        () => { const s = fullResponse.indexOf('{'); const e = fullResponse.lastIndexOf('}'); return s >= 0 && e > s ? JSON.parse(fullResponse.slice(s, e + 1)) : null; },  // Extract braces
+      ];
+      for (const strategy of strategies) {
+        try { parsed = strategy(); if (parsed) break; } catch { /* try next */ }
       }
+      if (!parsed) throw new Error('JSON_PARSE: Could not extract JSON from Claude response');
 
-      // Parse the JSON response
-      // Try to extract JSON from the response (Claude might wrap it in markdown)
-      let jsonStr = fullResponse;
-      const fenceMatch = fullResponse.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
-      if (fenceMatch) jsonStr = fenceMatch[1];
-
-      // Try to find JSON object in the response
-      const braceStart = jsonStr.indexOf('{');
-      const braceEnd = jsonStr.lastIndexOf('}');
-      if (braceStart >= 0 && braceEnd > braceStart) {
-        jsonStr = jsonStr.slice(braceStart, braceEnd + 1);
-      }
-
-      const parsed = JSON.parse(jsonStr);
       await setOptimizeResult(requestId, JSON.stringify({ status: 'done', ...parsed }));
       logger.info('Optimization complete', { agentId, requestId, score: parsed.score });
 
@@ -475,8 +509,10 @@ Guidelines:
       logger.error('Optimization failed', { agentId, requestId, error: message });
 
       let userError = 'Optimization failed. ';
-      if (message.includes('401') || message.includes('auth') || message.includes('credentials')) {
-        userError += 'Claude not authenticated. Check your API key or run `claude login`.';
+      if (message.includes('AUTH_NEEDS_LOGIN')) {
+        userError = 'Run `claude login` in your terminal, then restart SlackHive.';
+      } else if (message.includes('401') || message.includes('auth') || message.includes('credentials')) {
+        userError += 'Claude not authenticated. Run `claude login` in your terminal.';
       } else if (message.includes('timeout') || message.includes('ETIMEDOUT')) {
         userError += 'Request timed out. Try again.';
       } else if (message.includes('rate') || message.includes('429')) {
@@ -510,5 +546,84 @@ Guidelines:
 
     process.on('SIGTERM', () => shutdown('SIGTERM'));
     process.on('SIGINT', () => shutdown('SIGINT'));
+  }
+
+  // ===========================================================================
+  // Claude SDK call with auth retry chain
+  // ===========================================================================
+
+  /**
+   * Calls Claude SDK with auth retry:
+   * 1. Try SDK call
+   * 2. On auth error → sync from Keychain (macOS) → retry
+   * 3. On auth error → refresh token via OAuth endpoint → retry
+   * 4. On auth error → throw AUTH_NEEDS_LOGIN
+   */
+  private async callClaudeWithRetry(prompt: string): Promise<string> {
+    const { query } = await import('@anthropic-ai/claude-agent-sdk');
+    const os = await import('os');
+
+    const runQuery = async (): Promise<string> => {
+      let text = '';
+      for await (const msg of query({
+        prompt,
+        options: { maxTurns: 1, tools: [], allowedTools: [], permissionMode: 'acceptEdits', cwd: os.tmpdir() },
+      })) {
+        if (msg.type === 'assistant') {
+          const content: any[] = (msg as any).message?.content ?? [];
+          for (const block of content) {
+            if (block.type === 'text') text += block.text;
+          }
+        }
+        if (msg.type === 'result') {
+          const r = (msg as any).result as string | undefined;
+          if (r?.includes('authentication_error') || r?.includes('Failed to authenticate')) throw new Error(r);
+          if (r) text = r;
+        }
+      }
+      return text;
+    };
+
+    // Attempt 1: direct call
+    try {
+      return await runQuery();
+    } catch (err1) {
+      const msg1 = (err1 as Error).message ?? '';
+      if (!msg1.includes('401') && !msg1.includes('auth') && !msg1.includes('credentials')) throw err1;
+      logger.warn('SDK auth failed, trying Keychain sync...', { error: msg1.slice(0, 100) });
+    }
+
+    // Attempt 2: sync from macOS Keychain, then retry
+    try {
+      const { execSync } = await import('child_process');
+      const fs = await import('fs');
+      const path = await import('path');
+      const creds = execSync('security find-generic-password -s "Claude Code-credentials" -w', {
+        encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
+      }).trim();
+      if (creds) {
+        const credPath = path.join(process.env.HOME || '/tmp', '.claude', '.credentials.json');
+        fs.mkdirSync(path.dirname(credPath), { recursive: true });
+        fs.writeFileSync(credPath, creds, { mode: 0o600 });
+        logger.info('Synced fresh credentials from Keychain');
+        return await runQuery();
+      }
+    } catch {
+      logger.warn('Keychain sync failed or not on macOS, trying token refresh...');
+    }
+
+    // Attempt 3: refresh OAuth token, then retry
+    try {
+      const refreshed = await ClaudeHandler.refreshOAuthToken();
+      if (refreshed) {
+        logger.info('OAuth token refreshed');
+        return await runQuery();
+      }
+    } catch {
+      logger.warn('Token refresh failed');
+    }
+
+    // All retries exhausted
+    throw new Error('AUTH_NEEDS_LOGIN');
   }
 }

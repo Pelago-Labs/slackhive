@@ -109,6 +109,9 @@ body {
 }
 .status-running { animation: pulse-ring 2s ease-in-out infinite; }
 
+/* ─── Spin ──────────────────────────────────────────────────────────────────── */
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
 /* ─── Entrance ───────────────────────────────────────────────────────────────── */
 @keyframes fade-up {
   from { opacity: 0; transform: translateY(10px); }

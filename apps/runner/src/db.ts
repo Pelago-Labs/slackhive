@@ -420,3 +420,24 @@ export async function getOptimizeResult(requestId: string): Promise<string | nul
   );
   return r.rows.length ? r.rows[0].value as string : null;
 }
+
+/**
+ * Find all pending optimize requests.
+ * Returns array of { requestId, agentId }.
+ */
+export async function getPendingOptimizeRequests(): Promise<{ requestId: string; agentId: string }[]> {
+  const r = await getDb().query(
+    "SELECT key, value FROM settings WHERE key LIKE 'optimize:%'"
+  );
+  const pending: { requestId: string; agentId: string }[] = [];
+  for (const row of r.rows) {
+    try {
+      const data = JSON.parse(row.value as string);
+      if (data.status === 'pending') {
+        const requestId = (row.key as string).replace('optimize:', '');
+        pending.push({ requestId, agentId: data.agentId });
+      }
+    } catch { /* skip malformed */ }
+  }
+  return pending;
+}

@@ -751,12 +751,13 @@ function InstructionsTab({ agent, canEdit }: { agent: Agent; canEdit: boolean })
               <p style={{ fontSize: 11, color: 'var(--subtle)', margin: '4px 0 6px' }}>{optimizeResult.systemPrompt.explanation}</p>
               <button onClick={async () => {
                 await fetch(`/api/agents/${agent.id}/claude-md`, { method: 'PUT', headers: { 'Content-Type': 'text/plain' }, body: optimizeResult.systemPrompt.suggestion });
-                window.location.reload();
-              }} style={{
+                setOptimizeResult((prev: any) => ({ ...prev, systemPrompt: { ...prev.systemPrompt, applied: true } }));
+              }} disabled={optimizeResult.systemPrompt.applied} style={{
                 fontSize: 11.5, fontWeight: 500, padding: '5px 12px', borderRadius: 6,
-                background: 'var(--accent)', color: 'var(--accent-fg)', border: 'none', cursor: 'pointer',
+                background: optimizeResult.systemPrompt.applied ? 'var(--green)' : 'var(--accent)',
+                color: optimizeResult.systemPrompt.applied ? '#fff' : 'var(--accent-fg)', border: 'none', cursor: 'pointer',
                 fontFamily: 'var(--font-sans)',
-              }}>Apply System Prompt</button>
+              }}>{optimizeResult.systemPrompt.applied ? 'Applied' : 'Apply System Prompt'}</button>
             </div>
           )}
 
@@ -778,18 +779,22 @@ function InstructionsTab({ agent, canEdit }: { agent: Agent; canEdit: boolean })
                     <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>{s.category}/{s.filename}</span>
                   </div>
                   <p style={{ fontSize: 11.5, color: 'var(--subtle)', margin: '2px 0 6px' }}>{s.explanation}</p>
-                  {s.suggestion && s.action !== 'delete' && (
+                  {s.suggestion && s.action !== 'delete' && s.filename !== 'identity.md' && (
                     <button onClick={async () => {
                       await fetch(`/api/agents/${agent.id}/skills`, {
                         method: 'POST', headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ category: s.category, filename: s.filename, content: s.suggestion }),
                       });
-                      window.location.reload();
-                    }} style={{
+                      setOptimizeResult((prev: any) => ({
+                        ...prev,
+                        skills: prev.skills.map((sk: any) => sk.filename === s.filename ? { ...sk, applied: true } : sk),
+                      }));
+                    }} disabled={s.applied} style={{
                       fontSize: 11, fontWeight: 500, padding: '4px 10px', borderRadius: 5,
-                      background: 'var(--surface)', border: '1px solid var(--border)', cursor: 'pointer',
-                      fontFamily: 'var(--font-sans)', color: 'var(--text)',
-                    }}>Apply</button>
+                      background: s.applied ? 'var(--green)' : 'var(--surface)',
+                      border: `1px solid ${s.applied ? 'var(--green)' : 'var(--border)'}`, cursor: 'pointer',
+                      fontFamily: 'var(--font-sans)', color: s.applied ? '#fff' : 'var(--text)',
+                    }}>{s.applied ? 'Applied' : 'Apply'}</button>
                   )}
                 </div>
               ))}

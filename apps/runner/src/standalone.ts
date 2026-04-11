@@ -25,6 +25,36 @@ if (!process.env.DATABASE_TYPE) {
   process.env.DATABASE_TYPE = 'sqlite';
 }
 
+// Sync Claude credentials from system Keychain to ~/.claude/.credentials.json
+// so the SDK can authenticate (same way claude CLI does)
+(async () => {
+  try {
+    const { execSync } = await import('child_process');
+    const fs = await import('fs');
+    const path = await import('path');
+    const claudeDir = path.join(process.env.HOME || '/tmp', '.claude');
+    const credPath = path.join(claudeDir, '.credentials.json');
+
+    // Try reading from OS keychain
+    let creds: string | null = null;
+    try {
+      // macOS Keychain
+      creds = execSync('security find-generic-password -s "Claude Code-credentials" -w', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    } catch {
+      try {
+        // Linux GNOME Keyring
+        creds = execSync('secret-tool lookup service "Claude Code-credentials"', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+      } catch { /* no keychain available */ }
+    }
+
+    if (creds) {
+      fs.mkdirSync(claudeDir, { recursive: true });
+      fs.writeFileSync(credPath, creds, { mode: 0o600 });
+      logger.info('Claude credentials synced from system keychain');
+    }
+  } catch { /* non-fatal */ }
+})();
+
 // Prevent a single bad agent from crashing the entire process
 process.on('uncaughtException', (err) => {
   logger.error('Uncaught exception — continuing', { error: err.message, stack: err.stack });
