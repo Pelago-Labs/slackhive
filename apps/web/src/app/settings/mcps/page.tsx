@@ -689,7 +689,7 @@ export default function McpSettingsPage() {
                             }
                           }}
                           style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 6,
+                            display: 'inline-flex', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
                             background: 'var(--accent)', color: 'var(--accent-fg)',
                             border: 'none', borderRadius: 7, padding: '8px 16px',
                             fontSize: 12.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'var(--font-sans)',
