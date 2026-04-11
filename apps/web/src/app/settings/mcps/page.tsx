@@ -949,7 +949,8 @@ function EnvEntriesEditor({
                 >
                   <option value="">— pick env var —</option>
                   {envVarKeys.map(k => <option key={k} value={k}>{k}</option>)}
-                  {envVarKeys.length === 0 && <option disabled>No env vars — add in Settings → Env Vars</option>}
+                  {entry.val && !envVarKeys.includes(entry.val) && <option value={entry.val}>{entry.val}</option>}
+                  {envVarKeys.length === 0 && !entry.val && <option disabled>No env vars — add in Settings → Env Vars</option>}
                 </select>
               )}
               {/* Remove */}
@@ -1044,7 +1045,8 @@ function HeaderEntriesEditor({
                   >
                     <option value="">— pick env var —</option>
                     {envVarKeys.map(k => <option key={k} value={k}>{k}</option>)}
-                    {envVarKeys.length === 0 && <option disabled>No env vars — add in Settings → Env Vars</option>}
+                    {entry.val && !envVarKeys.includes(entry.val) && <option value={entry.val}>{entry.val}</option>}
+                    {envVarKeys.length === 0 && !entry.val && <option disabled>No env vars — add in Settings → Env Vars</option>}
                   </select>
                 )}
                 {/* Remove */}
