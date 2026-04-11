@@ -670,19 +670,7 @@ export default function McpSettingsPage() {
                                 return;
                               }
 
-                              // Step 2: Try Claude SDK auth (Figma, etc.)
-                              const sdkRes = await fetch('/api/mcps/auth', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ mcpUrl: selectedTemplate.url, mcpName: selectedTemplate.id, templateId: selectedTemplate.id }),
-                              });
-                              const sdkData = await sdkRes.json();
-                              if (sdkData.status === 'started') {
-                                alert('A browser window should open for authentication. After authorizing, come back here and click "Add to Catalog".');
-                                return;
-                              }
-
-                              // Step 3: Fallback — open token page
+                              // Step 2: Fallback — show terminal command and open token page
                               window.open(selectedTemplate.tokenUrl || selectedTemplate.docsUrl, '_blank');
                             } catch {
                               window.open(selectedTemplate.tokenUrl || selectedTemplate.docsUrl, '_blank');
@@ -696,8 +684,19 @@ export default function McpSettingsPage() {
                           }}
                         >Connect {selectedTemplate.name}</button>
 
-                        <p style={{ fontSize: 11.5, color: 'var(--subtle)', margin: 0, lineHeight: 1.5 }}>
-                          {selectedTemplate.tokenHint ? `Or manually: ${selectedTemplate.tokenHint}` : 'Or paste an access token below'}
+                        <div style={{
+                          background: 'var(--surface)', border: '1px solid var(--border)',
+                          borderRadius: 6, padding: '8px 12px', marginTop: 2,
+                          fontFamily: 'var(--font-mono)', fontSize: 11.5, color: 'var(--muted)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        }}>
+                          <code>claude mcp add --transport http {selectedTemplate.id} {selectedTemplate.url}</code>
+                          <button onClick={() => { navigator.clipboard.writeText(`claude mcp add --transport http ${selectedTemplate.id} ${selectedTemplate.url}`); }} style={{
+                            background: 'none', border: 'none', cursor: 'pointer', color: 'var(--subtle)', fontSize: 11, fontFamily: 'var(--font-sans)', flexShrink: 0, marginLeft: 8,
+                          }}>Copy</button>
+                        </div>
+                        <p style={{ fontSize: 11, color: 'var(--subtle)', margin: '6px 0 0', lineHeight: 1.5 }}>
+                          Run this in your terminal to authenticate. Then paste the token below, or add to catalog directly if already authenticated.
                         </p>
                       </div>
 

@@ -635,62 +635,25 @@ Guidelines:
    * 4. On auth error → throw AUTH_NEEDS_LOGIN
    */
   /**
-   * Authenticates an MCP server via Claude Code SDK.
-   * The SDK has pre-registered OAuth credentials for Figma, etc.
-   * It opens the user's browser for authorization.
-   * Works on macOS and Linux with a display. On headless servers,
-   * falls back to asking user to run `claude mcp add` in terminal.
+   * Handles MCP authentication requests.
+   * The Claude SDK's query() API doesn't support interactive OAuth.
+   * Returns instructions for the user to authenticate via terminal.
    */
   private async authenticateMcp(requestId: string, mcpUrl: string, mcpName: string): Promise<void> {
-    logger.info('Authenticating MCP via SDK', { requestId, mcpName, mcpUrl });
+    logger.info('MCP auth requested', { requestId, mcpName, mcpUrl });
 
-    try {
-      await setOptimizeResult(`mcp_auth_${requestId}`, JSON.stringify({ status: 'running', mcpName }));
-
-      // Call Claude SDK with the MCP — this triggers the SDK's OAuth flow
-      const { query } = await import('@anthropic-ai/claude-agent-sdk');
-      const os = await import('os');
-
-      // Short prompt that forces the SDK to connect to the MCP
-      for await (const msg of query({
-        prompt: `List available tools from the ${mcpName} MCP server. Just list the tool names, nothing else.`,
-        options: {
-          maxTurns: 1,
-          tools: [],
-          allowedTools: [],
-          permissionMode: 'acceptEdits',
-          cwd: os.tmpdir(),
-          mcpServers: {
-            [mcpName]: { url: mcpUrl, type: 'http' } as any,
-          },
-        },
-      })) {
-        // Just consume the stream — we only care that the SDK connected (which requires auth)
-        if (msg.type === 'result') break;
-      }
-
-      // If we got here, auth succeeded — the SDK stored the token in ~/.claude/.credentials.json
-      await setOptimizeResult(`mcp_auth_${requestId}`, JSON.stringify({
-        status: 'done',
-        message: `${mcpName} authenticated successfully. Token saved.`,
-      }));
-      logger.info('MCP auth completed', { requestId, mcpName });
-
-    } catch (err) {
-      const message = (err as Error).message ?? String(err);
-      logger.error('MCP auth failed', { requestId, mcpName, error: message });
-
-      let userError: string;
-      if (message.includes('browser') || message.includes('display') || message.includes('DISPLAY')) {
-        userError = `Cannot open browser on this server. Run \`claude mcp add --transport http ${mcpName} ${mcpUrl}\` in your terminal instead.`;
-      } else if (message.includes('401') || message.includes('auth')) {
-        userError = `Authentication was cancelled or failed. Try again.`;
-      } else {
-        userError = `MCP auth failed: ${message.slice(0, 200)}`;
-      }
-
-      await setOptimizeResult(`mcp_auth_${requestId}`, JSON.stringify({ status: 'error', error: userError }));
-    }
+    const { getDb } = await import('@slackhive/shared');
+    const db = getDb();
+    await db.query(
+      `INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      [`mcp_auth:${requestId}`, JSON.stringify({
+        status: 'action_needed',
+        mcpName,
+        message: `Run this command in your terminal to authenticate ${mcpName}:`,
+        command: `claude mcp add --transport http ${mcpName} ${mcpUrl}`,
+        hint: 'After authenticating, the token is saved automatically. Then click "Add to Catalog" to use it in SlackHive.',
+      })]
+    );
   }
 
   private async callClaudeWithRetry(prompt: string): Promise<string> {
