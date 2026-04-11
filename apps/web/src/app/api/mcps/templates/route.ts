@@ -120,10 +120,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     config = {
       url: template.url,
     };
-    // For HTTP servers with auth tokens, set them as headers via envRefs
+    // For HTTP servers with auth tokens, set Authorization header via envRefs
     if (Object.keys(envRefs).length > 0) {
-      config.headers = {};
-      config.envRefs = envRefs;
+      // Map first env ref as Authorization: Bearer header
+      const firstRef = Object.entries(envRefs)[0];
+      if (firstRef) {
+        config.headers = { Authorization: 'Bearer ' };
+        config.envRefs = { Authorization: firstRef[1] };
+      }
     }
   }
 

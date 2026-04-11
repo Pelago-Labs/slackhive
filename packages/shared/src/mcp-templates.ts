@@ -94,11 +94,13 @@ export const MCP_TEMPLATES: McpTemplate[] = [
     logo: 'github',
     transport: 'http',
     url: 'https://api.githubcopilot.com/mcp/',
-    envKeys: [],
+    envKeys: [
+      { key: 'GITHUB_PERSONAL_ACCESS_TOKEN', label: 'GitHub Personal Access Token', required: true, placeholder: 'ghp_...' },
+    ],
     tags: ['git', 'code', 'pr', 'issues', 'repository'],
     official: true,
     docsUrl: 'https://github.com/github/github-mcp-server',
-    auth: 'oauth',
+    auth: 'env',
   },
   {
     id: 'gitlab',
