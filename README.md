@@ -18,6 +18,10 @@
 
 [**Documentation**](https://slackhive.mintlify.app) · [Quick Start](#-quick-start) · [Features](#-features) · [Architecture](#-architecture) · [Contributing](#-contributing)
 
+<br/>
+
+<video src="assets/slackhive_tutorial.mp4" controls width="100%"></video>
+
 </div>
 
 ---
