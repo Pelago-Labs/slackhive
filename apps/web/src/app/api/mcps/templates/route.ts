@@ -120,9 +120,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     config = {
       url: template.url,
     };
-    // For HTTP servers with auth tokens, set Authorization header via envRefs
-    if (Object.keys(envRefs).length > 0) {
-      // Map first env ref as Authorization: Bearer header
+
+    // Handle OAuth token (pasted by user)
+    const oauthToken = envValues?.['__OAUTH_ACCESS_TOKEN'];
+    if (oauthToken) {
+      const storeKey = `MCP_${template.id.toUpperCase()}_TOKEN`;
+      await setEnvVar(storeKey, oauthToken, `OAuth token for ${template.name}`);
+      config.headers = { Authorization: 'Bearer ' };
+      config.envRefs = { Authorization: storeKey };
+    } else if (Object.keys(envRefs).length > 0) {
+      // For env-based HTTP auth (e.g. GitHub PAT)
       const firstRef = Object.entries(envRefs)[0];
       if (firstRef) {
         config.headers = { Authorization: 'Bearer ' };

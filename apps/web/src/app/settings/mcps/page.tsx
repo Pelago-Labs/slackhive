@@ -125,12 +125,19 @@ export default function McpSettingsPage() {
   };
 
   const installTemplate = async (template: any) => {
-    // If template has required env vars, show the config step
-    const requiredKeys = template.envKeys.filter((k: any) => k.required);
-    if (requiredKeys.length > 0 && !selectedTemplate) {
+    // Show config step if: has env vars, is OAuth, or has optional paths
+    const needsConfig = template.auth === 'oauth' || template.envKeys.length > 0;
+    if (needsConfig && !selectedTemplate) {
       setSelectedTemplate(template);
       setTemplateEnvValues({});
       return;
+    }
+
+    // For OAuth: pass the pasted token as a special env value
+    const envValues = { ...templateEnvValues };
+    if (template.auth === 'oauth' && envValues.__oauth_token) {
+      envValues['__OAUTH_ACCESS_TOKEN'] = envValues.__oauth_token;
+      delete envValues.__oauth_token;
     }
 
     setInstallingTemplate(template.id);
@@ -138,7 +145,7 @@ export default function McpSettingsPage() {
       const r = await fetch('/api/mcps/templates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ templateId: template.id, envValues: templateEnvValues }),
+        body: JSON.stringify({ templateId: template.id, envValues }),
       });
       if (r.ok) {
         setInstalledIds(prev => new Set([...prev, template.id]));
@@ -585,43 +592,112 @@ export default function McpSettingsPage() {
             {/* Template list */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '8px 24px 24px' }}>
               {selectedTemplate ? (
-                /* Env var configuration step */
+                /* Configuration step */
                 <div style={{ padding: '16px 0' }}>
-                  <button onClick={() => setSelectedTemplate(null)} style={{
+                  <button onClick={() => { setSelectedTemplate(null); setTemplateEnvValues({}); }} style={{
                     background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)',
                     fontSize: 12, padding: 0, marginBottom: 12, fontFamily: 'var(--font-sans)',
                   }}>&larr; Back to library</button>
-                  <h3 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 600, color: 'var(--text)' }}>
-                    {selectedTemplate.logo ? <img className="icon-adaptive" src={`https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/${selectedTemplate.logo}.svg`} alt="" width={20} height={20} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 8, borderRadius: 3, opacity: 0.8 }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} /> : null}{selectedTemplate.name}
-                  </h3>
-                  <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--muted)' }}>
-                    {selectedTemplate.description}
-                  </p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {selectedTemplate.envKeys.map((env: any) => (
-                      <div key={env.key}>
+
+                  {/* Header */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                    {selectedTemplate.logo && <img className="icon-adaptive" src={`https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/${selectedTemplate.logo}.svg`} alt="" width={22} height={22} style={{ borderRadius: 3, opacity: 0.8 }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
+                    <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: 'var(--text)' }}>{selectedTemplate.name}</h3>
+                    {selectedTemplate.auth === 'oauth' && <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 4, background: 'rgba(59,130,246,0.1)', color: 'var(--blue)' }}>OAuth</span>}
+                    {selectedTemplate.auth === 'none' && <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 4, background: 'var(--surface-2)', color: 'var(--subtle)' }}>No auth</span>}
+                  </div>
+                  <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--muted)' }}>{selectedTemplate.description}</p>
+
+                  {/* Docs link */}
+                  {selectedTemplate.docsUrl && (
+                    <a href={selectedTemplate.docsUrl} target="_blank" rel="noopener noreferrer" style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12,
+                      color: 'var(--blue)', textDecoration: 'none', marginBottom: 16,
+                    }}>Setup guide &rarr;</a>
+                  )}
+
+                  {/* OAuth flow */}
+                  {selectedTemplate.auth === 'oauth' && (
+                    <div style={{
+                      background: 'var(--surface-2)', border: '1px solid var(--border)',
+                      borderRadius: 10, padding: '16px 18px', marginBottom: 16,
+                    }}>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', marginBottom: 6 }}>Connect with OAuth</div>
+                      <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 12px', lineHeight: 1.5 }}>
+                        Click below to authorize in your browser. After authorizing, copy the token and paste it here.
+                      </p>
+
+                      {/* Open OAuth link */}
+                      <a
+                        href={selectedTemplate.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 6,
+                          background: 'var(--accent)', color: 'var(--accent-fg)',
+                          border: 'none', borderRadius: 7, padding: '8px 16px',
+                          fontSize: 12.5, fontWeight: 500, textDecoration: 'none',
+                          cursor: 'pointer', fontFamily: 'var(--font-sans)',
+                        }}
+                      >Open {selectedTemplate.name} to authorize</a>
+
+                      {/* Paste token */}
+                      <div style={{ marginTop: 14 }}>
                         <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--muted)', marginBottom: 4 }}>
-                          {env.label} {env.required && <span style={{ color: '#ef4444' }}>*</span>}
+                          Paste access token
                         </label>
                         <input
                           type="password"
-                          placeholder={env.placeholder || env.key}
-                          value={templateEnvValues[env.key] || ''}
-                          onChange={e => setTemplateEnvValues(prev => ({ ...prev, [env.key]: e.target.value }))}
+                          placeholder="Paste token after authorizing..."
+                          value={templateEnvValues['__oauth_token'] || ''}
+                          onChange={e => setTemplateEnvValues(prev => ({ ...prev, __oauth_token: e.target.value }))}
                           style={{
                             width: '100%', padding: '8px 12px', borderRadius: 8,
-                            border: '1px solid var(--border)', background: 'var(--surface-2)',
+                            border: '1px solid var(--border)', background: 'var(--surface)',
                             fontSize: 13, color: 'var(--text)', fontFamily: 'var(--font-mono)',
                           }}
                         />
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  )}
+
+                  {/* Env var fields (for auth: 'env' templates) */}
+                  {selectedTemplate.auth !== 'oauth' && selectedTemplate.envKeys.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
+                      {selectedTemplate.envKeys.map((env: any) => (
+                        <div key={env.key}>
+                          <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--muted)', marginBottom: 4 }}>
+                            {env.label} {env.required && <span style={{ color: '#ef4444' }}>*</span>}
+                          </label>
+                          <input
+                            type={env.key.toLowerCase().includes('password') || env.key.toLowerCase().includes('secret') || env.key.toLowerCase().includes('token') || env.key.toLowerCase().includes('key') ? 'password' : 'text'}
+                            placeholder={env.placeholder || env.key}
+                            value={templateEnvValues[env.key] || ''}
+                            onChange={e => setTemplateEnvValues(prev => ({ ...prev, [env.key]: e.target.value }))}
+                            style={{
+                              width: '100%', padding: '8px 12px', borderRadius: 8,
+                              border: '1px solid var(--border)', background: 'var(--surface-2)',
+                              fontSize: 13, color: 'var(--text)', fontFamily: 'var(--font-mono)',
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* No auth — just add */}
+                  {selectedTemplate.auth === 'none' && selectedTemplate.envKeys.length === 0 && (
+                    <p style={{ fontSize: 12, color: 'var(--subtle)', margin: '0 0 12px' }}>
+                      No configuration needed — this tool runs locally.
+                    </p>
+                  )}
+
+                  {/* Add button */}
                   <button
                     onClick={() => installTemplate(selectedTemplate)}
                     disabled={installingTemplate === selectedTemplate.id}
                     style={{
-                      marginTop: 16, background: 'var(--accent)', color: 'var(--accent-fg)',
+                      background: 'var(--accent)', color: 'var(--accent-fg)',
                       border: 'none', borderRadius: 8, padding: '9px 24px', fontSize: 13,
                       fontWeight: 500, cursor: 'pointer', fontFamily: 'var(--font-sans)',
                       display: 'inline-flex', alignItems: 'center', gap: 6,
