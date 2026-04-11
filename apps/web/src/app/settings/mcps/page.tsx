@@ -133,15 +133,27 @@ export default function McpSettingsPage() {
 
   // ─── Template library ──────────────────────────────────────────────────────
 
+  // Detected MCPs from Claude CLI
+  const [detectedNames, setDetectedNames] = useState<Set<string>>(new Set());
+
   const loadTemplates = async () => {
     try {
-      const r = await fetch('/api/mcps/templates');
-      const data = await r.json();
+      const [templatesRes, detectedRes] = await Promise.all([
+        fetch('/api/mcps/templates'),
+        fetch('/api/mcps/detected'),
+      ]);
+      const data = await templatesRes.json();
       setTemplates(data.templates);
       setCategories(data.categories);
       // Mark already-installed servers
       const installed = new Set(servers.map(s => s.name));
       setInstalledIds(installed as Set<string>);
+      // Mark detected MCPs from Claude CLI
+      try {
+        const det = await detectedRes.json();
+        const names = new Set<string>((det.detected ?? []).map((d: any) => d.name));
+        setDetectedNames(names);
+      } catch { /* ignore */ }
     } catch { /* ignore */ }
   };
 
@@ -725,6 +737,7 @@ export default function McpSettingsPage() {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10, paddingTop: 8 }}>
                   {filteredTemplates.map(t => {
                     const isInstalled = installedIds.has(t.id);
+                    const isDetected = detectedNames.has(t.id) || detectedNames.has(t.name.toLowerCase());
                     const isInstalling = installingTemplate === t.id;
                     return (
                       <button
@@ -769,6 +782,7 @@ export default function McpSettingsPage() {
                           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 4 }}>
                             {t.name}
                             {isInstalled && <Check size={13} style={{ color: 'var(--success, #22c55e)' }} />}
+                            {!isInstalled && isDetected && <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 5px', borderRadius: 3, background: 'rgba(59,130,246,0.1)', color: 'var(--blue)' }}>CLI</span>}
                           </div>
                           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const }}>
                             {t.description}
