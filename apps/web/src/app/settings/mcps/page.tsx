@@ -622,14 +622,19 @@ export default function McpSettingsPage() {
                       background: 'var(--surface-2)', border: '1px solid var(--border)',
                       borderRadius: 10, padding: '16px 18px', marginBottom: 16,
                     }}>
-                      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', marginBottom: 6 }}>Connect with OAuth</div>
-                      <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 12px', lineHeight: 1.5 }}>
-                        Click below to authorize in your browser. After authorizing, copy the token and paste it here.
+                      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', marginBottom: 6 }}>Get access token</div>
+                      <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 4px', lineHeight: 1.5 }}>
+                        Generate a token from {selectedTemplate.name} and paste it below.
                       </p>
+                      {selectedTemplate.tokenHint && (
+                        <p style={{ fontSize: 11.5, color: 'var(--subtle)', margin: '0 0 12px', lineHeight: 1.5 }}>
+                          {selectedTemplate.tokenHint}
+                        </p>
+                      )}
 
-                      {/* Open OAuth link */}
+                      {/* Open token page */}
                       <a
-                        href={selectedTemplate.url}
+                        href={selectedTemplate.tokenUrl || selectedTemplate.docsUrl || selectedTemplate.url}
                         target="_blank"
                         rel="noopener noreferrer"
                         style={{
@@ -639,12 +644,12 @@ export default function McpSettingsPage() {
                           fontSize: 12.5, fontWeight: 500, textDecoration: 'none',
                           cursor: 'pointer', fontFamily: 'var(--font-sans)',
                         }}
-                      >Open {selectedTemplate.name} to authorize</a>
+                      >Get {selectedTemplate.name} token</a>
 
                       {/* Paste token */}
                       <div style={{ marginTop: 14 }}>
                         <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--muted)', marginBottom: 4 }}>
-                          Paste access token
+                          Paste access token <span style={{ color: '#ef4444' }}>*</span>
                         </label>
                         <input
                           type="password"

@@ -61,8 +61,12 @@ export interface McpTemplate {
   official: boolean;
   /** Link to setup documentation. */
   docsUrl?: string;
-  /** Auth method: 'oauth' (HTTP servers with OAuth flow), 'env' (needs env vars), 'none' (local tools). */
+  /** Auth method: 'oauth' (HTTP servers needing token), 'env' (needs env vars), 'none' (local tools). */
   auth?: 'oauth' | 'env' | 'none';
+  /** URL where user can generate/get their token (for oauth templates). */
+  tokenUrl?: string;
+  /** Hint for what the token looks like. */
+  tokenHint?: string;
 }
 
 export type McpCategory =
@@ -184,6 +188,8 @@ export const MCP_TEMPLATES: McpTemplate[] = [
     official: true,
     docsUrl: 'https://learning.postman.com/docs/postman-ai-agent-builder/mcp/',
     auth: 'oauth',
+    tokenUrl: 'https://go.postman.co/settings/me/api-keys',
+    tokenHint: 'Settings → API Keys → Generate',
   },
 
   // ─── Productivity ─────────────────────────────────────────────────────────
@@ -202,6 +208,8 @@ export const MCP_TEMPLATES: McpTemplate[] = [
     official: true,
     docsUrl: 'https://developers.notion.com/docs/get-started-with-mcp',
     auth: 'oauth',
+    tokenUrl: 'https://www.notion.so/profile/integrations',
+    tokenHint: 'Create an internal integration → copy the token (ntn_...)',
   },
   {
     id: 'linear',
@@ -217,6 +225,8 @@ export const MCP_TEMPLATES: McpTemplate[] = [
     official: true,
     docsUrl: 'https://linear.app/docs/mcp',
     auth: 'oauth',
+    tokenUrl: 'https://linear.app/settings/api',
+    tokenHint: 'Settings → API → Create key',
   },
   {
     id: 'asana',
@@ -232,6 +242,8 @@ export const MCP_TEMPLATES: McpTemplate[] = [
     official: true,
     docsUrl: 'https://developers.asana.com/docs/using-asanas-mcp-server',
     auth: 'oauth',
+    tokenUrl: 'https://app.asana.com/0/developer-console',
+    tokenHint: 'Developer Console → Personal Access Tokens',
   },
   {
     id: 'atlassian',
@@ -267,6 +279,8 @@ export const MCP_TEMPLATES: McpTemplate[] = [
     official: true,
     docsUrl: 'https://developer.clickup.com/docs/connect-an-ai-assistant-to-clickups-mcp-server-1',
     auth: 'oauth',
+    tokenUrl: 'https://app.clickup.com/settings/apps',
+    tokenHint: 'Settings → Apps → Generate API Token',
   },
   {
     id: 'monday',
@@ -282,6 +296,8 @@ export const MCP_TEMPLATES: McpTemplate[] = [
     official: true,
     docsUrl: 'https://monday.com/developers/apps',
     auth: 'oauth',
+    tokenUrl: 'https://monday.com/developers/apps',
+    tokenHint: 'Developers → My Access Tokens',
   },
   {
     id: 'google-drive',
@@ -316,6 +332,8 @@ export const MCP_TEMPLATES: McpTemplate[] = [
     official: true,
     docsUrl: 'https://developer.box.com/guides/mcp/',
     auth: 'oauth',
+    tokenUrl: 'https://app.box.com/developers/console',
+    tokenHint: 'Developer Console → Generate Developer Token',
   },
 
   // ─── Communication ────────────────────────────────────────────────────────
@@ -393,6 +411,8 @@ export const MCP_TEMPLATES: McpTemplate[] = [
     official: true,
     docsUrl: 'https://supabase.com/docs/guides/getting-started/byo-mcp',
     auth: 'oauth',
+    tokenUrl: 'https://supabase.com/dashboard/account/tokens',
+    tokenHint: 'Account → Access Tokens → Generate',
   },
   {
     id: 'mongodb',
@@ -468,6 +488,8 @@ export const MCP_TEMPLATES: McpTemplate[] = [
     official: true,
     docsUrl: 'https://developers.figma.com/docs/figma-mcp-server/local-server-installation/',
     auth: 'oauth',
+    tokenUrl: 'https://www.figma.com/developers/api#access-tokens',
+    tokenHint: 'Settings → Personal Access Tokens → Generate',
   },
 
   // ─── Cloud & Infrastructure ───────────────────────────────────────────────
@@ -601,6 +623,8 @@ export const MCP_TEMPLATES: McpTemplate[] = [
     official: true,
     docsUrl: 'https://www.docs.developers.amplitude.com/mcp/',
     auth: 'oauth',
+    tokenUrl: 'https://analytics.amplitude.com/settings/profile',
+    tokenHint: 'Settings → API Keys',
   },
 
   // ─── Search ───────────────────────────────────────────────────────────────
@@ -738,6 +762,8 @@ export const MCP_TEMPLATES: McpTemplate[] = [
     official: true,
     docsUrl: 'https://zapier.com/mcp',
     auth: 'oauth',
+    tokenUrl: 'https://zapier.com/mcp',
+    tokenHint: 'MCP Setup page → Get server ID',
   },
   {
     id: 'apify',
@@ -774,6 +800,8 @@ export const MCP_TEMPLATES: McpTemplate[] = [
     official: true,
     docsUrl: 'https://docs.stripe.com/mcp',
     auth: 'oauth',
+    tokenUrl: 'https://dashboard.stripe.com/apikeys',
+    tokenHint: 'Dashboard → API Keys → Secret key (sk_...)',
   },
   {
     id: 'paypal',
@@ -789,6 +817,8 @@ export const MCP_TEMPLATES: McpTemplate[] = [
     official: true,
     docsUrl: 'https://docs.paypal.ai/developer/tools/ai/mcp-quickstart',
     auth: 'oauth',
+    tokenUrl: 'https://developer.paypal.com/dashboard/applications',
+    tokenHint: 'Developer Dashboard → REST API apps → Client ID & Secret',
   },
 
   // ─── CRM & Sales ─────────────────────────────────────────────────────────
@@ -807,6 +837,8 @@ export const MCP_TEMPLATES: McpTemplate[] = [
     official: true,
     docsUrl: 'https://developer.salesforce.com/docs/einstein/genai/guide/mcp.html',
     auth: 'oauth',
+    tokenUrl: 'https://login.salesforce.com/',
+    tokenHint: 'Setup → Apps → Connected Apps → get access token',
   },
   {
     id: 'hubspot',
@@ -896,6 +928,8 @@ export const MCP_TEMPLATES: McpTemplate[] = [
     official: true,
     docsUrl: 'https://ahrefs.com/api',
     auth: 'oauth',
+    tokenUrl: 'https://app.ahrefs.com/user/api',
+    tokenHint: 'Account → API → Generate token',
   },
   {
     id: 'semrush',
@@ -911,6 +945,8 @@ export const MCP_TEMPLATES: McpTemplate[] = [
     official: true,
     docsUrl: 'https://www.semrush.com/api-analytics/',
     auth: 'oauth',
+    tokenUrl: 'https://www.semrush.com/api-analytics/',
+    tokenHint: 'API Analytics → Get API key',
   },
 
   // ─── E-Commerce ───────────────────────────────────────────────────────────
@@ -983,6 +1019,8 @@ export const MCP_TEMPLATES: McpTemplate[] = [
     official: true,
     docsUrl: 'https://learn.hex.tech/docs/develop-logic/hex-api',
     auth: 'oauth',
+    tokenUrl: 'https://app.hex.tech/settings/tokens',
+    tokenHint: 'Settings → API Tokens → Create',
   },
   {
     id: 'clay',
@@ -997,6 +1035,8 @@ export const MCP_TEMPLATES: McpTemplate[] = [
     official: true,
     docsUrl: 'https://clay.com/university',
     auth: 'oauth',
+    tokenUrl: 'https://app.clay.com/settings',
+    tokenHint: 'Settings → API → Generate key',
   },
 ];
 
