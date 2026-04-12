@@ -87,7 +87,6 @@ function rowToAgent(row: Record<string, unknown>): Agent {
     name: row.name as string,
     persona: row.persona as string | undefined,
     description: row.description as string | undefined,
-    // Slack credentials now in platform_integrations table
     model: row.model as string,
     status: row.status as AgentStatus,
     enabled: row.enabled !== false,
@@ -98,6 +97,26 @@ function rowToAgent(row: Record<string, unknown>): Agent {
     createdAt: row.created_at as Date,
     updatedAt: row.updated_at as Date,
   };
+}
+
+/** Enrich agent with platform credentials from platform_integrations table. */
+async function enrichAgentWithPlatform(agent: Agent | null): Promise<Agent | null> {
+  if (!agent) return null;
+  const d = await db();
+  const r = await d.query(
+    'SELECT credentials, bot_user_id FROM platform_integrations WHERE agent_id = $1 AND platform = $2 AND enabled = 1',
+    [agent.id, 'slack']
+  );
+  if (r.rows.length > 0) {
+    try {
+      const creds = JSON.parse(r.rows[0].credentials as string);
+      agent.slackBotToken = creds.botToken;
+      agent.slackAppToken = creds.appToken;
+      agent.slackSigningSecret = creds.signingSecret;
+      agent.slackBotUserId = r.rows[0].bot_user_id as string | undefined;
+    } catch { /* credentials not parseable */ }
+  }
+  return agent;
 }
 
 /**
@@ -177,7 +196,7 @@ export async function getAllAgents(): Promise<Agent[]> {
  */
 export async function getAgentById(id: string): Promise<Agent | null> {
   const r = await (await db()).query('SELECT * FROM agents WHERE id = $1', [id]);
-  return r.rows.length ? rowToAgent(r.rows[0]) : null;
+  return enrichAgentWithPlatform(r.rows.length ? rowToAgent(r.rows[0]) : null);
 }
 
 /**
@@ -188,7 +207,7 @@ export async function getAgentById(id: string): Promise<Agent | null> {
  */
 export async function getAgentBySlug(slug: string): Promise<Agent | null> {
   const r = await (await db()).query('SELECT * FROM agents WHERE slug = $1', [slug]);
-  return r.rows.length ? rowToAgent(r.rows[0]) : null;
+  return enrichAgentWithPlatform(r.rows.length ? rowToAgent(r.rows[0]) : null);
 }
 
 /**
