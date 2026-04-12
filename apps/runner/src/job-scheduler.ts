@@ -135,14 +135,16 @@ export class JobScheduler {
         output = '_Job completed with no output._';
       }
 
-      // Post to target via platform adapter
-      if (job.targetType === 'dm') {
-        const dmChannelId = await agent.adapter.openDm(job.targetId);
-        if (dmChannelId) {
-          await agent.adapter.postMessage(dmChannelId, output);
+      // Post to target via platform adapter (with rich formatting)
+      const targetChannelId = job.targetType === 'dm'
+        ? await agent.adapter.openDm(job.targetId)
+        : job.targetId;
+
+      if (targetChannelId) {
+        const payloads = agent.adapter.buildPayloads(output);
+        for (const payload of payloads) {
+          await agent.adapter.postPayload(targetChannelId, payload);
         }
-      } else {
-        await agent.adapter.postMessage(job.targetId, output);
       }
 
       await updateJobRun(runId, 'success', output.slice(0, 2000));
