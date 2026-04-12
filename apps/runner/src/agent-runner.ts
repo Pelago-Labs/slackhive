@@ -1122,7 +1122,15 @@ ${!isFirstIngest ? `- When this source mentions entities/concepts that already h
   "logEntry": "## [${now}] ${mode} | ${srcName}\\n- ${isFirstIngest ? 'Initial wiki created' : 'Added/updated articles'}\\n- Key topics: ..."
 }`;
 
-    const response = await this.callClaudeWithRetry(prompt);
+    let lastProgressUpdate = 0;
+    const response = await this.callClaudeWithRetry(prompt, (chars) => {
+      // Update progress every 5k chars to avoid DB hammering
+      if (chars - lastProgressUpdate > 5000) {
+        lastProgressUpdate = chars;
+        const kChars = Math.round(chars / 1000);
+        updateStatus(`Claude generating wiki for ${srcName}... (${kChars}k chars)`).catch(() => {});
+      }
+    });
     const parsed = this.parseWikiJson(response);
 
     if (!parsed) throw new Error('Could not parse Claude response');
@@ -1221,6 +1229,31 @@ ${!isFirstIngest ? `- When this source mentions entities/concepts that already h
       const fs = await import('fs');
       const path = await import('path');
       const { getAgentWorkDir } = await import('./compile-claude-md');
+
+      // Sync check: if wiki is empty/missing but DB says sources are compiled, reset all
+      const wikiDir = path.join(getAgentWorkDir(agent.slug), 'knowledge', 'wiki');
+      let wikiHasArticles = false;
+      try {
+        if (fs.existsSync(wikiDir)) {
+          const walk = (dir: string): boolean => {
+            for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+              if (e.isFile() && e.name.endsWith('.md')) return true;
+              if (e.isDirectory() && walk(path.join(dir, e.name))) return true;
+            }
+            return false;
+          };
+          wikiHasArticles = walk(wikiDir);
+        }
+      } catch { /* ok */ }
+
+      if (!wikiHasArticles) {
+        // Wiki is gone — reset all compiled sources to pending for full rebuild
+        await getDb().query(
+          "UPDATE knowledge_sources SET status = 'pending' WHERE agent_id = $1 AND status = 'compiled'",
+          [agentId]
+        );
+        logger.info('Wiki empty — reset all sources to pending', { agentId });
+      }
 
       // Check total vs pending sources
       const allR = await getDb().query('SELECT count(*) as cnt FROM knowledge_sources WHERE agent_id = $1', [agentId]);
@@ -1407,7 +1440,7 @@ Return this JSON:
     );
   }
 
-  private async callClaudeWithRetry(prompt: string): Promise<string> {
+  private async callClaudeWithRetry(prompt: string, onProgress?: (chars: number) => void): Promise<string> {
     const { query } = await import('@anthropic-ai/claude-agent-sdk');
     const os = await import('os');
 
@@ -1420,7 +1453,10 @@ Return this JSON:
         if (msg.type === 'assistant') {
           const content: any[] = (msg as any).message?.content ?? [];
           for (const block of content) {
-            if (block.type === 'text') text += block.text;
+            if (block.type === 'text') {
+              text += block.text;
+              if (onProgress) onProgress(text.length);
+            }
           }
         }
         if (msg.type === 'result') {

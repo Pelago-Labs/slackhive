@@ -17,6 +17,24 @@ async function db() {
   try { return getDb(); } catch { await initDb(); return getDb(); }
 }
 
+/**
+ * PATCH — update a source's content (file sources only).
+ */
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string; sourceId: string }> }
+): Promise<NextResponse> {
+  const { sourceId } = await params;
+  const { content } = await req.json();
+  const d = await db();
+  const wordCount = content ? content.split(/\s+/).length : 0;
+  await d.query(
+    "UPDATE knowledge_sources SET content = $1, word_count = $2, status = 'pending' WHERE id = $3",
+    [content, wordCount, sourceId]
+  );
+  return NextResponse.json({ ok: true });
+}
+
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string; sourceId: string }> }

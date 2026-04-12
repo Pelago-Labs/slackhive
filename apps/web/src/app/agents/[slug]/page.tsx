@@ -34,7 +34,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'overview',      label: 'Overview'      },
   { id: 'instructions',  label: 'Instructions'  },
   { id: 'tools',         label: 'Tools'         },
-  { id: 'knowledge',     label: 'Knowledge'     },
+  { id: 'knowledge',     label: 'Wiki'           },
   { id: 'logs',          label: 'Logs'          },
   { id: 'history',       label: 'History'       },
 ];
@@ -1737,8 +1737,11 @@ function KnowledgeTab({ agentId, canEdit }: { agentId: string; canEdit: boolean 
   const [addBranch, setAddBranch] = useState('main');
   const [addPat, setAddPat] = useState('');
   const [addContent, setAddContent] = useState('');
-  const [syncing, setSyncing] = useState<string | null>(null); // sourceId being synced
+  const [syncing, setSyncing] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [envVarKeys, setEnvVarKeys] = useState<string[]>([]);
+  const [editingSource, setEditingSource] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState('');
   const [building, setBuilding] = useState(false);
   const [buildStep, setBuildStep] = useState('');
   const [buildResult, setBuildResult] = useState<any>(null);
@@ -1824,7 +1827,25 @@ function KnowledgeTab({ agentId, canEdit }: { agentId: string; canEdit: boolean 
     load();
   };
 
+  const startEditSource = (src: any) => {
+    setEditingSource(src.id);
+    setEditContent(src.content || '');
+  };
+
+  const saveEditSource = async () => {
+    if (!editingSource) return;
+    await fetch(`/api/agents/${agentId}/knowledge/${editingSource}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: editContent }),
+    });
+    setEditingSource(null);
+    setEditContent('');
+    load();
+  };
+
   const buildWiki = async () => {
+    if (building || syncing) { setBuildError('A build is already running.'); return; }
     setBuildResult(null); setBuildError('');
     try {
       const r = await fetch(`/api/agents/${agentId}/knowledge/build`, { method: 'POST' });
@@ -1834,7 +1855,7 @@ function KnowledgeTab({ agentId, canEdit }: { agentId: string; canEdit: boolean 
   };
 
   const syncSource = async (sourceId: string) => {
-    if (building || syncing) return;
+    if (building || syncing) { setBuildError('A build is already running.'); return; }
     setSyncing(sourceId); setBuildResult(null); setBuildError('');
     try {
       const r = await fetch(`/api/agents/${agentId}/knowledge/build`, {
@@ -1862,6 +1883,7 @@ function KnowledgeTab({ agentId, canEdit }: { agentId: string; canEdit: boolean 
         <div>
           <p style={{ margin: 0, fontSize: 13, color: 'var(--muted)' }}>
             Add documents, URLs, or repos — Claude compiles them into a wiki your agent references.
+            {' '}<a href="https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', textDecoration: 'none', fontSize: 12 }}>Inspired by Karpathy's LLM Wiki</a>
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -1878,7 +1900,7 @@ function KnowledgeTab({ agentId, canEdit }: { agentId: string; canEdit: boolean 
             </button>
           )}
           {canEdit && (
-            <button onClick={() => setShowAdd(true)} style={{
+            <button onClick={() => { setShowAdd(true); fetch('/api/env-vars').then(r => r.json()).then(vars => setEnvVarKeys(vars.map((v: any) => v.key))).catch(() => {}); }} style={{
               display: 'inline-flex', alignItems: 'center', gap: 5,
               background: 'var(--accent)', color: 'var(--accent-fg)',
               border: 'none', borderRadius: 7, padding: '6px 14px',
@@ -1989,7 +2011,7 @@ function KnowledgeTab({ agentId, canEdit }: { agentId: string; canEdit: boolean 
                   </div>
                 )}
                 <textarea value={addContent} onChange={e => setAddContent(e.target.value)} placeholder="Or paste content here..."
-                  rows={4} style={{ padding: '8px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface-2)', fontSize: 13, color: 'var(--text)', fontFamily: 'var(--font-mono)', resize: 'vertical' }} />
+                  rows={addContent ? 8 : 4} style={{ padding: '8px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface-2)', fontSize: 12, color: 'var(--text)', fontFamily: 'var(--font-mono)', resize: 'vertical', lineHeight: 1.5 }} />
               </>
             )}
 
@@ -1999,8 +2021,12 @@ function KnowledgeTab({ agentId, canEdit }: { agentId: string; canEdit: boolean 
                   style={{ padding: '8px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface-2)', fontSize: 13, color: 'var(--text)', fontFamily: 'var(--font-mono)' }} />
                 <input value={addBranch} onChange={e => setAddBranch(e.target.value)} placeholder="Branch (default: main)"
                   style={{ padding: '8px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface-2)', fontSize: 13, color: 'var(--text)', fontFamily: 'var(--font-mono)' }} />
-                <input value={addPat} onChange={e => setAddPat(e.target.value)} placeholder="PAT env var key (optional, for private repos)"
-                  style={{ padding: '8px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface-2)', fontSize: 13, color: 'var(--text)', fontFamily: 'var(--font-mono)' }} />
+                <select value={addPat} onChange={e => setAddPat(e.target.value)}
+                  style={{ padding: '8px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface-2)', fontSize: 12, color: addPat ? 'var(--text)' : 'var(--subtle)', fontFamily: 'var(--font-sans)' }}>
+                  <option value="">No auth (public repo)</option>
+                  {envVarKeys.map(k => <option key={k} value={k}>{k}</option>)}
+                  {envVarKeys.length === 0 && <option disabled>No env vars — add in Settings</option>}
+                </select>
               </>
             )}
           </div>
@@ -2031,7 +2057,8 @@ function KnowledgeTab({ agentId, canEdit }: { agentId: string; canEdit: boolean 
       ) : (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
           {sources.map((src, i) => (
-            <div key={src.id} style={{
+            <React.Fragment key={src.id}>
+            <div style={{
               display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px',
               borderBottom: i < sources.length - 1 ? '1px solid var(--border)' : 'none',
             }}>
@@ -2048,6 +2075,12 @@ function KnowledgeTab({ agentId, canEdit }: { agentId: string; canEdit: boolean 
                 background: src.status === 'compiled' ? 'rgba(16,185,129,0.1)' : src.status === 'error' ? 'var(--red-soft-bg)' : 'var(--surface-2)',
                 color: src.status === 'compiled' ? 'var(--green)' : src.status === 'error' ? 'var(--red)' : 'var(--subtle)',
               }}>{src.status}</span>
+              {canEdit && src.type === 'file' && (
+                <button onClick={() => startEditSource(src)} style={{
+                  background: 'none', border: 'none', fontSize: 12, cursor: 'pointer',
+                  fontFamily: 'var(--font-sans)', opacity: 0.6, color: 'var(--text)',
+                }}>Edit</button>
+              )}
               {canEdit && src.status === 'compiled' && (
                 <button onClick={() => syncSource(src.id)} disabled={!!syncing || building} style={{
                   background: 'none', border: 'none', fontSize: 12, cursor: 'pointer',
@@ -2062,6 +2095,26 @@ function KnowledgeTab({ agentId, canEdit }: { agentId: string; canEdit: boolean 
                 }}>Delete</button>
               )}
             </div>
+            {editingSource === src.id && (
+              <div style={{ padding: '12px 16px', borderBottom: i < sources.length - 1 ? '1px solid var(--border)' : 'none', background: 'var(--surface-2)' }}>
+                <textarea value={editContent} onChange={e => setEditContent(e.target.value)}
+                  rows={10} style={{ width: '100%', padding: '8px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 12, color: 'var(--text)', fontFamily: 'var(--font-mono)', resize: 'vertical', lineHeight: 1.5 }} />
+                <div style={{ display: 'flex', gap: 8, marginTop: 8, justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 11, color: 'var(--subtle)' }}>{editContent.split(/\s+/).length.toLocaleString()} words</span>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => setEditingSource(null)} style={{
+                      background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6,
+                      padding: '5px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-sans)', color: 'var(--text)',
+                    }}>Cancel</button>
+                    <button onClick={saveEditSource} style={{
+                      background: 'var(--accent)', color: 'var(--accent-fg)', border: 'none', borderRadius: 6,
+                      padding: '5px 12px', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'var(--font-sans)',
+                    }}>Save</button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </React.Fragment>
           ))}
         </div>
       )}
