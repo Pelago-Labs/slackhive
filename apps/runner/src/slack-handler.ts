@@ -293,24 +293,13 @@ async function handleMessage(opts: HandleMessageOpts): Promise<void> {
           // Text-only assistant message — send immediately
           sentMessages.push(textContent);
 
-          // Extract code blocks for file upload, send text without them
-          const { textWithoutCode, codeBlocks } = extractCodeBlocks(textContent);
-          const displayText = codeBlocks.length > 0 ? textWithoutCode.trim() : textContent;
-
-          if (displayText) {
-            for (const payload of buildMessagePayloads(displayText, false)) {
-              await postMessageWithFallback(client, {
-                channel: channelId,
-                thread_ts: threadTs,
-                text: payload.text,
-                ...(payload.blocks && { blocks: payload.blocks }),
-              }, log);
-            }
-          }
-
-          // Upload code blocks as downloadable file snippets
-          if (codeBlocks.length > 0) {
-            await uploadCodeSnippets(client, codeBlocks, channelId, threadTs);
+          for (const payload of buildMessagePayloads(textContent, false)) {
+            await postMessageWithFallback(client, {
+              channel: channelId,
+              thread_ts: threadTs,
+              text: payload.text,
+              ...(payload.blocks && { blocks: payload.blocks }),
+            }, log);
           }
         }
       } else if (message.type === 'user') {
@@ -339,24 +328,13 @@ async function handleMessage(opts: HandleMessageOpts): Promise<void> {
           if (finalResult && !sentMessages.includes(finalResult)) {
             sentMessages.push(finalResult);
 
-            // Extract code blocks for file upload
-            const { textWithoutCode, codeBlocks } = extractCodeBlocks(finalResult);
-            const displayText = codeBlocks.length > 0 ? textWithoutCode.trim() : finalResult;
-
-            if (displayText) {
-              for (const payload of buildMessagePayloads(displayText, true)) {
-                await postMessageWithFallback(client, {
-                  channel: channelId,
-                  thread_ts: threadTs,
-                  text: payload.text,
-                  ...(payload.blocks && { blocks: payload.blocks }),
-                }, log);
-              }
-            }
-
-            // Upload code blocks as downloadable file snippets
-            if (codeBlocks.length > 0) {
-              await uploadCodeSnippets(client, codeBlocks, channelId, threadTs);
+            for (const payload of buildMessagePayloads(finalResult, true)) {
+              await postMessageWithFallback(client, {
+                channel: channelId,
+                thread_ts: threadTs,
+                text: payload.text,
+                ...(payload.blocks && { blocks: payload.blocks }),
+              }, log);
             }
           }
         }
@@ -616,64 +594,6 @@ export function buildSlackTableBlock(parsed: { headers: string[]; rows: string[]
  *
  * Ported from nlq-claude-slack-bot/src/slack-handler.ts:890
  */
-function sanitizeCodeContent(code: string): string {
-  return code.replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '');
-}
-
-/**
- * Extracts fenced code blocks from text, returning text without code blocks
- * and the extracted blocks separately.
- *
- * Ported from nlq-claude-slack-bot/src/slack-handler.ts:898
- */
-function extractCodeBlocks(text: string): { textWithoutCode: string; codeBlocks: { lang: string; code: string }[] } {
-  const codeBlocks: { lang: string; code: string }[] = [];
-  const textWithoutCode = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
-    codeBlocks.push({ lang: lang || 'sql', code: code.trim() });
-    return '';
-  });
-  return { textWithoutCode, codeBlocks };
-}
-
-/**
- * Uploads code blocks as Slack file snippets for clean copy-paste.
- * Sanitizes content to remove invisible Unicode characters.
- *
- * Ported from nlq-claude-slack-bot/src/slack-handler.ts:910
- *
- * @param client - Slack Web API client
- * @param codeBlocks - Extracted code blocks with language and content
- * @param channelId - Channel to upload to
- * @param threadTs - Thread timestamp for threading the upload
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function uploadCodeSnippets(
-  client: any,
-  codeBlocks: { lang: string; code: string }[],
-  channelId: string,
-  threadTs?: string,
-): Promise<void> {
-  for (let i = 0; i < codeBlocks.length; i++) {
-    const { lang, code } = codeBlocks[i];
-    const sanitized = sanitizeCodeContent(code);
-    const extension = lang === 'sql' ? 'sql' : (lang || 'txt');
-    const name = codeBlocks.length === 1
-      ? `query.${extension}`
-      : `query_${i + 1}.${extension}`;
-    try {
-      await client.filesUploadV2({
-        channel_id: channelId,
-        thread_ts: threadTs,
-        content: sanitized,
-        filename: name,
-        title: name,
-      });
-    } catch {
-      // Non-fatal — code is still visible inline in the message
-    }
-  }
-}
-
 // =============================================================================
 // Other helpers
 // =============================================================================
