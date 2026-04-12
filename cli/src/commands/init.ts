@@ -127,9 +127,10 @@ export async function init(opts: InitOptions): Promise<void> {
   console.log(chalk.bold.hex('#D97757')('  [1/4]') + chalk.bold(' Checking prerequisites'));
   console.log('');
 
+  const needsClone = !existsSync(dir);
   const checks = [
     { name: 'Node.js', cmd: 'node --version', errMsg: 'Node.js not found. Please install Node.js 20+ first.' },
-    { name: 'Git', cmd: 'git --version', errMsg: 'Git not found. Please install Git first.' },
+    ...(needsClone ? [{ name: 'Git', cmd: 'git --version', errMsg: 'Git not found. Install Git or download SlackHive manually.' }] : []),
   ];
 
   for (const check of checks) {
@@ -324,7 +325,7 @@ export async function init(opts: InitOptions): Promise<void> {
     if (webReady) {
       const buildSpinner = ora('  Building TypeScript...').start();
       try {
-        execSync('npm run build', { cwd: dir, stdio: 'ignore', timeout: 120000 });
+        execSync('npm run build -w packages/shared -w cli && npx tsc --project apps/runner/tsconfig.json --skipLibCheck', { cwd: dir, stdio: 'ignore', timeout: 120000 });
         buildSpinner.succeed('Build complete');
       } catch (err) {
         buildSpinner.fail('Build failed');
