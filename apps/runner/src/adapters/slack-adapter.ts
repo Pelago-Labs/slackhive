@@ -200,6 +200,27 @@ export class SlackAdapter implements PlatformAdapter {
     }
   }
 
+  async postPayload(channelId: string, payload: MessagePayload, threadId?: string): Promise<string> {
+    const opts: any = {
+      channel: channelId,
+      text: payload.text,
+      ...(threadId && { thread_ts: threadId }),
+      ...(payload.blocks && { blocks: payload.blocks }),
+    };
+    try {
+      const result = await this.app.client.chat.postMessage(opts);
+      return result.ts as string;
+    } catch (err: any) {
+      if (err?.data?.error === 'invalid_blocks' && payload.blocks) {
+        const result = await this.app.client.chat.postMessage({
+          channel: channelId, text: payload.text, ...(threadId && { thread_ts: threadId }),
+        });
+        return result.ts as string;
+      }
+      throw err;
+    }
+  }
+
   async updateMessage(channelId: string, messageId: string, text: string): Promise<void> {
     await this.app.client.chat.update({ channel: channelId, ts: messageId, text });
   }

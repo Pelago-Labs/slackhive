@@ -177,11 +177,11 @@ export class MessageHandler {
 
   // ─── Private helpers ───────────────────────────────────────────────
 
-  /** Post a message formatted for the platform. */
+  /** Post a message formatted for the platform (with rich blocks if supported). */
   private async postFormattedMessage(channelId: string, threadId: string | undefined, text: string): Promise<void> {
     const payloads = this.adapter.buildPayloads(text);
     for (const payload of payloads) {
-      await this.adapter.postMessage(channelId, payload.text, threadId);
+      await this.adapter.postPayload(channelId, payload, threadId);
     }
   }
 

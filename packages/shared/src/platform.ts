@@ -43,6 +43,9 @@ export interface PlatformAdapter {
   /** Post a message. Returns the platform message ID. */
   postMessage(channelId: string, text: string, threadId?: string): Promise<string>;
 
+  /** Post a rich payload (text + blocks). Used for formatted responses. */
+  postPayload(channelId: string, payload: MessagePayload, threadId?: string): Promise<string>;
+
   /** Update an existing message (e.g., status updates). */
   updateMessage(channelId: string, messageId: string, text: string): Promise<void>;
 
