@@ -184,8 +184,31 @@ function rowToMemory(row: Record<string, unknown>): Memory {
  * @returns {Promise<Agent[]>} All registered agents.
  */
 export async function getAllAgents(): Promise<Agent[]> {
-  const r = await (await db()).query('SELECT * FROM agents ORDER BY is_boss DESC, name ASC');
-  return r.rows.map(rowToAgent);
+  const d = await db();
+  const r = await d.query('SELECT * FROM agents ORDER BY is_boss DESC, name ASC');
+  const agents = r.rows.map(rowToAgent);
+
+  // Bulk load platform credentials for all agents
+  const pi = await d.query('SELECT agent_id, credentials, bot_user_id FROM platform_integrations WHERE platform = $1 AND enabled = 1', ['slack']);
+  const credsByAgent = new Map<string, { credentials: string; botUserId?: string }>();
+  for (const row of pi.rows) {
+    credsByAgent.set(row.agent_id as string, { credentials: row.credentials as string, botUserId: row.bot_user_id as string | undefined });
+  }
+
+  for (const agent of agents) {
+    const entry = credsByAgent.get(agent.id);
+    if (entry) {
+      try {
+        const creds = JSON.parse(entry.credentials);
+        agent.slackBotToken = creds.botToken;
+        agent.slackAppToken = creds.appToken;
+        agent.slackSigningSecret = creds.signingSecret;
+        agent.slackBotUserId = entry.botUserId;
+      } catch { /* skip */ }
+    }
+  }
+
+  return agents;
 }
 
 /**
