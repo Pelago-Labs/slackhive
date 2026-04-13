@@ -104,6 +104,7 @@ export class AgentRunner {
     logger.info('AgentRunner starting...');
 
     await this.connectEventBus();
+    await this.cleanupStaleRequests();
     await this.startInternalServer();
     await this.loadAllAgents();
     await this.jobScheduler.start();
@@ -111,6 +112,36 @@ export class AgentRunner {
     this.registerShutdownHandlers();
 
     logger.info('AgentRunner started', { agents: this.runningAgents.size });
+  }
+
+  /**
+   * On startup, mark any in-flight async requests as errored.
+   * They were running when the server stopped — they can't be resumed.
+   */
+  private async cleanupStaleRequests(): Promise<void> {
+    try {
+      const { getDb } = await import('@slackhive/shared');
+      const r = await getDb().query(
+        "SELECT key, value FROM settings WHERE key LIKE 'optimize:%' OR key LIKE 'analyze:%' OR key LIKE 'knowledge-build:%'"
+      );
+      let cleaned = 0;
+      for (const row of r.rows) {
+        const key = row.key as string;
+        try {
+          const data = JSON.parse(row.value as string);
+          if (data.status === 'pending' || data.status === 'running' || data.status === 'building') {
+            await getDb().query(
+              "UPDATE settings SET value = $1 WHERE key = $2",
+              [JSON.stringify({ ...data, status: 'error', error: 'Cancelled — server restarted' }), key]
+            );
+            cleaned++;
+          }
+        } catch { /* skip invalid rows */ }
+      }
+      if (cleaned > 0) logger.info('Cleaned up stale in-flight requests', { count: cleaned });
+    } catch (err) {
+      logger.warn('Failed to clean stale requests', { error: (err as Error).message });
+    }
   }
 
   /**
