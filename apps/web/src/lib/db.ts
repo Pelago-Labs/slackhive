@@ -264,7 +264,8 @@ export async function createAgent(req: CreateAgentRequest, createdBy = 'system')
     );
   }
 
-  return rowToAgent(r.rows[0]);
+  const agent = rowToAgent(r.rows[0]);
+  return (await enrichAgentWithPlatform(agent))!;
 }
 
 /**
@@ -307,14 +308,30 @@ export async function updateAgent(id: string, req: UpdateAgentRequest): Promise<
   if (req.isBoss !== undefined) { fields.push(`is_boss = $${idx++}`); values.push(req.isBoss); }
   if (req.reportsTo !== undefined) { fields.push(`reports_to = $${idx++}`); values.push(req.reportsTo); }
 
-  // Update platform credentials if provided
+  // Upsert platform credentials if provided
   if (req.platformCredentials) {
     const { encrypt } = await import('@slackhive/shared');
     const d = await db();
-    await d.query(
-      `UPDATE platform_integrations SET credentials = $1 WHERE agent_id = $2 AND platform = 'slack'`,
-      [encrypt(JSON.stringify(req.platformCredentials), process.env.ENV_SECRET_KEY ?? process.env.AUTH_SECRET ?? 'slackhive-default-key'), id]
+    const encrypted = encrypt(JSON.stringify(req.platformCredentials), process.env.ENV_SECRET_KEY ?? process.env.AUTH_SECRET ?? 'slackhive-default-key');
+
+    // Check if integration row exists
+    const existing = await d.query(
+      `SELECT id FROM platform_integrations WHERE agent_id = $1 AND platform = 'slack'`,
+      [id]
     );
+
+    if (existing.rows.length > 0) {
+      await d.query(
+        `UPDATE platform_integrations SET credentials = $1 WHERE agent_id = $2 AND platform = 'slack'`,
+        [encrypted, id]
+      );
+    } else {
+      await d.query(
+        `INSERT INTO platform_integrations (id, agent_id, platform, credentials)
+         VALUES ($1, $2, $3, $4)`,
+        [randomUUID(), id, 'slack', encrypted]
+      );
+    }
   }
 
   if (fields.length === 0) return getAgentById(id);

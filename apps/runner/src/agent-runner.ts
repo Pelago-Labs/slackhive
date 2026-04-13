@@ -209,7 +209,8 @@ export class AgentRunner {
     const { getPlatformIntegration, updateAgentSlackUserId } = await import('./db');
     const integration = await getPlatformIntegration(agent.id, 'slack');
     if (!integration) {
-      logger.warn('No platform integration found, skipping agent', { agent: agent.slug });
+      logger.warn('No platform integration found — agent cannot start', { agent: agent.slug });
+      await updateAgentStatus(agent.id, 'error');
       return;
     }
 
