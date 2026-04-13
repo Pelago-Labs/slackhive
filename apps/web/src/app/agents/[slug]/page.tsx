@@ -10,7 +10,7 @@
  */
 
 import React, { useEffect, useState, useRef, use } from 'react';
-import { Brain, Camera, Clock, History, Upload, Download } from 'lucide-react';
+import { Brain, Camera, Clock, History, Upload, Download, Sparkles, Wand2, ClipboardCheck } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { Agent, Skill, McpServer, Memory, Permission, Restriction, AgentSnapshot } from '@slackhive/shared';
@@ -665,6 +665,9 @@ function ClaudeMdTab({ agentId, canEdit }: { agentId: string; canEdit: boolean }
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
+  const [showImprove, setShowImprove] = useState(false);
+  const [improveInstructions, setImproveInstructions] = useState('');
+  const [improving, setImproving] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -697,6 +700,28 @@ function ClaudeMdTab({ agentId, canEdit }: { agentId: string; canEdit: boolean }
     }
   };
 
+  const improveWithAI = async () => {
+    const target = editing ? draft : content;
+    if (!target.trim()) return;
+    setImproving(true); setMsg(''); setShowImprove(false);
+    try {
+      const res = await fetch(`/api/agents/${agentId}/skills/generate`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'improve', target: 'claude-md', content: target, instructions: improveInstructions }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        setMsg(err.error ?? 'Improve failed'); return;
+      }
+      const data = await res.json();
+      const improved = data.content ?? target;
+      setDraft(improved);
+      if (!editing) setEditing(true);
+      setImproveInstructions('');
+      setMsg('Improved — review and save');
+    } catch { setMsg('Network error'); } finally { setImproving(false); }
+  };
+
   if (loading) return <p style={{ color: 'var(--muted)', fontSize: 14 }}>Loading...</p>;
 
   return (
@@ -714,9 +739,26 @@ function ClaudeMdTab({ agentId, canEdit }: { agentId: string; canEdit: boolean }
               {(content.length / 1024).toFixed(1)} KB · {content.split('\n').length} lines
             </span>
           )}
+          {canEdit && <button
+            onClick={() => setShowImprove(!showImprove)}
+            disabled={improving || (!content.trim() && !draft.trim())}
+            style={{
+              padding: '6px 14px', borderRadius: 7,
+              border: '1px solid var(--border)', background: 'var(--surface)',
+              color: showImprove ? 'var(--accent)' : 'var(--text)',
+              borderColor: showImprove ? 'var(--accent)' : 'var(--border)',
+              fontSize: 13, cursor: improving ? 'not-allowed' : 'pointer',
+              display: 'flex', alignItems: 'center', gap: 5,
+              opacity: improving ? 0.7 : 1,
+              transition: 'border-color 0.15s, color 0.15s',
+            }}
+          >
+            <Wand2 size={13} />
+            {improving ? 'Improving…' : 'Improve with AI'}
+          </button>}
           {editing ? (
             <>
-              <button onClick={() => { setEditing(false); setDraft(content); }} style={{ padding: '6px 14px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontSize: 13, cursor: 'pointer' }}>
+              <button onClick={() => { setEditing(false); setDraft(content); setShowImprove(false); }} style={{ padding: '6px 14px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontSize: 13, cursor: 'pointer' }}>
                 Cancel
               </button>
               <button onClick={save} disabled={saving} style={{ padding: '6px 16px', borderRadius: 7, border: 'none', background: 'var(--accent)', color: 'var(--accent-fg)', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: saving ? 0.7 : 1 }}>
@@ -732,6 +774,41 @@ function ClaudeMdTab({ agentId, canEdit }: { agentId: string; canEdit: boolean }
       </div>
 
       {msg && <p style={{ fontSize: 13, color: msg.startsWith('Error') ? 'var(--danger)' : 'var(--success)', marginBottom: 12 }}>{msg}</p>}
+
+      {showImprove && (
+        <div style={{
+          display: 'flex', gap: 8, marginBottom: 12, padding: '10px 14px',
+          background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8,
+        }}>
+          <input
+            type="text"
+            value={improveInstructions}
+            onChange={e => setImproveInstructions(e.target.value)}
+            placeholder="What to improve? e.g. 'add Slack formatting rules' or leave empty for general improvement"
+            onKeyDown={e => { if (e.key === 'Enter') improveWithAI(); if (e.key === 'Escape') setShowImprove(false); }}
+            autoFocus
+            style={{
+              flex: 1, background: 'var(--surface)', border: '1.5px solid var(--border)',
+              borderRadius: 6, padding: '7px 10px', color: 'var(--text)',
+              fontSize: 12, fontFamily: 'var(--font-sans)', outline: 'none',
+            }}
+            onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+            onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+          />
+          <button
+            onClick={improveWithAI}
+            disabled={improving}
+            style={{
+              background: improving ? 'var(--border)' : 'var(--accent)',
+              color: 'var(--accent-fg)', border: 'none', borderRadius: 6,
+              padding: '7px 16px', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
+              cursor: improving ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-sans)',
+            }}
+          >
+            {improving ? 'Improving…' : 'Go'}
+          </button>
+        </div>
+      )}
 
       {editing ? (
         <textarea
@@ -770,6 +847,17 @@ function SkillsTab({ agentId, canEdit }: { agentId: string; canEdit: boolean }) 
   const [msg, setMsg]           = useState('');
   const [showNew, setShowNew]   = useState(false);
   const [newSkill, setNewSkill] = useState({ category: '', filename: '', content: '' });
+  const [aiDescription, setAiDescription] = useState('');
+  const [aiGenerating, setAiGenerating]   = useState(false);
+  const [aiError, setAiError]             = useState('');
+  const [improving, setImproving]         = useState(false);
+  const [showImproveInput, setShowImproveInput] = useState(false);
+  const [improveInstructions, setImproveInstructions] = useState('');
+  const [auditing, setAuditing]           = useState(false);
+  const [auditResult, setAuditResult]     = useState<{
+    summary: string; score: number;
+    findings: { type: string; severity: string; title: string; description: string; affectedFiles: string[]; suggestion?: string; proposedContent?: string; proposedFilename?: string; proposedCategory?: string }[];
+  } | null>(null);
 
   const load = () =>
     fetch(`/api/agents/${agentId}/skills`).then(r => r.json()).then(setSkills);
@@ -804,6 +892,88 @@ function SkillsTab({ agentId, canEdit }: { agentId: string; canEdit: boolean }) 
     setShowNew(false); setNewSkill({ category: '', filename: '', content: '' }); load();
   };
 
+  const generateWithAI = async () => {
+    if (!aiDescription.trim()) return;
+    setAiGenerating(true); setAiError('');
+    try {
+      const res = await fetch(`/api/agents/${agentId}/skills/generate`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'generate', description: aiDescription }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        setAiError(err.error ?? 'Generation failed'); return;
+      }
+      const data = await res.json();
+      setNewSkill({ category: data.category ?? '00-core', filename: data.filename ?? 'new-skill.md', content: data.content ?? '' });
+    } catch { setAiError('Network error'); } finally { setAiGenerating(false); }
+  };
+
+  const improveWithAI = async () => {
+    if (!selected || !content.trim()) return;
+    setImproving(true); setMsg(''); setShowImproveInput(false);
+    try {
+      const res = await fetch(`/api/agents/${agentId}/skills/generate`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'improve', content, filename: selected.filename, instructions: improveInstructions }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        setMsg(err.error ?? 'Improve failed'); return;
+      }
+      const data = await res.json();
+      setContent(data.content ?? content);
+      setImproveInstructions('');
+      setMsg('Improved — review and save');
+    } catch { setMsg('Network error'); } finally { setImproving(false); }
+  };
+
+  const runAudit = async () => {
+    setAuditing(true); setAuditResult(null);
+    try {
+      const res = await fetch(`/api/agents/${agentId}/skills/audit`, { method: 'POST' });
+      if (!res.ok) {
+        const err = await res.json();
+        setMsg(err.error ?? 'Audit failed'); return;
+      }
+      setAuditResult(await res.json());
+    } catch { setMsg('Network error'); } finally { setAuditing(false); }
+  };
+
+  const applyFinding = async (finding: NonNullable<typeof auditResult>['findings'][0]) => {
+    if (!finding.proposedContent) return;
+    if (finding.type === 'gap' && finding.proposedFilename) {
+      // Create new skill
+      await fetch(`/api/agents/${agentId}/skills`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category: finding.proposedCategory ?? '00-core', filename: finding.proposedFilename, content: finding.proposedContent }),
+      });
+      load();
+      setAuditResult(prev => prev ? { ...prev, findings: prev.findings.filter(f => f !== finding) } : null);
+    } else if (finding.affectedFiles.length === 1) {
+      // Update existing skill — find it and update content
+      const [cat, fn] = finding.affectedFiles[0].split('/');
+      const skill = skills.find(s => s.category === cat && s.filename === fn);
+      if (skill) {
+        await fetch(`/api/agents/${agentId}/skills`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ category: skill.category, filename: skill.filename, content: finding.proposedContent, sortOrder: skill.sortOrder }),
+        });
+        load();
+        if (selected?.id === skill.id) setContent(finding.proposedContent);
+        setAuditResult(prev => prev ? { ...prev, findings: prev.findings.filter(f => f !== finding) } : null);
+      }
+    }
+  };
+
+  const applyAllFindings = async () => {
+    if (!auditResult) return;
+    const actionable = auditResult.findings.filter(f => f.proposedContent);
+    for (const f of actionable) {
+      await applyFinding(f);
+    }
+  };
+
   const grouped = skills.reduce<Record<string, Skill[]>>((acc, s) => {
     (acc[s.category] ??= []).push(s); return acc;
   }, {});
@@ -823,10 +993,25 @@ function SkillsTab({ agentId, canEdit }: { agentId: string; canEdit: boolean }) 
           <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
             Files
           </span>
-          {canEdit && <button onClick={() => setShowNew(true)} style={{
-            background: 'none', border: 'none', cursor: 'pointer',
-            fontSize: 12, color: 'var(--accent)', fontFamily: 'var(--font-sans)',
-          }}>+ New</button>}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {canEdit && skills.length > 0 && <button
+              onClick={runAudit} disabled={auditing}
+              title="AI reviews all skills together — finds duplicates, contradictions, gaps, and quality issues"
+              style={{
+                background: 'none', border: 'none', cursor: auditing ? 'not-allowed' : 'pointer',
+                fontSize: 12, color: 'var(--muted)', fontFamily: 'var(--font-sans)',
+                display: 'flex', alignItems: 'center', gap: 3,
+                opacity: auditing ? 0.6 : 1,
+              }}
+            >
+              <ClipboardCheck size={12} />
+              {auditing ? 'Auditing…' : 'Audit'}
+            </button>}
+            {canEdit && <button onClick={() => setShowNew(true)} style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              fontSize: 12, color: 'var(--accent)', fontFamily: 'var(--font-sans)',
+            }}>+ New</button>}
+          </div>
         </div>
         <div style={{ padding: '6px 6px', flex: 1, overflow: 'auto' }}>
           {Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b)).map(([cat, catSkills]) => (
@@ -892,7 +1077,27 @@ function SkillsTab({ agentId, canEdit }: { agentId: string; canEdit: boolean }) 
                 {selected.category}/{selected.filename}
               </span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                {msg && <span style={{ fontSize: 11.5, color: '#16a34a' }}>{msg}</span>}
+                {msg && <span style={{ fontSize: 11.5, color: msg.startsWith('Improved') ? 'var(--accent)' : '#16a34a' }}>{msg}</span>}
+                {canEdit && <button
+                  onClick={() => setShowImproveInput(!showImproveInput)}
+                  disabled={improving || !content.trim()}
+                  title="Improve with AI"
+                  style={{
+                    background: 'none', border: '1px solid var(--border)',
+                    borderRadius: 6, padding: '4px 10px', fontSize: 12, fontWeight: 500,
+                    cursor: improving ? 'not-allowed' : 'pointer',
+                    fontFamily: 'var(--font-sans)', color: showImproveInput ? 'var(--accent)' : 'var(--muted)',
+                    display: 'flex', alignItems: 'center', gap: 5,
+                    opacity: improving ? 0.6 : 1,
+                    borderColor: showImproveInput ? 'var(--accent)' : 'var(--border)',
+                    transition: 'border-color 0.15s, color 0.15s',
+                  }}
+                  onMouseEnter={e => { if (!improving) { (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)'; (e.currentTarget as HTMLElement).style.color = 'var(--accent)'; }}}
+                  onMouseLeave={e => { if (!showImproveInput) { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLElement).style.color = 'var(--muted)'; }}}
+                >
+                  <Wand2 size={13} />
+                  {improving ? 'Improving…' : 'Improve'}
+                </button>}
                 {canEdit && <button
                   onClick={save} disabled={saving}
                   style={{
@@ -907,6 +1112,40 @@ function SkillsTab({ agentId, canEdit }: { agentId: string; canEdit: boolean }) 
                 </button>}
               </div>
             </div>
+            {showImproveInput && (
+              <div style={{
+                display: 'flex', gap: 8, padding: '8px 16px',
+                borderBottom: '1px solid var(--border)', background: 'var(--surface-2)',
+              }}>
+                <input
+                  type="text"
+                  value={improveInstructions}
+                  onChange={e => setImproveInstructions(e.target.value)}
+                  placeholder="What to improve? e.g. 'add error handling' or leave empty for general improvement"
+                  onKeyDown={e => { if (e.key === 'Enter') improveWithAI(); if (e.key === 'Escape') setShowImproveInput(false); }}
+                  autoFocus
+                  style={{
+                    flex: 1, background: 'var(--surface)', border: '1.5px solid var(--border)',
+                    borderRadius: 6, padding: '6px 10px', color: 'var(--text)',
+                    fontSize: 12, fontFamily: 'var(--font-sans)', outline: 'none',
+                  }}
+                  onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                  onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+                />
+                <button
+                  onClick={improveWithAI}
+                  disabled={improving}
+                  style={{
+                    background: improving ? 'var(--border)' : 'var(--accent)',
+                    color: 'var(--accent-fg)', border: 'none', borderRadius: 6,
+                    padding: '6px 14px', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
+                    cursor: improving ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-sans)',
+                  }}
+                >
+                  {improving ? 'Improving…' : 'Go'}
+                </button>
+              </div>
+            )}
             <textarea
               value={content}
               onChange={e => setContent(e.target.value)}
@@ -929,16 +1168,145 @@ function SkillsTab({ agentId, canEdit }: { agentId: string; canEdit: boolean }) 
 
       {/* New skill modal */}
       {showNew && (
-        <Modal title="New Skill File" onClose={() => setShowNew(false)}>
+        <Modal title="New Skill File" onClose={() => { setShowNew(false); setAiDescription(''); setAiError(''); }}>
+          {/* AI Generate section */}
+          <div style={{
+            background: 'var(--surface-2)', border: '1px solid var(--border)',
+            borderRadius: 8, padding: 14, display: 'flex', flexDirection: 'column', gap: 10,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Sparkles size={14} style={{ color: 'var(--accent)' }} />
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>Generate with AI</span>
+            </div>
+            <textarea
+              value={aiDescription}
+              onChange={e => setAiDescription(e.target.value)}
+              placeholder="Describe the skill you want... e.g. 'A workflow for analyzing conversion funnels from Redshift with date filtering and Slack-formatted tables'"
+              rows={3}
+              style={{
+                width: '100%', background: 'var(--surface)', border: '1.5px solid var(--border)',
+                borderRadius: 'var(--radius)', padding: '10px 14px', color: 'var(--text)',
+                fontSize: 13, fontFamily: 'var(--font-sans)', outline: 'none', resize: 'vertical',
+                transition: 'border-color 0.15s',
+              }}
+              onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+              onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+            />
+            {aiError && <p style={{ margin: 0, fontSize: 12, color: '#ef4444' }}>{aiError}</p>}
+            <button
+              onClick={generateWithAI}
+              disabled={aiGenerating || !aiDescription.trim()}
+              style={{
+                background: aiGenerating || !aiDescription.trim() ? 'var(--border)' : 'var(--accent)',
+                color: 'var(--accent-fg)', border: 'none', borderRadius: 6,
+                padding: '7px 16px', fontSize: 12, fontWeight: 600,
+                cursor: aiGenerating || !aiDescription.trim() ? 'not-allowed' : 'pointer',
+                fontFamily: 'var(--font-sans)', display: 'flex', alignItems: 'center', gap: 6,
+                alignSelf: 'flex-start', transition: 'opacity 0.15s',
+              }}
+            >
+              <Sparkles size={13} />
+              {aiGenerating ? 'Generating…' : 'Generate'}
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+            <span style={{ fontSize: 11, color: 'var(--subtle)', fontWeight: 500 }}>or fill in manually</span>
+            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+          </div>
+
           <Field label="Category" value={newSkill.category}
             onChange={v => setNewSkill(s => ({ ...s, category: v }))} hint="e.g. 00-core" />
           <Field label="Filename" value={newSkill.filename}
             onChange={v => setNewSkill(s => ({ ...s, filename: v }))} hint="e.g. identity.md" />
-          <TextArea label="Content (optional)" value={newSkill.content}
-            onChange={v => setNewSkill(s => ({ ...s, content: v }))} rows={4} />
+          <TextArea label="Content" value={newSkill.content}
+            onChange={v => setNewSkill(s => ({ ...s, content: v }))} rows={6} />
           <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
             <PrimaryBtn onClick={create}>Create</PrimaryBtn>
-            <GhostBtn onClick={() => setShowNew(false)}>Cancel</GhostBtn>
+            <GhostBtn onClick={() => { setShowNew(false); setAiDescription(''); setAiError(''); }}>Cancel</GhostBtn>
+          </div>
+        </Modal>
+      )}
+
+      {/* Audit results modal */}
+      {auditResult && (
+        <Modal title="Skill Audit" onClose={() => setAuditResult(null)}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+            <div style={{
+              width: 48, height: 48, borderRadius: '50%',
+              background: auditResult.score >= 80 ? 'rgba(22,163,74,0.12)' : auditResult.score >= 50 ? 'rgba(234,179,8,0.12)' : 'rgba(239,68,68,0.12)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 18, fontWeight: 700,
+              color: auditResult.score >= 80 ? '#16a34a' : auditResult.score >= 50 ? '#ca8a04' : '#ef4444',
+            }}>
+              {auditResult.score}
+            </div>
+            <p style={{ margin: 0, fontSize: 13, color: 'var(--text)', lineHeight: 1.5, flex: 1 }}>{auditResult.summary}</p>
+          </div>
+
+          {auditResult.findings.length === 0 ? (
+            <p style={{ fontSize: 13, color: 'var(--muted)', textAlign: 'center', padding: 20 }}>No issues found.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 400, overflow: 'auto' }}>
+              {auditResult.findings.map((f, i) => (
+                <div key={i} style={{
+                  background: 'var(--surface-2)', border: '1px solid var(--border)',
+                  borderRadius: 8, padding: '10px 14px',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <span style={{
+                      fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em',
+                      padding: '2px 6px', borderRadius: 4,
+                      background: f.severity === 'high' ? 'rgba(239,68,68,0.12)' : f.severity === 'medium' ? 'rgba(234,179,8,0.12)' : 'rgba(59,130,246,0.12)',
+                      color: f.severity === 'high' ? '#ef4444' : f.severity === 'medium' ? '#ca8a04' : '#3b82f6',
+                    }}>{f.severity}</span>
+                    <span style={{
+                      fontSize: 10, fontWeight: 500, padding: '2px 6px', borderRadius: 4,
+                      background: 'var(--surface)', color: 'var(--muted)',
+                    }}>{f.type}</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{f.title}</span>
+                  </div>
+                  <p style={{ margin: '4px 0', fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>{f.description}</p>
+                  {f.affectedFiles.length > 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--subtle)', fontFamily: 'var(--font-mono)', marginBottom: 4 }}>
+                      {f.affectedFiles.join(', ')}
+                    </div>
+                  )}
+                  {f.suggestion && (
+                    <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--accent)', fontStyle: 'italic' }}>{f.suggestion}</p>
+                  )}
+                  {f.proposedContent && (
+                    <button
+                      onClick={() => applyFinding(f)}
+                      style={{
+                        marginTop: 6, background: 'var(--accent)', color: 'var(--accent-fg)',
+                        border: 'none', borderRadius: 5, padding: '4px 12px',
+                        fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-sans)',
+                      }}
+                    >
+                      {f.type === 'gap' ? 'Create Skill' : 'Apply Fix'}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+            {auditResult.findings.some(f => f.proposedContent) ? (
+              <button
+                onClick={applyAllFindings}
+                style={{
+                  background: 'var(--accent)', color: 'var(--accent-fg)',
+                  border: 'none', borderRadius: 6, padding: '6px 16px',
+                  fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-sans)',
+                }}
+              >
+                Apply All ({auditResult.findings.filter(f => f.proposedContent).length})
+              </button>
+            ) : <span />}
+            <GhostBtn onClick={() => setAuditResult(null)}>Close</GhostBtn>
           </div>
         </Modal>
       )}

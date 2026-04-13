@@ -9,6 +9,7 @@
 
 import 'dotenv/config';
 import { AgentRunner } from './agent-runner';
+import { startInternalApi } from './internal-api';
 import { logger } from './logger';
 
 /**
@@ -37,6 +38,7 @@ async function main(): Promise<void> {
 
   try {
     await runner.start();
+    startInternalApi();
   } catch (err) {
     logger.error('Failed to start AgentRunner', { error: (err as Error).message });
     process.exit(1);
