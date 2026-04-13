@@ -452,22 +452,35 @@ export function createSqliteAdapter(dbPath?: string): DbAdapter {
     const cols = db.pragma('table_info(agents)') as any[];
     const hasSlackCol = cols.some((c: any) => c.name === 'slack_bot_token');
     if (hasSlackCol) {
-      // Use SQL-level migration to avoid quoting issues
-      db.exec(`
-        INSERT OR IGNORE INTO platform_integrations (id, agent_id, platform, credentials, bot_user_id)
-        SELECT
-          lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-' || hex(randomblob(2)) || '-' || hex(randomblob(2)) || '-' || hex(randomblob(6))),
-          id,
-          'slack',
-          json_object('botToken', slack_bot_token, 'appToken', slack_app_token, 'signingSecret', slack_signing_secret),
-          slack_bot_user_id
-        FROM agents
-        WHERE slack_bot_token IS NOT NULL
-          AND length(slack_bot_token) > 0
-          AND NOT EXISTS (SELECT 1 FROM platform_integrations WHERE agent_id = agents.id AND platform = 'slack')
-      `);
+      // Read old credentials, encrypt, insert into new table
+      const { encrypt } = require('./crypto');
+      const key = process.env.ENV_SECRET_KEY ?? process.env.AUTH_SECRET ?? 'slackhive-default-key';
+
+      const agents = db.prepare(
+        `SELECT id, slack_bot_token, slack_app_token, slack_signing_secret, slack_bot_user_id
+         FROM agents
+         WHERE slack_bot_token IS NOT NULL AND length(slack_bot_token) > 0`
+      ).all() as any[];
+
+      const insertStmt = db.prepare(
+        `INSERT OR IGNORE INTO platform_integrations (id, agent_id, platform, credentials, bot_user_id)
+         VALUES (?, ?, 'slack', ?, ?)`
+      );
+
+      for (const a of agents) {
+        const credsJson = JSON.stringify({
+          botToken: a.slack_bot_token,
+          appToken: a.slack_app_token,
+          signingSecret: a.slack_signing_secret,
+        });
+        const encrypted = encrypt(credsJson, key);
+        insertStmt.run(randomUUID(), a.id, encrypted, a.slack_bot_user_id);
+      }
     }
-  } catch { /* migration optional — table may not have old columns */ }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('Platform credentials migration skipped:', (err as Error).message);
+  }
 
   // Install a custom function to generate UUIDs
   // This lets DEFAULT gen_random_uuid()-style behavior work via triggers
