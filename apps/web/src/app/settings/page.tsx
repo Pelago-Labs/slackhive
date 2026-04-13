@@ -129,11 +129,11 @@ function GeneralTab() {
       )}
 
       <Section title="Branding">
-        <Field label="App Name" hint="Displayed in the sidebar header and browser tab."
+        <Field label="App Name" hint="Displayed in the sidebar header and browser tab." maxLength={30}
           value={appName} onChange={setAppName} onBlur={() => save('appName', appName)} />
-        <Field label="Tagline" hint="Short description shown below the app name."
+        <Field label="Tagline" hint="Short description shown below the app name." maxLength={60}
           value={tagline} onChange={setTagline} onBlur={() => save('tagline', tagline)} />
-        <Field label="Logo URL" hint="URL to a square image (28×28). Leave empty for the default icon."
+        <Field label="Logo URL" hint="URL to a square image (28×28). Leave empty for the default icon." maxLength={500}
           value={logoUrl} onChange={setLogoUrl} onBlur={() => save('logoUrl', logoUrl)} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4 }}>
           <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)' }}>Preview:</div>
@@ -144,7 +144,7 @@ function GeneralTab() {
       </Section>
 
       <Section title="Dashboard">
-        <Field label="Dashboard Title" hint="Main heading on the dashboard page."
+        <Field label="Dashboard Title" hint="Main heading on the dashboard page." maxLength={80}
           value={dashboardTitle} onChange={setDashboardTitle} onBlur={() => save('dashboardTitle', dashboardTitle)} />
       </Section>
 
@@ -491,21 +491,30 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function Field({ label, value, onChange, onBlur, hint }: {
-  label: string; value: string; onChange: (v: string) => void; onBlur?: () => void; hint?: string;
+function Field({ label, value, onChange, onBlur, hint, maxLength }: {
+  label: string; value: string; onChange: (v: string) => void; onBlur?: () => void; hint?: string; maxLength?: number;
 }) {
+  const overLimit = maxLength !== undefined && value.length > maxLength;
   return (
     <div>
-      <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--muted)', marginBottom: 5 }}>{label}</label>
-      <input type="text" value={value} onChange={e => onChange(e.target.value)}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 }}>
+        <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)' }}>{label}</label>
+        {maxLength !== undefined && (
+          <span style={{ fontSize: 10, color: overLimit ? 'var(--red)' : 'var(--subtle)', fontFamily: 'var(--font-mono)' }}>
+            {value.length}/{maxLength}
+          </span>
+        )}
+      </div>
+      <input type="text" value={value} maxLength={maxLength} onChange={e => onChange(e.target.value)}
         onBlur={e => { e.currentTarget.style.borderColor = 'var(--border)'; onBlur?.(); }}
         style={{
-          width: '100%', background: 'var(--surface)', border: '1px solid var(--border)',
+          width: '100%', background: 'var(--surface)',
+          border: `1px solid ${overLimit ? 'var(--red)' : 'var(--border)'}`,
           borderRadius: 7, padding: '8px 11px', color: 'var(--text)',
           fontSize: 13, fontFamily: 'var(--font-sans)', outline: 'none',
           transition: 'border-color 0.15s', boxSizing: 'border-box',
         }}
-        onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+        onFocus={e => { if (!overLimit) e.currentTarget.style.borderColor = 'var(--accent)'; }}
       />
       {hint && <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--subtle)' }}>{hint}</p>}
     </div>
