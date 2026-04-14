@@ -307,7 +307,19 @@ Use /wiki <topic> to search it BEFORE answering questions about topics that may 
 
 The wiki contains structured articles compiled from URLs, documents, and code repositories.
 Articles have cross-references — follow links to related topics for deeper context.
-Do NOT modify wiki files — they are auto-generated. Use the information as reference.`);
+Do NOT modify wiki files — they are auto-generated. Use the information as reference.
+
+## Verify before recommending
+
+Wiki articles are compiled from sources at a point in time. Code, configs, and APIs may have changed since.
+
+When the wiki references concrete code (function names, file paths, schema columns, API endpoints, env vars):
+- Treat it as a HINT, not ground truth
+- VERIFY against the actual source (git repo, running service, current docs) before recommending changes
+- If you have git/MCP tools available, fetch the current code and compare
+- If you cannot verify, say so explicitly: "The wiki says X — verify this is still current"
+
+The wiki is a starting point for orientation, not a substitute for reading the code.`);
       }
     } catch { /* dir might not be readable */ }
   }
