@@ -18,6 +18,7 @@ import MOBILE_ENGINEER from './mobile-engineer';
 import DEVOPS_SRE from './devops-sre';
 import ML_AI_ENGINEER from './ml-ai-engineer';
 import QA_TEST_ENGINEER from './qa-test-engineer';
+import SECURITY_ENGINEER from './security-engineer';
 
 export const PERSONA_CATALOG: PersonaTemplate[] = [
   BACKEND_ENGINEER,
@@ -27,6 +28,7 @@ export const PERSONA_CATALOG: PersonaTemplate[] = [
   DEVOPS_SRE,
   ML_AI_ENGINEER,
   QA_TEST_ENGINEER,
+  SECURITY_ENGINEER,
 ];
 
 export function getPersonaById(id: string): PersonaTemplate | undefined {
