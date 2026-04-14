@@ -83,8 +83,14 @@ export async function GET(): Promise<NextResponse<ClaudeStatus>> {
     return NextResponse.json({ status: 'disconnected', source: 'none' });
   }
 
-  // 4. Check expiry
+  // 4. Check expiry — if expired, try Keychain sync first (SDK may have refreshed there)
   if (oauth.expiresAt && Date.now() > oauth.expiresAt) {
+    if (process.platform === 'darwin' && tryKeychainSync()) {
+      const refreshed = readCredentialsFile();
+      if (refreshed?.expiresAt && Date.now() < refreshed.expiresAt) {
+        return NextResponse.json({ status: 'connected', source: 'keychain', expiresAt: refreshed.expiresAt, expiresIn: formatExpiresIn(refreshed.expiresAt) });
+      }
+    }
     return NextResponse.json({
       status: 'expired',
       source,
