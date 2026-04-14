@@ -54,23 +54,36 @@ const STATUS_COLOR = { running: '#16a34a', stopped: 'var(--border-2)', error: '#
 export default function AgentPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
   const { role, canManageUsers } = useAuth();
-  // Auto-open coach when arriving from the new-agent wizard (?coach=open).
+  // Arriving from the new-agent wizard (?coach=open) lands on Overview as
+  // usual, but arms the Coach to auto-open the first time the user opens the
+  // Instructions tab. We don't pop the panel on Overview — users deserve to
+  // see their new agent before we shove a chat in their face.
   // useSearchParams is hydration-safe (returns the same value on server + client).
-  const initialCoachOpen = useSearchParams().get('coach') === 'open';
-  const [coachOpen, setCoachOpen] = useState(initialCoachOpen);
+  const coachArmedFromWizard = useSearchParams().get('coach') === 'open';
+  const [coachOpen, setCoachOpen] = useState(false);
+  const [pendingCoachOpen, setPendingCoachOpen] = useState(coachArmedFromWizard);
   const [agent, setAgent] = useState<Agent | null>(null);
   const [allAgents, setAllAgents] = useState<Agent[]>([]);
   const [canEdit, setCanEdit] = useState(false);
   const [tab, setTab] = useState<Tab>('overview');
 
   // Strip ?coach=open from the URL after the first render so refreshing
-  // the page doesn't keep reopening the panel.
+  // the page doesn't keep rearming the auto-open.
   useEffect(() => {
-    if (!initialCoachOpen) return;
+    if (!coachArmedFromWizard) return;
     const url = new URL(window.location.href);
     url.searchParams.delete('coach');
     window.history.replaceState({}, '', url.toString());
-  }, [initialCoachOpen]);
+  }, [coachArmedFromWizard]);
+
+  // When the user navigates to Instructions and Coach is armed, pop it open
+  // once, then disarm so subsequent Instructions visits stay quiet.
+  useEffect(() => {
+    if (tab === 'instructions' && pendingCoachOpen) {
+      setCoachOpen(true);
+      setPendingCoachOpen(false);
+    }
+  }, [tab, pendingCoachOpen]);
   const [loading, setLoading] = useState(true);
   const [actionMsg, setActionMsg] = useState('');
 
