@@ -29,7 +29,8 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<N
   try {
     const { id } = await params;
     const skills = await getAgentSkills(id);
-    return NextResponse.json(skills);
+    // identity.md is virtual (computed from agent fields) — exclude stored rows
+    return NextResponse.json(skills.filter(s => s.filename !== 'identity.md'));
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });
   }

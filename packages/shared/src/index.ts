@@ -17,3 +17,5 @@ export { getEventBus, setEventBus, closeEventBus } from './event-bus';
 export type { EventBus } from './event-bus';
 export { MCP_TEMPLATES, MCP_CATEGORIES, getTemplateById, getTemplatesByCategory, searchTemplates } from './mcp-templates';
 export type { McpTemplate, McpEnvKey, McpCategory } from './mcp-templates';
+export { PERSONA_CATALOG, getPersonaById, getPersonasByCategory, searchPersonas } from './personas';
+export type { PersonaTemplate, PersonaSkillSeed, PersonaCategory } from './personas';

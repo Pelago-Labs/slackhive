@@ -148,23 +148,19 @@ export async function compileClaudeMd(agent: Agent, overrideClaudeMd?: string, f
 
   const allSkills = await getAgentSkills(agent.id);
 
-  // Extract identity.md — embed its content into CLAUDE.md instead of slash command
-  const identitySkill = allSkills.find(s => s.filename === 'identity.md' || s.filename === 'identity');
-  const identityContent = identitySkill?.content;
-
-  // Skills that become slash commands (excludes identity.md)
+  // identity.md is virtual — computed from agent fields (name/persona/description), not stored as a skill
   const skills = allSkills.filter(s => s.filename !== 'identity.md' && s.filename !== 'identity');
 
   logger.info('Compiling agent workspace', {
     agent: agent.slug,
     skills: skills.length,
-    hasIdentitySkill: !!identitySkill,
+    hasIdentitySkill: false,
   });
 
   // -------------------------------------------------------------------------
   // 1. Write CLAUDE.md (identity + memory system instructions)
   // -------------------------------------------------------------------------
-  const claudeMdContent = buildClaudeMd(agent, overrideClaudeMd, formattingRules, identityContent);
+  const claudeMdContent = buildClaudeMd(agent, overrideClaudeMd, formattingRules);
   fs.writeFileSync(claudeMdPath, claudeMdContent, 'utf-8');
 
   logger.debug('CLAUDE.md written', {
@@ -271,18 +267,14 @@ export function materializeMemoryFiles(agent: Agent, memories: Memory[]): void {
  * @param {string} [formattingRules] - Platform-specific formatting rules (from adapter).
  * @returns {string} Full CLAUDE.md content.
  */
-function buildClaudeMd(agent: Agent, overrideClaudeMd?: string, formattingRules?: string, identityContent?: string): string {
+function buildClaudeMd(agent: Agent, overrideClaudeMd?: string, formattingRules?: string): string {
   const sections: string[] = [];
 
-  // 1. Identity (from identity.md skill if present, else built from name/persona/description)
-  if (identityContent?.trim()) {
-    sections.push(identityContent.trim());
-  } else {
-    const lines = [`# ${agent.name}`];
-    if (agent.persona) lines.push('', agent.persona);
-    if (agent.description) lines.push('', agent.description);
-    sections.push(lines.join('\n'));
-  }
+  // 1. Identity — always built from name/persona/description (identity.md is virtual/UI-only)
+  const lines = [`# ${agent.name}`];
+  if (agent.persona) lines.push('', agent.persona);
+  if (agent.description) lines.push('', agent.description);
+  sections.push(lines.join('\n'));
 
   // 2. System prompt / instructions (claudeMd field — Karpathy-style behavior/guardrails)
   const claudeMd = overrideClaudeMd ?? agent.claudeMd;

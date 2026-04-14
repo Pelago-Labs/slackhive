@@ -9,11 +9,13 @@
  * @module web/app/agents/[slug]
  */
 
-import React, { useEffect, useState, useRef, use } from 'react';
-import { Brain, Camera, Clock, History, Upload, Download, Wand2, Loader2, Link2, FileText, GitBranch, BookOpen, ChevronRight, ChevronDown, ArrowLeft, Folder, FolderOpen } from 'lucide-react';
+import React, { useEffect, useState, useRef, use, useMemo } from 'react';
+import { Brain, Camera, Clock, History, Upload, Download, Wand2, Loader2, Link2, FileText, GitBranch, BookOpen, ChevronRight, ChevronDown, ArrowLeft, Folder, FolderOpen, Library, X, Search, Code2, Database, Layers, Briefcase, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { Agent, Skill, McpServer, Memory, Permission, Restriction, AgentSnapshot } from '@slackhive/shared';
+import { PERSONA_CATALOG, searchPersonas } from '@slackhive/shared';
+import type { PersonaTemplate, PersonaCategory } from '@slackhive/shared';
 import { Portal } from '@/lib/portal';
 import { useAuth } from '@/lib/auth-context';
 import { lineDiff, type DiffLine } from '@/lib/diff';
@@ -62,6 +64,14 @@ export default function AgentPage({ params }: { params: Promise<{ slug: string }
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Persona library
+  const [personaLibOpen, setPersonaLibOpen] = useState(false);
+  const [libSearch, setLibSearch] = useState('');
+  const [libCategory, setLibCategory] = useState<PersonaCategory | 'all'>('all');
+  const [libSelected, setLibSelected] = useState<PersonaTemplate | null>(null);
+  const [libSkillSel, setLibSkillSel] = useState<Set<string>>(new Set());
+  const [libApplying, setLibApplying] = useState(false);
 
   useEffect(() => {
     fetch('/api/agents')
@@ -149,17 +159,18 @@ export default function AgentPage({ params }: { params: Promise<{ slug: string }
     reader.readAsText(file);
   };
 
-  const applyImport = async () => {
-    if (!agent || !importPreview) return;
+  const applyImport = async (payload?: AgentExportPayload) => {
+    const data = payload ?? importPreview;
+    if (!agent || !data) return;
     setImporting(true);
     try {
       // Update persona/description if present in the export
-      if (importPreview.persona !== undefined || importPreview.description !== undefined) {
+      if (data.persona !== undefined || data.description !== undefined) {
         await fetch(`/api/agents/${agent.id}`, {
           method: 'PATCH', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            ...(importPreview.persona !== undefined && { persona: importPreview.persona }),
-            ...(importPreview.description !== undefined && { description: importPreview.description }),
+            ...(data.persona !== undefined && { persona: data.persona }),
+            ...(data.description !== undefined && { description: data.description }),
           }),
         });
       }
@@ -167,11 +178,11 @@ export default function AgentPage({ params }: { params: Promise<{ slug: string }
       // Update system prompt
       await fetch(`/api/agents/${agent.id}/claude-md`, {
         method: 'PUT', headers: { 'Content-Type': 'text/plain' },
-        body: importPreview.claudeMd,
+        body: data.claudeMd,
       });
 
       // Upsert skills
-      await Promise.all(importPreview.skills.map(s =>
+      await Promise.all(data.skills.map(s =>
         fetch(`/api/agents/${agent.id}/skills?noSnapshot=1`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(s),
@@ -257,12 +268,12 @@ export default function AgentPage({ params }: { params: Promise<{ slug: string }
           {actionMsg && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{actionMsg}</span>}
           {importError && <span style={{ fontSize: 12, color: 'var(--danger)' }}>{importError}</span>}
 
-          {/* Export / Import icon buttons */}
+          {/* Export + Import */}
           <IconBtn title="Export config" onClick={handleExport} loading={exporting}>
             <Download size={15} />
           </IconBtn>
           {canEdit && (
-            <IconBtn title="Import config" onClick={() => fileInputRef.current?.click()}>
+            <IconBtn title="Import persona" onClick={() => setPersonaLibOpen(true)}>
               <Upload size={15} />
             </IconBtn>
           )}
@@ -326,6 +337,72 @@ export default function AgentPage({ params }: { params: Promise<{ slug: string }
             </div>
           </div>
         </Portal>
+      )}
+
+      {/* ── Persona Library modal ────────────────────────────────────────── */}
+      {personaLibOpen && agent && (
+        <PersonaLibraryModal
+          agentId={agent.id}
+          fileInputRef={fileInputRef}
+          applying={libApplying}
+          search={libSearch}
+          onSearchChange={setLibSearch}
+          category={libCategory}
+          onCategoryChange={setLibCategory}
+          selected={libSelected}
+          onSelectPersona={(p) => {
+            setLibSelected(p);
+            setLibSkillSel(new Set(p.skills.map(s => s.filename)));
+          }}
+          onBack={() => setLibSelected(null)}
+          skillSel={libSkillSel}
+          onToggleSkill={(fn) => setLibSkillSel(prev => {
+            const next = new Set(prev);
+            if (next.has(fn)) next.delete(fn); else next.add(fn);
+            return next;
+          })}
+          onImportFull={async (template) => {
+            setLibApplying(true);
+            try {
+              // Delete all existing skills first
+              const existing = await fetch(`/api/agents/${agent.id}/skills`).then(r => r.json());
+              await Promise.all((existing as { id: string }[]).map(s =>
+                fetch(`/api/agents/${agent.id}/skills/${s.id}?noSnapshot=1`, { method: 'DELETE' })
+              ));
+              await applyImport({
+                version: 1,
+                persona: template.persona,
+                description: template.description,
+                claudeMd: template.claudeMd,
+                skills: template.skills,
+              });
+            } finally {
+              setLibApplying(false);
+              setPersonaLibOpen(false);
+              setLibSelected(null);
+            }
+          }}
+          onImportSkills={async (template, selected) => {
+            setLibApplying(true);
+            try {
+              const skills = template.skills.filter(s => selected.has(s.filename));
+              await Promise.all(skills.map(s =>
+                fetch(`/api/agents/${agent.id}/skills?noSnapshot=1`, {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(s),
+                })
+              ));
+              const updated = await fetch(`/api/agents/${agent.id}`).then(r => r.json());
+              setAgent(updated);
+              window.dispatchEvent(new Event('slackhive:sidebar-refresh'));
+            } finally {
+              setLibApplying(false);
+              setPersonaLibOpen(false);
+              setLibSelected(null);
+            }
+          }}
+          onClose={() => { setPersonaLibOpen(false); setLibSelected(null); setLibSearch(''); setLibCategory('all'); }}
+        />
       )}
 
       {/* ── Tab bar ──────────────────────────────────────────────────────── */}
@@ -849,7 +926,7 @@ function InstructionsTab({ agent, canEdit }: { agent: Agent; canEdit: boolean })
                     <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>{s.category}/{s.filename}</span>
                   </div>
                   <p style={{ fontSize: 11.5, color: 'var(--subtle)', margin: '2px 0 6px' }}>{s.explanation}</p>
-                  {s.suggestion && s.action !== 'delete' && s.filename !== 'identity.md' && (
+                  {s.suggestion && s.action !== 'delete' && (
                     <button onClick={async () => {
                       await fetch(`/api/agents/${agent.id}/skills`, {
                         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -932,12 +1009,12 @@ function InstructionsTab({ agent, canEdit }: { agent: Agent; canEdit: boolean })
       </div>
 
       {/* ── Skills / Memory sub-tabs ──────────────────────────────────── */}
-      <InstructionsSubTabs agentId={agent.id} canEdit={canEdit} />
+      <InstructionsSubTabs agentId={agent.id} canEdit={canEdit} agentName={agent.name} agentPersona={agent.persona ?? ''} agentDescription={agent.description ?? ''} />
     </div>
   );
 }
 
-function InstructionsSubTabs({ agentId, canEdit }: { agentId: string; canEdit: boolean }) {
+function InstructionsSubTabs({ agentId, canEdit, agentName, agentPersona, agentDescription }: { agentId: string; canEdit: boolean; agentName: string; agentPersona: string; agentDescription: string }) {
   const [subTab, setSubTab] = useState<'skills' | 'memory'>('skills');
 
   return (
@@ -964,7 +1041,7 @@ function InstructionsSubTabs({ agentId, canEdit }: { agentId: string; canEdit: b
           <p style={{ fontSize: 12, color: 'var(--subtle)', margin: '0 0 10px' }}>
             Specialized knowledge files the agent uses on demand via /commands. Add domain expertise, workflows, or reference docs.
           </p>
-          <SkillsTab agentId={agentId} canEdit={canEdit} />
+          <SkillsTab agentId={agentId} canEdit={canEdit} agentName={agentName} agentPersona={agentPersona} agentDescription={agentDescription} />
         </div>
       )}
       {subTab === 'memory' && (
@@ -1047,7 +1124,7 @@ function ClaudeMdSection({ agentId, canEdit }: { agentId: string; canEdit: boole
 
 // ─── Skills ───────────────────────────────────────────────────────────────────
 
-function SkillsTab({ agentId, canEdit }: { agentId: string; canEdit: boolean }) {
+function SkillsTab({ agentId, canEdit, agentName, agentPersona, agentDescription }: { agentId: string; canEdit: boolean; agentName: string; agentPersona: string; agentDescription: string }) {
   const [skills, setSkills]     = useState<Skill[]>([]);
   const [selected, setSelected] = useState<Skill | null>(null);
   const [content, setContent]   = useState('');
@@ -1089,9 +1166,23 @@ function SkillsTab({ agentId, canEdit }: { agentId: string; canEdit: boolean }) 
     setShowNew(false); setNewSkill({ category: '', filename: '', content: '' }); load();
   };
 
+  // Virtual identity row — computed from agent fields, not stored in DB
+  const identityVirtual: Skill = {
+    id: '__identity__',
+    agentId,
+    category: '00-core',
+    filename: 'identity.md',
+    sortOrder: -1,
+    content: [`# ${agentName}`, agentPersona, agentDescription].filter(Boolean).join('\n\n'),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+
   const grouped = skills.reduce<Record<string, Skill[]>>((acc, s) => {
     (acc[s.category] ??= []).push(s); return acc;
   }, {});
+
+  const isIdentity = selected?.id === '__identity__';
 
   return (
     <div className="fade-up" style={{ display: 'flex', gap: 14, height: 580 }}>
@@ -1114,6 +1205,30 @@ function SkillsTab({ agentId, canEdit }: { agentId: string; canEdit: boolean }) 
           }}>+ New</button>}
         </div>
         <div style={{ padding: '6px 6px', flex: 1, overflow: 'auto' }}>
+          {/* Virtual identity row — always first */}
+          <div>
+            <div style={{
+              fontSize: 10.5, color: 'var(--subtle)', padding: '6px 6px 2px',
+              fontFamily: 'var(--font-mono)', letterSpacing: '0.02em',
+            }}>00-core/</div>
+            <div
+              onClick={() => select(identityVirtual)}
+              className="skill-row"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '5px 8px', borderRadius: 6, cursor: 'pointer',
+                fontSize: 12, fontFamily: 'var(--font-mono)',
+                background: selected?.id === '__identity__' ? 'rgba(59,130,246,0.12)' : 'transparent',
+                color: selected?.id === '__identity__' ? 'var(--accent)' : 'var(--muted)',
+                transition: 'background 0.12s, color 0.12s',
+              }}
+              onMouseEnter={e => { if (selected?.id !== '__identity__') (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)'; }}
+              onMouseLeave={e => { if (selected?.id !== '__identity__') (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+            >
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>identity.md</span>
+              <span style={{ fontSize: 9, color: 'var(--subtle)', flexShrink: 0 }}>locked</span>
+            </div>
+          </div>
           {Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b)).map(([cat, catSkills]) => (
             <div key={cat}>
               <div style={{
@@ -1145,8 +1260,7 @@ function SkillsTab({ agentId, canEdit }: { agentId: string; canEdit: boolean }) 
                   }}
                 >
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.filename}</span>
-                  {s.filename === 'identity.md' && <span style={{ fontSize: 9, color: 'var(--subtle)', flexShrink: 0 }}>locked</span>}
-                  {canEdit && s.filename !== 'identity.md' && <button
+                  {canEdit && <button
                     onClick={e => { e.stopPropagation(); remove(s); }}
                     className="delete-btn"
                     style={{
@@ -1167,9 +1281,8 @@ function SkillsTab({ agentId, canEdit }: { agentId: string; canEdit: boolean }) 
         flex: 1, background: 'var(--surface)', border: '1px solid var(--border)',
         borderRadius: 10, display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}>
-        {selected ? (() => {
-          const isIdentity = selected.filename === 'identity.md';
-          return <>
+        {selected ? (
+          <>
             <div style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               padding: '10px 16px', borderBottom: '1px solid var(--border)',
@@ -1198,8 +1311,8 @@ function SkillsTab({ agentId, canEdit }: { agentId: string; canEdit: boolean }) 
               </div>
             </div>
             <textarea
-              value={content}
-              onChange={e => setContent(e.target.value)}
+              value={isIdentity ? identityVirtual.content : content}
+              onChange={e => { if (!isIdentity) setContent(e.target.value); }}
               readOnly={!canEdit || isIdentity}
               style={{
                 flex: 1, border: 'none', outline: 'none', resize: 'none',
@@ -1209,8 +1322,8 @@ function SkillsTab({ agentId, canEdit }: { agentId: string; canEdit: boolean }) 
               }}
               spellCheck={false}
             />
-          </>;
-        })() : (
+          </>
+        ) : (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--subtle)', fontSize: 13 }}>
             Select a file to edit
           </div>
@@ -1223,7 +1336,7 @@ function SkillsTab({ agentId, canEdit }: { agentId: string; canEdit: boolean }) 
           <Field label="Category" value={newSkill.category}
             onChange={v => setNewSkill(s => ({ ...s, category: v }))} hint="e.g. 00-core" />
           <Field label="Filename" value={newSkill.filename}
-            onChange={v => setNewSkill(s => ({ ...s, filename: v }))} hint="e.g. identity.md" />
+            onChange={v => setNewSkill(s => ({ ...s, filename: v }))} hint="e.g. api-design.md" />
           <TextArea label="Content (optional)" value={newSkill.content}
             onChange={v => setNewSkill(s => ({ ...s, content: v }))} rows={4} />
           <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
@@ -2706,6 +2819,462 @@ function NotFound({ slug }: { slug: string }) {
       <p style={{ color: 'var(--muted)', fontSize: 13 }}>Agent not found: <code style={{ fontFamily: 'var(--font-mono)' }}>{slug}</code></p>
       <Link href="/" style={{ color: 'var(--accent)', fontSize: 13, textDecoration: 'none' }}>← Back to dashboard</Link>
     </div>
+  );
+}
+
+// ─── Persona Library Modal ────────────────────────────────────────────────────
+
+const CATEGORY_COLORS: Record<string, string> = {
+  engineering: 'var(--accent)',
+  data: '#9333ea',
+  product: '#16a34a',
+  business: '#d97706',
+  generic: 'var(--muted)',
+};
+
+const CATEGORY_LABELS: Record<string, string> = {
+  all: 'All',
+  engineering: 'Engineering',
+  data: 'Data',
+  product: 'Product',
+  business: 'Business',
+  generic: 'Generic',
+};
+
+const CATEGORY_ICONS: Record<string, React.ReactNode> = {
+  all: <Library size={14} />,
+  engineering: <Code2 size={14} />,
+  data: <Database size={14} />,
+  product: <Layers size={14} />,
+  business: <Briefcase size={14} />,
+  generic: <Sparkles size={14} />,
+};
+
+function PersonaLibraryModal({
+  agentId,
+  fileInputRef,
+  applying,
+  search,
+  onSearchChange,
+  category,
+  onCategoryChange,
+  selected,
+  onSelectPersona,
+  onBack,
+  skillSel,
+  onToggleSkill,
+  onImportFull,
+  onImportSkills,
+  onClose,
+}: {
+  agentId: string;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
+  applying: boolean;
+  search: string;
+  onSearchChange: (v: string) => void;
+  category: PersonaCategory | 'all';
+  onCategoryChange: (v: PersonaCategory | 'all') => void;
+  selected: PersonaTemplate | null;
+  onSelectPersona: (p: PersonaTemplate) => void;
+  onBack: () => void;
+  skillSel: Set<string>;
+  onToggleSkill: (filename: string) => void;
+  onImportFull: (t: PersonaTemplate) => Promise<void>;
+  onImportSkills: (t: PersonaTemplate, sel: Set<string>) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [promptExpanded, setPromptExpanded] = useState(false);
+  const [expandedSkill, setExpandedSkill] = useState<string | null>(null);
+  const filteredPersonas = useMemo(() => {
+    let list = search.trim() ? searchPersonas(search) : PERSONA_CATALOG;
+    if (category !== 'all') list = list.filter(p => p.category === category);
+    return list;
+  }, [search, category]);
+
+  return (
+    <Portal>
+      <div style={{
+        position: 'fixed', inset: 0, zIndex: 1000,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: '20px',
+      }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)' }}
+          onClick={onClose} />
+        <div style={{
+          position: 'relative', background: 'var(--bg)', borderRadius: 12,
+          width: '100%', maxWidth: 800, maxHeight: 560,
+          display: 'flex', flexDirection: 'column',
+          border: '1px solid var(--border)',
+          boxShadow: 'rgba(50,50,93,0.25) 0px 30px 60px -12px, rgba(0,0,0,0.3) 0px 18px 36px -18px',
+        }}>
+
+          {/* ── Header ───────────────────────────────────────────────────── */}
+          <div style={{
+            padding: '20px 24px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0,
+            display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+          }}>
+            <div>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: 'var(--text)', letterSpacing: '-0.3px' }}>
+                Persona Library
+              </h2>
+              <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--muted)' }}>
+                {PERSONA_CATALOG.length} pre-built personas — click to preview and import
+              </p>
+            </div>
+            <button onClick={onClose} style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: 'var(--muted)', padding: 4, marginTop: -2,
+            }}><X size={18} /></button>
+          </div>
+
+          {/* ── Search bar ───────────────────────────────────────────────── */}
+          <div style={{
+            padding: '12px 24px', borderBottom: '1px solid var(--border)', flexShrink: 0,
+            display: 'flex', gap: 8, alignItems: 'center',
+          }}>
+            <div style={{ position: 'relative', flex: 1 }}>
+              <Search size={14} style={{
+                position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
+                color: 'var(--muted)', pointerEvents: 'none',
+              }} />
+              <input
+                type="text"
+                placeholder="Search personas..."
+                value={search}
+                onChange={e => onSearchChange(e.target.value)}
+                autoFocus={!selected}
+                style={{
+                  width: '100%', boxSizing: 'border-box',
+                  padding: '7px 10px 7px 32px', fontSize: 13,
+                  background: 'var(--surface-2)', border: '1px solid var(--border)',
+                  borderRadius: 6, color: 'var(--text)', fontFamily: 'var(--font-sans)',
+                  outline: 'none',
+                }}
+              />
+            </div>
+            <button onClick={() => { onClose(); fileInputRef.current?.click(); }} style={{
+              background: 'none', border: '1px solid var(--border)', borderRadius: 6,
+              cursor: 'pointer', color: 'var(--muted)', fontSize: 12,
+              padding: '6px 12px', fontFamily: 'var(--font-sans)', whiteSpace: 'nowrap',
+            }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-2)'; (e.currentTarget as HTMLElement).style.color = 'var(--text)'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLElement).style.color = 'var(--muted)'; }}
+            >Import JSON</button>
+          </div>
+
+          {/* ── Body: sidebar + main ─────────────────────────────────────── */}
+          <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+
+            {/* Left sidebar */}
+            <div style={{
+              width: 160, borderRight: '1px solid var(--border)', flexShrink: 0,
+              padding: '12px 8px', display: 'flex', flexDirection: 'column', gap: 2,
+              overflowY: 'auto',
+            }}>
+              <span style={{
+                fontSize: 10, fontWeight: 700, color: 'var(--subtle)', letterSpacing: '0.08em',
+                textTransform: 'uppercase', padding: '0 10px', marginBottom: 4,
+              }}>Browse</span>
+              {Object.entries(CATEGORY_LABELS).map(([val, label]) => {
+                const isActive = category === val;
+                const count = val === 'all'
+                  ? PERSONA_CATALOG.length
+                  : PERSONA_CATALOG.filter(p => p.category === val).length;
+                const iconColor = isActive
+                  ? (CATEGORY_COLORS[val] ?? 'var(--accent)')
+                  : 'var(--subtle)';
+                return (
+                  <button key={val}
+                    onClick={() => { onCategoryChange(val as PersonaCategory | 'all'); if (selected) onBack(); }}
+                    style={{
+                      position: 'relative',
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '7px 10px', borderRadius: 6, border: 'none',
+                      background: isActive ? 'var(--surface-2)' : 'transparent',
+                      color: isActive ? 'var(--text)' : 'var(--muted)',
+                      fontFamily: 'var(--font-sans)', fontSize: 13,
+                      fontWeight: isActive ? 600 : 400,
+                      cursor: 'pointer', textAlign: 'left',
+                      transition: 'background 0.12s, color 0.12s',
+                    }}
+                    onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'var(--surface-2)'; }}
+                    onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+                  >
+                    {isActive && (
+                      <span style={{
+                        position: 'absolute', left: 0, top: '20%', bottom: '20%',
+                        width: 3, borderRadius: 2,
+                        background: CATEGORY_COLORS[val] ?? 'var(--accent)',
+                      }} />
+                    )}
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: iconColor }}>
+                      {CATEGORY_ICONS[val]}
+                      <span style={{ color: isActive ? 'var(--text)' : 'var(--muted)' }}>{label}</span>
+                    </span>
+                    <span style={{
+                      fontSize: 11, fontWeight: 500,
+                      color: isActive ? 'var(--accent)' : 'var(--subtle)',
+                    }}>{count}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Right: card grid or detail */}
+            {selected ? (
+              // ── Detail view ───────────────────────────────────────────────
+              <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+                <div style={{
+                  padding: '12px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                }}>
+                  <button onClick={onBack} style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: 'var(--muted)', display: 'flex', alignItems: 'center',
+                    gap: 5, fontSize: 13, padding: 0, fontFamily: 'var(--font-sans)',
+                  }}
+                    onMouseEnter={e => (e.currentTarget.style.color = 'var(--text)')}
+                    onMouseLeave={e => (e.currentTarget.style.color = 'var(--muted)')}
+                  >
+                    <ArrowLeft size={14} /> Back
+                  </button>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {selected.skills.length > 0 && (
+                      <button
+                        disabled={applying || skillSel.size === 0}
+                        onClick={() => onImportSkills(selected, skillSel)}
+                        style={{
+                          background: 'transparent', color: 'var(--text)',
+                          border: '1px solid var(--border-2)', borderRadius: 6,
+                          padding: '7px 14px', fontSize: 13, fontWeight: 500,
+                          cursor: (applying || skillSel.size === 0) ? 'not-allowed' : 'pointer',
+                          fontFamily: 'var(--font-sans)',
+                          opacity: (applying || skillSel.size === 0) ? 0.4 : 1,
+                        }}
+                        onMouseEnter={e => { if (!applying && skillSel.size > 0) (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)'; }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-2)'; }}
+                      >
+                        Add {skillSel.size} skill{skillSel.size !== 1 ? 's' : ''}
+                      </button>
+                    )}
+                    <button
+                      disabled={applying}
+                      onClick={() => onImportFull(selected)}
+                      style={{
+                        background: 'var(--accent)', color: 'var(--accent-fg)',
+                        border: 'none', borderRadius: 6, padding: '7px 16px',
+                        fontSize: 13, fontWeight: 600,
+                        cursor: applying ? 'not-allowed' : 'pointer',
+                        fontFamily: 'var(--font-sans)', opacity: applying ? 0.7 : 1,
+                        transition: 'opacity 0.15s',
+                      }}
+                      onMouseEnter={e => { if (!applying) (e.currentTarget as HTMLElement).style.opacity = '0.85'; }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
+                    >
+                      {applying ? 'Importing…' : 'Import persona'}
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ padding: '16px 20px 28px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <div>
+                    <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 600, color: 'var(--text)' }}>
+                      {selected.name}
+                    </h3>
+                    <p style={{ margin: 0, fontSize: 13, color: 'var(--muted)', lineHeight: 1.5 }}>
+                      {selected.cardDescription}
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
+                      textTransform: 'uppercase', padding: '2px 7px', borderRadius: 4,
+                      background: `${CATEGORY_COLORS[selected.category]}1a`,
+                      color: CATEGORY_COLORS[selected.category] ?? 'var(--muted)',
+                    }}>{selected.category}</span>
+                    {selected.tags.map(tag => (
+                      <span key={tag} style={{
+                        fontSize: 11, padding: '2px 7px', borderRadius: 4,
+                        background: 'var(--surface-2)', color: 'var(--muted)',
+                        border: '1px solid var(--border)',
+                      }}>{tag}</span>
+                    ))}
+                  </div>
+                  {/* System prompt preview */}
+                  {selected.claudeMd && (
+                    <div style={{ border: '1px solid var(--border)', borderRadius: 7, overflow: 'hidden' }}>
+                      <button onClick={() => setPromptExpanded(v => !v)} style={{
+                        width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '8px 12px', background: 'var(--surface-2)', border: 'none',
+                        cursor: 'pointer', fontFamily: 'var(--font-sans)',
+                      }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--muted)' }}>
+                          System Prompt
+                        </span>
+                        <ChevronDown size={13} style={{
+                          color: 'var(--muted)',
+                          transform: promptExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                          transition: 'transform 0.15s',
+                        }} />
+                      </button>
+                      {promptExpanded && (
+                        <pre style={{
+                          margin: 0, padding: '10px 12px', fontSize: 11.5,
+                          fontFamily: 'var(--font-mono)', color: 'var(--muted)',
+                          whiteSpace: 'pre-wrap', lineHeight: 1.5, maxHeight: 200,
+                          overflow: 'auto', background: 'var(--bg)',
+                        }}>
+                          {selected.claudeMd.trim()}
+                        </pre>
+                      )}
+                    </div>
+                  )}
+
+                  {selected.skills.length > 0 && (
+                    <div>
+                      <p style={{
+                        margin: '0 0 8px', fontSize: 11, fontWeight: 600,
+                        textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--muted)',
+                      }}>Skills · select to cherry-pick</p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        {selected.skills.map(skill => {
+                          const isExpanded = expandedSkill === skill.filename;
+                          return (
+                            <div key={skill.filename} style={{
+                              borderRadius: 6, border: '1px solid',
+                              borderColor: skillSel.has(skill.filename) ? 'var(--border-2)' : 'var(--border)',
+                              background: skillSel.has(skill.filename) ? 'var(--surface-2)' : 'transparent',
+                              overflow: 'hidden', transition: 'all 0.1s',
+                            }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px' }}>
+                                <input type="checkbox"
+                                  checked={skillSel.has(skill.filename)}
+                                  onChange={() => onToggleSkill(skill.filename)}
+                                  style={{ accentColor: 'var(--accent)', width: 13, height: 13, cursor: 'pointer', flexShrink: 0 }}
+                                />
+                                <span style={{ fontSize: 12, color: 'var(--muted)', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{skill.category}/</span>
+                                <span style={{ fontSize: 12, color: 'var(--text)', fontFamily: 'var(--font-mono)', flex: 1 }}>{skill.filename}</span>
+                                <button
+                                  onClick={() => setExpandedSkill(isExpanded ? null : skill.filename)}
+                                  style={{
+                                    background: 'none', border: 'none', cursor: 'pointer',
+                                    color: isExpanded ? 'var(--text)' : 'var(--muted)',
+                                    display: 'flex', alignItems: 'center', padding: '2px 4px',
+                                    flexShrink: 0,
+                                  }}
+                                  title={isExpanded ? 'Hide content' : 'Preview content'}
+                                >
+                                  <ChevronDown size={12} style={{
+                                    transform: isExpanded ? 'rotate(180deg)' : 'none',
+                                    transition: 'transform 0.15s',
+                                  }} />
+                                </button>
+                              </div>
+                              {isExpanded && (
+                                <pre style={{
+                                  margin: 0, padding: '8px 12px 10px',
+                                  fontSize: 11, fontFamily: 'var(--font-mono)',
+                                  color: 'var(--muted)', whiteSpace: 'pre-wrap',
+                                  lineHeight: 1.5, maxHeight: 200, overflow: 'auto',
+                                  borderTop: '1px solid var(--border)',
+                                  background: 'var(--bg)',
+                                }}>
+                                  {skill.content}
+                                </pre>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  <p style={{ margin: 0, fontSize: 11, color: 'var(--subtle)' }}>
+                    "Import persona" replaces your current system prompt, description, and all existing skills.
+                  </p>
+                  <button onClick={() => { onClose(); fileInputRef.current?.click(); }} style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: 'var(--muted)', fontSize: 12, padding: 0, alignSelf: 'flex-start',
+                    fontFamily: 'var(--font-sans)', textDecoration: 'underline', textUnderlineOffset: 3,
+                  }}
+                    onMouseEnter={e => (e.currentTarget.style.color = 'var(--text)')}
+                    onMouseLeave={e => (e.currentTarget.style.color = 'var(--muted)')}
+                  >Import from JSON file instead</button>
+                </div>
+              </div>
+            ) : (
+              // ── Card grid ─────────────────────────────────────────────────
+              <div style={{ flex: 1, overflow: 'auto', padding: '12px 16px 20px' }}>
+                {filteredPersonas.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--muted)', fontSize: 13 }}>
+                    No personas match your search.
+                  </div>
+                ) : (
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+                    gap: 10,
+                  }}>
+                    {filteredPersonas.map(p => (
+                      <button key={p.id} onClick={() => onSelectPersona(p)}
+                        style={{
+                          display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
+                          gap: 7, padding: '12px 12px',
+                          background: 'var(--surface)', border: '1px solid var(--border)',
+                          borderRadius: 8, cursor: 'pointer', textAlign: 'left',
+                          fontFamily: 'var(--font-sans)', minWidth: 0,
+                          boxShadow: 'rgba(50,50,93,0.06) 0px 2px 5px -1px, rgba(0,0,0,0.04) 0px 1px 3px -1px',
+                          transition: 'border-color 0.15s, box-shadow 0.15s',
+                        }}
+                        onMouseEnter={e => {
+                          const el = e.currentTarget as HTMLElement;
+                          el.style.borderColor = 'var(--accent)';
+                          el.style.boxShadow = 'rgba(50,50,93,0.2) 0px 6px 12px -2px, rgba(0,0,0,0.08) 0px 3px 7px -3px';
+                        }}
+                        onMouseLeave={e => {
+                          const el = e.currentTarget as HTMLElement;
+                          el.style.borderColor = 'var(--border)';
+                          el.style.boxShadow = 'rgba(50,50,93,0.06) 0px 2px 5px -1px, rgba(0,0,0,0.04) 0px 1px 3px -1px';
+                        }}
+                      >
+                        <span style={{
+                          fontSize: 9, fontWeight: 700, letterSpacing: '0.07em',
+                          textTransform: 'uppercase', padding: '2px 6px', borderRadius: 4,
+                          background: `${CATEGORY_COLORS[p.category]}1a`,
+                          color: CATEGORY_COLORS[p.category] ?? 'var(--muted)',
+                          flexShrink: 0,
+                        }}>{p.category}</span>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', lineHeight: 1.2 }}>
+                          {p.name}
+                        </span>
+                        <p style={{
+                          margin: 0, fontSize: 11, color: 'var(--muted)', lineHeight: 1.4,
+                          display: '-webkit-box', WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical' as const, overflow: 'hidden',
+                        }}>{p.cardDescription}</p>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 4, minWidth: 0 }}>
+                          <span style={{
+                            fontSize: 10, padding: '1px 6px', borderRadius: 4,
+                            background: 'var(--surface-2)', color: 'var(--muted)',
+                            border: '1px solid var(--border)',
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            minWidth: 0, flexShrink: 1,
+                          }}>{p.tags[0]}</span>
+                          {p.skills.length > 0 && (
+                            <span style={{ fontSize: 10, color: 'var(--subtle)', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                              {p.skills.length} skills
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </Portal>
   );
 }
 

@@ -108,13 +108,20 @@ async function enrichAgentWithPlatform(agent: Agent | null): Promise<Agent | nul
     [agent.id, 'slack']
   );
   if (r.rows.length > 0) {
+    const raw = r.rows[0].credentials as string;
+    const key = process.env.ENV_SECRET_KEY ?? process.env.AUTH_SECRET ?? 'slackhive-default-key';
+    let creds: Record<string, string> | null = null;
     try {
-      const creds = JSON.parse(r.rows[0].credentials as string);
+      creds = JSON.parse(decrypt(raw, key));
+    } catch {
+      try { creds = JSON.parse(raw); } catch { /* not parseable */ }
+    }
+    if (creds) {
       agent.slackBotToken = creds.botToken;
       agent.slackAppToken = creds.appToken;
       agent.slackSigningSecret = creds.signingSecret;
       agent.slackBotUserId = r.rows[0].bot_user_id as string | undefined;
-    } catch { /* credentials not parseable */ }
+    }
   }
   return agent;
 }
@@ -195,16 +202,20 @@ export async function getAllAgents(): Promise<Agent[]> {
     credsByAgent.set(row.agent_id as string, { credentials: row.credentials as string, botUserId: row.bot_user_id as string | undefined });
   }
 
+  const key = process.env.ENV_SECRET_KEY ?? process.env.AUTH_SECRET ?? 'slackhive-default-key';
   for (const agent of agents) {
     const entry = credsByAgent.get(agent.id);
     if (entry) {
-      try {
-        const creds = JSON.parse(entry.credentials);
+      let creds: Record<string, string> | null = null;
+      try { creds = JSON.parse(decrypt(entry.credentials, key)); } catch {
+        try { creds = JSON.parse(entry.credentials); } catch { /* skip */ }
+      }
+      if (creds) {
         agent.slackBotToken = creds.botToken;
         agent.slackAppToken = creds.appToken;
         agent.slackSigningSecret = creds.signingSecret;
         agent.slackBotUserId = entry.botUserId;
-      } catch { /* skip */ }
+      }
     }
   }
 

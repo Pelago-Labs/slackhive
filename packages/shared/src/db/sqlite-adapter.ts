@@ -447,41 +447,6 @@ export function createSqliteAdapter(dbPath?: string): DbAdapter {
   // Initialize schema
   db.exec(SQLITE_SCHEMA);
 
-  // Migrate: move slack credentials from agents to platform_integrations
-  try {
-    const cols = db.pragma('table_info(agents)') as any[];
-    const hasSlackCol = cols.some((c: any) => c.name === 'slack_bot_token');
-    if (hasSlackCol) {
-      // Read old credentials, encrypt, insert into new table
-      const { encrypt } = require('./crypto');
-      const key = process.env.ENV_SECRET_KEY ?? process.env.AUTH_SECRET ?? 'slackhive-default-key';
-
-      const agents = db.prepare(
-        `SELECT id, slack_bot_token, slack_app_token, slack_signing_secret, slack_bot_user_id
-         FROM agents
-         WHERE slack_bot_token IS NOT NULL AND length(slack_bot_token) > 0`
-      ).all() as any[];
-
-      const insertStmt = db.prepare(
-        `INSERT OR IGNORE INTO platform_integrations (id, agent_id, platform, credentials, bot_user_id)
-         VALUES (?, ?, 'slack', ?, ?)`
-      );
-
-      for (const a of agents) {
-        const credsJson = JSON.stringify({
-          botToken: a.slack_bot_token,
-          appToken: a.slack_app_token,
-          signingSecret: a.slack_signing_secret,
-        });
-        const encrypted = encrypt(credsJson, key);
-        insertStmt.run(randomUUID(), a.id, encrypted, a.slack_bot_user_id);
-      }
-    }
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.warn('Platform credentials migration skipped:', (err as Error).message);
-  }
-
   // Install a custom function to generate UUIDs
   // This lets DEFAULT gen_random_uuid()-style behavior work via triggers
   db.function('gen_random_uuid', () => randomUUID());

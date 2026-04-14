@@ -104,13 +104,10 @@ export interface Agent {
    * @example "Data warehouse NLQ, Redshift queries, business metrics"
    */
   description?: string;
-  /** @deprecated — use platform_integrations table. Kept for type compat during migration. */
+  /** Populated from platform_integrations at query time — not stored on agents table. */
   slackBotToken?: string;
-  /** @deprecated */
   slackAppToken?: string;
-  /** @deprecated */
   slackSigningSecret?: string;
-  /** @deprecated */
   slackBotUserId?: string;
   /**
    * The Claude model to use for this agent.

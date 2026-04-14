@@ -23,6 +23,20 @@ import DATA_ANALYST from './data-analyst';
 import DATA_SCIENTIST from './data-scientist';
 import DATA_ENGINEER from './data-engineer';
 import ANALYTICS_ENGINEER from './analytics-engineer';
+import PRODUCT_MANAGER from './product-manager';
+import TECHNICAL_WRITER from './technical-writer';
+import UX_DESIGNER from './ux-designer';
+import BUSINESS_ANALYST from './business-analyst';
+import CUSTOMER_SUPPORT from './customer-support';
+import CUSTOMER_SUCCESS from './customer-success';
+import SALES_SDR from './sales-sdr';
+import MARKETING_GROWTH from './marketing-growth';
+import HR_RECRUITER from './hr-recruiter';
+import FINANCE_ACCOUNTING from './finance-accounting';
+import LEGAL_COMPLIANCE from './legal-compliance';
+import SEO_SPECIALIST from './seo-specialist';
+import BLANK from './blank';
+import GENERALIST from './generalist';
 
 export const PERSONA_CATALOG: PersonaTemplate[] = [
   // Engineering
@@ -39,6 +53,23 @@ export const PERSONA_CATALOG: PersonaTemplate[] = [
   DATA_SCIENTIST,
   DATA_ENGINEER,
   ANALYTICS_ENGINEER,
+  // Product
+  PRODUCT_MANAGER,
+  TECHNICAL_WRITER,
+  UX_DESIGNER,
+  // Business
+  BUSINESS_ANALYST,
+  CUSTOMER_SUPPORT,
+  CUSTOMER_SUCCESS,
+  SALES_SDR,
+  MARKETING_GROWTH,
+  HR_RECRUITER,
+  FINANCE_ACCOUNTING,
+  LEGAL_COMPLIANCE,
+  SEO_SPECIALIST,
+  // Generic
+  BLANK,
+  GENERALIST,
 ];
 
 export function getPersonaById(id: string): PersonaTemplate | undefined {
