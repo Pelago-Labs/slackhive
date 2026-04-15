@@ -85,12 +85,18 @@ export class McpProcessManager {
       const scriptPath = path.join(scriptDir, `${name}.ts`);
       fs.mkdirSync(scriptDir, { recursive: true });
       fs.writeFileSync(scriptPath, config.tsSource as string, 'utf8');
-      // Resolve tsx from the project's node_modules (works in Docker and native)
-      const projectRoot = path.resolve(__dirname, '..');
-      const tsxPath = path.join(projectRoot, 'node_modules', '.bin', 'tsx');
-      command = fs.existsSync(tsxPath) ? tsxPath : 'tsx';
+      // Resolve tsx — check runner node_modules (Docker) then workspace root (native monorepo)
+      const runnerRoot = path.resolve(__dirname, '..');
+      const workspaceRoot = path.resolve(__dirname, '../..');
+      command = [
+        path.join(runnerRoot, 'node_modules', '.bin', 'tsx'),
+        path.join(workspaceRoot, 'node_modules', '.bin', 'tsx'),
+      ].find(p => fs.existsSync(p)) ?? 'tsx';
       args = [scriptPath];
-      env.NODE_PATH = path.join(projectRoot, 'node_modules');
+      env.NODE_PATH = [
+        path.join(runnerRoot, 'node_modules'),
+        path.join(workspaceRoot, 'node_modules'),
+      ].join(path.delimiter);
     }
 
     // Connect to the stdio MCP process

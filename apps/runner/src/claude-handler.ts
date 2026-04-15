@@ -370,15 +370,21 @@ export class ClaudeHandler {
       fs.mkdirSync(scriptDir, { recursive: true });
       fs.writeFileSync(scriptPath, c.tsSource as string, 'utf8');
       const resolvedEnv = this.resolveEnvRefs(c);
-      // Resolve tsx from project node_modules (works in both Docker and native)
-      const projectRoot = path.resolve(__dirname, '..');
-      const tsxPath = fs.existsSync(path.join(projectRoot, 'node_modules', '.bin', 'tsx'))
-        ? path.join(projectRoot, 'node_modules', '.bin', 'tsx')
-        : 'tsx';
+      // Resolve tsx — check runner node_modules (Docker) then workspace root (native monorepo)
+      const runnerRoot = path.resolve(__dirname, '..');
+      const workspaceRoot = path.resolve(__dirname, '../..');
+      const tsxPath = [
+        path.join(runnerRoot, 'node_modules', '.bin', 'tsx'),
+        path.join(workspaceRoot, 'node_modules', '.bin', 'tsx'),
+      ].find(p => fs.existsSync(p)) ?? 'tsx';
+      const nodePath = [
+        path.join(runnerRoot, 'node_modules'),
+        path.join(workspaceRoot, 'node_modules'),
+      ].join(path.delimiter);
       return {
         command: tsxPath,
         args: [scriptPath],
-        env: { NODE_PATH: path.join(projectRoot, 'node_modules'), ...resolvedEnv },
+        env: { NODE_PATH: nodePath, ...resolvedEnv },
       } as McpServerConfig;
     }
 
