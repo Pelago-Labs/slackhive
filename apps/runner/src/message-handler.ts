@@ -96,7 +96,7 @@ export class MessageHandler {
           if (textContent) lastAssistantText = textContent;
 
           if (hasToolUse) {
-            await this.swapReaction(channelId, messageId, sessionKey, 'arrows_counterclockwise');
+            await this.swapReaction(channelId, messageId, sessionKey, 'gear');
             // Update status with tool info
             const toolStatus = this.formatToolStatus(content);
             if (statusMsgId && toolStatus) {
