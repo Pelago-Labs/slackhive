@@ -448,6 +448,12 @@ export function createSqliteAdapter(dbPath?: string): DbAdapter {
   // Initialize schema
   db.exec(SQLITE_SCHEMA);
 
+  // Column migrations — add new columns to existing tables (safe to re-run)
+  const agentCols = (db.pragma('table_info(agents)') as { name: string }[]).map(c => c.name);
+  if (!agentCols.includes('verbose')) {
+    db.exec('ALTER TABLE agents ADD COLUMN verbose INTEGER NOT NULL DEFAULT 1');
+  }
+
   // Install a custom function to generate UUIDs
   // This lets DEFAULT gen_random_uuid()-style behavior work via triggers
   db.function('gen_random_uuid', () => randomUUID());
