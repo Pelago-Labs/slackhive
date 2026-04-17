@@ -113,13 +113,15 @@ export class ClaudeHandler {
    *
    * @returns {void}
    */
-  destroy(): void {
+  async destroy(): Promise<void> {
     if (this.cleanupTimer) {
       clearInterval(this.cleanupTimer);
       this.cleanupTimer = null;
     }
     this.sessionCache.clear();
-    this.mcpManager.stopAll().catch(() => {});
+    await this.mcpManager.stopAll().catch((err) =>
+      this.log.warn('Error stopping MCP proxies', { error: (err as Error).message })
+    );
   }
 
   /**

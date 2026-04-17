@@ -264,7 +264,7 @@ export class AgentRunner {
     logger.info('Stopping agent', { agent: agent.slug });
 
     memoryWatcher.stop();
-    claudeHandler.destroy();
+    await claudeHandler.destroy();
 
     try {
       await app.stop();
