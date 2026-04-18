@@ -37,7 +37,7 @@ import {
   updateAgentStatus,
   setResult,
 } from './db';
-import { compileClaudeMd, materializeMemoryFiles } from './compile-claude-md';
+import { compileClaudeMd } from './compile-claude-md';
 import { ClaudeHandler } from './claude-handler';
 import { MemoryWatcher } from './memory-watcher';
 import { logger } from './logger';
@@ -181,6 +181,15 @@ export class AgentRunner {
     const agents = await getAllAgents();
     logger.info('Loading agents from database', { count: agents.length });
 
+    // Reset statuses — at process boot no agent is actually running yet.
+    // This clears stale 'error' rows left by zombie/racing runners from prior
+    // sessions. The very next `startAgent` call sets the true current state.
+    for (const agent of agents) {
+      if (agent.enabled !== false) {
+        await updateAgentStatus(agent.id, 'stopped');
+      }
+    }
+
     // Start agents sequentially to avoid overwhelming Slack's rate limits.
     // Skip agents that are stopped or have placeholder/missing tokens.
     for (const agent of agents) {
@@ -220,11 +229,11 @@ export class AgentRunner {
     logger.info('Starting agent', { agent: agent.slug });
 
     // Load configuration from DB
-    const [mcpServers, permissions, restrictions, memories, envVarValues] = await Promise.all([
+    // memories are loaded inside compileClaudeMd (inlined into CLAUDE.md).
+    const [mcpServers, permissions, restrictions, envVarValues] = await Promise.all([
       getAgentMcpServers(agent.id),
       getAgentPermissions(agent.id),
       getAgentRestrictions(agent.id),
-      getAgentMemories(agent.id),
       getAllEnvVarValues(),
     ]);
 
@@ -233,7 +242,8 @@ export class AgentRunner {
     const integration = await getPlatformIntegration(agent.id, 'slack');
     if (!integration) {
       logger.warn('No platform integration found — agent cannot start', { agent: agent.slug });
-      await updateAgentStatus(agent.id, 'error');
+      // 'stopped', not 'error' — this is a not-yet-configured state, not a runtime failure.
+      await updateAgentStatus(agent.id, 'stopped');
       return;
     }
 
@@ -243,11 +253,10 @@ export class AgentRunner {
       agent.slug,
     );
 
-    // Compile CLAUDE.md with platform-specific formatting rules
+    // Compile CLAUDE.md with platform-specific formatting rules.
+    // compileClaudeMd inlines all learned memories directly into the system
+    // prompt (no /recall skill needed) and inlines the wiki index when present.
     const workDir = await compileClaudeMd(agent, undefined, adapter.getFormattingRules());
-
-    // Materialize memory files so the /recall skill can read them
-    materializeMemoryFiles(agent, memories);
 
     // Create Claude Code SDK handler
     const claudeHandler = new ClaudeHandler(agent, mcpServers, permissions, workDir, envVarValues);

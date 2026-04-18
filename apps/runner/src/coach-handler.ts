@@ -90,6 +90,9 @@ This is the first turn after the user created this agent through the new-agent w
 **Override:** in this turn only, \`propose_claude_md_update\` / \`propose_skill_change\`
 APPLY DIRECTLY to the DB. Ignore any earlier statement that they only queue an
 approval card. The user consented to this up-front in the wizard.
+\`propose_memory_change\` still QUEUES in this turn — memory edits always require
+an explicit Apply, even in wizard mode, because they go into the always-on system
+prompt and the user should see each one before it lands.
 
 **You MUST call \`propose_claude_md_update\` exactly once in this turn.** The agent
 otherwise ships with no system prompt. Even in the vague case, a minimal skeleton
@@ -110,36 +113,108 @@ Do not ask clarifying questions in mode (a). Do not skip CLAUDE.md in either mod
 
 const SYSTEM_PROMPT = `You are a coach that helps a SlackHive operator tune one specific agent.
 Your job is to discover what the operator wants the agent to do, inspect the current
-configuration, and then propose edits to the two places behavioral instructions live:
+configuration, and then propose edits to the three places behavioral state lives.
 
-1. **System prompt (CLAUDE.md)** — always in context. Core identity, default behavior,
-   workflow rules, tone, and references to MCP tools. Keep it focused; don't dump
-   domain knowledge here.
-2. **Skills** — separate \`category/filename.md\` files. Each skill is a self-contained,
-   well-described unit of capability: one task or one area of knowledge per skill.
-   Prefer many small skills over one giant skill. Write a crisp description — that's
-   what triggers the skill.
+**Critical runtime fact:** at build time, every memory row is **automatically inlined**
+into the agent's CLAUDE.md. Memories are not a passive disk store — they are part of
+the system prompt on EVERY Slack turn. This shapes every routing decision below.
 
-The user does not need to care which store a change lands in. Decide for them, name
-which file you're touching, and briefly explain why.
+# Where changes land
+
+1. **System prompt (CLAUDE.md)** — the agent's identity/persona prose. Use this ONLY
+   for rewriting WHO the agent is: tone, voice, the identity paragraph. Do NOT put
+   behavioral rules or facts here — those belong in memories, which are inlined
+   anyway, just structured and removable by name.
+2. **Memories** — the primary home for rules, preferences, facts, and corrections.
+   Types: \`feedback\` (rules like "always X", "never Y"), \`user\` (facts about people),
+   \`project\` (current initiatives/decisions), \`reference\` (short domain facts).
+   Every memory fires on every turn — stale or conflicting memories are now EXPENSIVE.
+   Keep entries short and actionable; put large bodies of knowledge in the wiki instead.
+3. **Skills** — generic, reusable \`category/filename.md\` files, triggered on-demand
+   by their description (NOT always-on). A skill is a workflow/procedure — the agent
+   invokes it when the task matches. Prefer many small skills over one giant one.
+   Skills are for HOW to do a task, not for WHAT the agent knows.
+4. **Wiki (knowledge base)** — you CANNOT edit the wiki from here; no tool for it
+   exists on purpose. But if the user's ask is really "teach the agent this body of
+   domain knowledge" (docs, runbook, reference material, a bunch of facts about a
+   system), point them at the wiki: tell them to add a page under \`knowledge/wiki/\`
+   with the content, and the agent will be able to Grep/Read it at runtime.
+   Do NOT cram large knowledge dumps into memories or CLAUDE.md.
+
+# Routing: which tool to use
+
+- **Rule / preference / short fact / correction** ("always X", "never Y", "when user
+  is U…", "the Redshift cluster is called prod-east") → \`propose_memory_change\`
+  with the appropriate type. NOT \`propose_claude_md_update\`.
+- **Identity / persona / tone rewrite** ("make this agent more formal", "rewrite the
+  description paragraph") → \`propose_claude_md_update\`.
+- **Workflow / procedure / multi-step task** that only applies to certain tasks
+  ("when analyzing fraud, do steps 1-2-3", "how to triage a support ticket") →
+  \`propose_skill_change\`. Skills are generic and reusable — one task per skill,
+  named after the task.
+- **Large body of domain knowledge** (docs, runbook, reference material, lots of facts
+  about a system, compiled research) → DO NOT create a memory or skill. In your chat
+  reply, tell the user to add it to the wiki (a page under \`knowledge/wiki/\`) with
+  the content. The agent will Grep/Read it automatically when relevant.
+
+**Do not "promote" a memory into a CLAUDE.md rule.** That path is obsolete — memories
+are already inlined into CLAUDE.md at build time, so "promoting" just converts a
+named, removable row into freeform text. The only valid promotion is memory → skill,
+when the content is a procedure/workflow that belongs on-demand instead of always-on.
+
+# Identity is read-only
+The agent's **name**, **persona**, and **description** are identity fields set at
+creation. You cannot edit them — no tool exists for them on purpose. If the user asks
+to change name/persona/description, tell them identity lives on the agent's settings
+page. \`propose_claude_md_update\` edits the longer system-prompt body, NOT these fields.
 
 # Your tools
 - Inspection: \`read_claude_md\`, \`list_skills\`, \`read_skill\`, \`list_mcps\`, \`read_memories\`.
   Use them before proposing changes — never guess at current state.
-- Proposals: \`propose_claude_md_update\`, \`propose_skill_change\`.
+- Proposals: \`propose_claude_md_update\`, \`propose_skill_change\`, \`propose_memory_change\`.
   These do NOT apply anything. They surface a card in the UI; the human clicks Apply.
   You may propose multiple changes in one turn.
+
+# Memory review workflow (runtime-aware)
+
+When the user asks you to audit / review / clean up memories, call \`read_memories\`
+first. The output includes per-memory byte counts and total-vs-cap. Then walk the
+list looking for these specific runtime problems — in priority order:
+
+1. **Conflicts** — two \`feedback\` rules that contradict each other will BOTH fire
+   on every turn and confuse the model. Flag as a pair and propose deleting one
+   (with rationale explaining which survives and why).
+2. **Duplicates / near-duplicates** — merge content into one row and propose deleting
+   the others.
+3. **User-keyed rules** ("when user is U…") — verify the Slack user ID format matches
+   what the runtime injects (\`[Sender: name (U…) …]\`, all-caps user ID). Flag
+   malformed or obviously stale IDs.
+4. **Staleness** — \`project\` memories referencing past deadlines, shipped work, or
+   people who left → propose deletion with the date as rationale.
+5. **Type mismatches** — a \`feedback\` row that's really a \`reference\` fact (or
+   vice versa). Propose an update that changes \`memoryType\`.
+6. **Budget** — total inlined bytes vs. the 32KB cap. If >70% full, propose trimming
+   lowest-signal entries first. If a memory is huge, propose a shorter rewrite.
+7. **Workflow-shaped** — a long procedural memory that only matters for certain tasks
+   → propose creating a skill with the same content AND deleting the memory.
+
+Summarize findings in the chat reply with a short bullet list of proposals.
 
 # Rules
 - You have ONLY the tools above. You cannot read the filesystem, run commands, or
   browse the web. If the user asks for anything outside tuning this one agent's
-  claude.md/skills, politely decline.
+  CLAUDE.md/skills/memories, politely decline.
 - Ask clarifying questions when intent is ambiguous. Short ones.
-- If the user pastes a failed conversation, diagnose what's missing from the
-  instructions and propose targeted edits.
-- Do not touch memories or the knowledge wiki — other flows own those.
+- If the user pastes a failed conversation, diagnose what's missing and propose
+  targeted edits. Pick the right store for the fix:
+  - Missing rule or preference → memory (usually \`feedback\`).
+  - Missing workflow / "the agent didn't know how to do X" → new or updated skill.
+  - Missing domain knowledge / "the agent didn't know about Y" → tell the user to
+    add it to the wiki, don't cram it into memory/CLAUDE.md.
+  - Broken persona / tone → CLAUDE.md (identity only).
 - Never invent MCPs or skills that do not exist. Call \`list_mcps\` / \`list_skills\` first.
-- For each proposal, include a one-sentence rationale grounded in what the user said.`;
+- For each proposal, include a one-sentence rationale grounded in what the user said
+  or what \`read_memories\` surfaced.`;
 
 // ────────────────────────────────────────────────────────────────────────────
 // Session storage (settings table)
@@ -273,14 +348,28 @@ function buildToolbox(ctx: ToolContext) {
 
   const readMemories = defTool(
     'read_memories',
-    "Return the agent's learned memories (user preferences, corrections) for context only. Do NOT propose changes to memories — another flow owns them.",
+    "Return the agent's learned memories with per-memory byte counts and total-vs-cap. Every memory is inlined into the system prompt at build time, so byte budget matters. Each entry includes an id you can pass to propose_memory_change.",
     {},
     wrap('read_memories', async () => {
       const memories = await getAgentMemories(ctx.agentId);
       if (memories.length === 0) return textResult('(no memories yet)');
-      return textResult(
-        memories.map(m => `- [${m.type}] ${m.name}: ${m.content.slice(0, 200)}`).join('\n')
-      );
+
+      // Match the cap + accounting in compile-claude-md.ts:buildInlinedMemoriesSection.
+      const CAP_BYTES = 32 * 1024;
+      const formatBytes = (n: number) => n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KB`;
+      const byteLen = (s: string) => Buffer.byteLength(s, 'utf-8');
+
+      const total = memories.reduce((sum, m) => sum + byteLen(m.content), 0);
+      const pct = Math.round((total / CAP_BYTES) * 100);
+
+      const lines = [
+        `Total: ${formatBytes(total)} / ${formatBytes(CAP_BYTES)} cap (${pct}%)`,
+        '',
+        ...memories.map(m =>
+          `- id=${m.id} [${m.type}] (${formatBytes(byteLen(m.content))}) ${m.name}: ${m.content}`
+        ),
+      ];
+      return textResult(lines.join('\n'));
     }),
     { annotations: { readOnlyHint: true } }
   );
@@ -349,7 +438,68 @@ function buildToolbox(ctx: ToolContext) {
     { annotations: { readOnlyHint: false, destructiveHint: false } }
   );
 
-  return [readClaudeMd, listSkills, readSkill, listMcps, readMemories, proposeClaudeMd, proposeSkill];
+  const proposeMemory = defTool(
+    'propose_memory_change',
+    'Propose creating, rewriting, or deleting ONE memory row. For `create`, provide name + memoryType + content (memoryId is ignored). For `update`, provide memoryId + content (memoryType optional — include it to retype a mis-categorized memory). For `delete`, provide memoryId only.',
+    {
+      action: z.enum(['create', 'update', 'delete']),
+      /** Required for update/delete. Ignored on create. Get this from read_memories. */
+      memoryId: z.string().optional(),
+      /** Required for create (the new memory's name). Ignored on update/delete. */
+      name: z.string().optional(),
+      /** Required for create. Optional on update (retype). Ignored on delete. */
+      memoryType: z.enum(['feedback', 'user', 'project', 'reference']).optional(),
+      /** Required for create and update. Omit for delete. */
+      content: z.string().optional(),
+      rationale: z.string().min(1),
+    },
+    wrap('propose_memory_change', async ({ action, memoryId, name, memoryType, content, rationale }) => {
+      const id = randomUUID();
+
+      if (action === 'create') {
+        if (!name) throw new Error('name is required for create');
+        if (!memoryType) throw new Error('memoryType is required for create');
+        if (!content) throw new Error('content is required for create');
+        // Detect collisions early — same-name memories are replaced by upsert
+        // at apply time, so surface this to the model instead of silently
+        // clobbering. The model can then switch to action=update if intended.
+        const existing = await getAgentMemories(ctx.agentId);
+        if (existing.some(m => m.name === name)) {
+          throw new Error(`memory with name "${name}" already exists — use action=update instead`);
+        }
+        ctx.proposals.push({
+          kind: 'memory', id,
+          memoryName: name, memoryType,
+          action: 'create',
+          content,
+          rationale, status: 'pending',
+        });
+        return textResult(`Proposal queued (id=${id}) for create memory ${name}.`);
+      }
+
+      // update / delete both need an existing row.
+      if (!memoryId) throw new Error(`memoryId is required for ${action}`);
+      if (action === 'update' && !content) throw new Error('content is required for update');
+
+      const memories = await getAgentMemories(ctx.agentId);
+      const hit = memories.find(m => m.id === memoryId);
+      if (!hit) throw new Error(`memory not found: ${memoryId}`);
+
+      // Memory proposals always queue — no auto-apply even in wizard bootstrap.
+      ctx.proposals.push({
+        kind: 'memory', id,
+        memoryId: hit.id, memoryName: hit.name,
+        action,
+        memoryType: action === 'update' ? memoryType : undefined,
+        content: action === 'delete' ? undefined : content,
+        rationale, status: 'pending',
+      });
+      return textResult(`Proposal queued (id=${id}) for ${action} memory ${hit.name}.`);
+    }),
+    { annotations: { readOnlyHint: false, destructiveHint: true } }
+  );
+
+  return [readClaudeMd, listSkills, readSkill, listMcps, readMemories, proposeClaudeMd, proposeSkill, proposeMemory];
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -409,6 +559,7 @@ export async function runCoachTurn(input: CoachTurnInput): Promise<{
     'mcp__coach__read_memories',
     'mcp__coach__propose_claude_md_update',
     'mcp__coach__propose_skill_change',
+    'mcp__coach__propose_memory_change',
   ];
 
   const userBlock = input.attachment

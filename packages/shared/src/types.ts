@@ -385,8 +385,9 @@ export type AgentEvent = AgentReloadEvent | AgentStartEvent | AgentStopEvent | J
 // =============================================================================
 
 /**
- * A single change the coach wants to make to the agent's claude.md or a skill.
- * Surfaced in the chat UI as an approval card — never auto-applied.
+ * A single change the coach wants to make to the agent's claude.md, a skill,
+ * or a memory row. Surfaced in the chat UI as an approval card — never
+ * auto-applied (except during wizard bootstrap).
  */
 export type CoachProposal =
   | {
@@ -404,6 +405,24 @@ export type CoachProposal =
       filename: string;
       action: 'create' | 'update' | 'delete';
       /** New/updated skill body. Omit for delete. */
+      content?: string;
+      rationale: string;
+      id: string;
+      status: 'pending' | 'applied' | 'rejected';
+    }
+  | {
+      kind: 'memory';
+      /** Target memory row id. Required for `update` and `delete`; unset on `create`. */
+      memoryId?: string;
+      /** Name of the memory being touched — shown on the approval card. */
+      memoryName: string;
+      action: 'create' | 'update' | 'delete';
+      /**
+       * Memory type — required for `create`, optional on `update` (lets the Coach
+       * retype a mis-categorized memory). Ignored on delete.
+       */
+      memoryType?: 'user' | 'feedback' | 'project' | 'reference';
+      /** New content for create/update; omit for delete. */
       content?: string;
       rationale: string;
       id: string;
