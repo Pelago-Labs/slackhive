@@ -16,7 +16,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { X, Send, Loader2, RotateCcw, Wand2, ChevronDown, ChevronRight, Check, FileText, History, ArrowLeft } from 'lucide-react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { CoachMessage, CoachProposal } from '@slackhive/shared';
+import type { CoachMessage, CoachProposal, Skill, Memory } from '@slackhive/shared';
 
 /** Shape of one archived conversation returned by `/coach?archive=1`. */
 interface ArchivedConversation {
@@ -195,6 +195,11 @@ export function CoachPanel({
   const [hasClaudeMd, setHasClaudeMd] = useState(false);
   const [skillCount, setSkillCount] = useState(0);
   const [memoryCount, setMemoryCount] = useState(0);
+  // Full current content, used to compute diffs for UPDATE proposal cards.
+  // We store the raw text/arrays so each ProposalCard can find its "before".
+  const [currentClaudeMd, setCurrentClaudeMd] = useState<string>('');
+  const [currentSkills, setCurrentSkills] = useState<Skill[]>([]);
+  const [currentMemories, setCurrentMemories] = useState<Memory[]>([]);
   // History view state. `view: 'list'` shows archived conversations;
   // `view: 'archive'` shows one archived thread read-only; `view: 'current'`
   // is the default (live conversation).
@@ -224,14 +229,19 @@ export function CoachPanel({
         if (mdRes.ok) {
           const md = await mdRes.text();
           setHasClaudeMd(!!md.trim());
+          setCurrentClaudeMd(md);
         }
         if (skRes.ok) {
           const skills = await skRes.json();
-          setSkillCount(Array.isArray(skills) ? skills.length : 0);
+          const arr: Skill[] = Array.isArray(skills) ? skills : [];
+          setSkillCount(arr.length);
+          setCurrentSkills(arr);
         }
         if (memRes.ok) {
           const mems = await memRes.json();
-          setMemoryCount(Array.isArray(mems) ? mems.length : 0);
+          const arr: Memory[] = Array.isArray(mems) ? mems : [];
+          setMemoryCount(arr.length);
+          setCurrentMemories(arr);
         }
       } catch { /* non-fatal — falls back to blank-agent suggestions */ }
     })();
@@ -628,6 +638,7 @@ export function CoachPanel({
                     onApply={() => {}}
                     onReject={() => {}}
                     isStreaming={false}
+                    getBefore={() => null}
                   />
                 ))}
               </>
@@ -685,6 +696,7 @@ export function CoachPanel({
               onApply={p => applyProposal(i, p)}
               onReject={p => rejectProposal(i, p)}
               isStreaming={sending && i === messages.length - 1 && m.role === 'assistant'}
+              getBefore={p => findProposalBefore(p, currentClaudeMd, currentSkills, currentMemories)}
             />
           ))}
 
@@ -784,13 +796,15 @@ const iconBtn: React.CSSProperties = {
 };
 
 function MessageBubble({
-  message, canEdit, onApply, onReject, isStreaming,
+  message, canEdit, onApply, onReject, isStreaming, getBefore,
 }: {
   message: CoachMessage;
   canEdit: boolean;
   onApply: (p: CoachProposal) => void;
   onReject: (p: CoachProposal) => void;
   isStreaming: boolean;
+  /** Resolve the pre-change content for a proposal (for UPDATE/DELETE diffs). */
+  getBefore: (p: CoachProposal) => string | null;
 }) {
   const isUser = message.role === 'user';
   return (
@@ -843,6 +857,7 @@ function MessageBubble({
               canEdit={canEdit}
               onApply={() => onApply(p)}
               onReject={() => onReject(p)}
+              before={getBefore(p)}
             />
           ))}
         </div>
@@ -852,12 +867,15 @@ function MessageBubble({
 }
 
 function ProposalCard({
-  proposal, canEdit, onApply, onReject,
+  proposal, canEdit, onApply, onReject, before,
 }: {
   proposal: CoachProposal;
   canEdit: boolean;
   onApply: () => void;
   onReject: () => void;
+  /** Pre-change content for UPDATE diffs. null when there's no prior state
+   *  (e.g. a CREATE proposal or an UPDATE where we can't find the target). */
+  before: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
   const applied = proposal.status === 'applied';
@@ -915,13 +933,17 @@ function ProposalCard({
         </button>
       )}
 
-      {expanded && hasExpandableContent && (
-        proposal.kind === 'claude-md'
-          ? <ContentBlock text={proposal.content} />
-          : proposal.kind === 'memory'
-            ? <ContentBlock text={proposal.content ?? ''} />
-            : proposal.content ? <ContentBlock text={proposal.content} /> : null
-      )}
+      {expanded && hasExpandableContent && (() => {
+        const afterText = proposal.kind === 'claude-md'
+          ? proposal.content
+          : (proposal.content ?? '');
+        // Show a line-diff when we have prior content that actually differs.
+        // Falls back to a plain block for CREATE proposals or no-op edits.
+        if (before !== null && before !== afterText) {
+          return <DiffBlock before={before} after={afterText} />;
+        }
+        return <ContentBlock text={afterText} />;
+      })()}
 
       <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
         {applied ? (
@@ -1055,4 +1077,101 @@ function ContentBlock({ text }: { text: string }) {
       fontFamily: 'var(--font-mono)', maxHeight: 260, overflow: 'auto',
     }}>{text}</pre>
   );
+}
+
+/**
+ * Classic LCS-based line diff. For the sizes we deal with here (CLAUDE.md,
+ * individual skill/memory files, typically under a few thousand lines) an
+ * O(n·m) table is more than fast enough and produces the cleanest output.
+ */
+type DiffLine = { type: 'same' | 'add' | 'del'; text: string };
+function lineDiff(before: string, after: string): DiffLine[] {
+  const a = before.split('\n');
+  const b = after.split('\n');
+  const m = a.length, n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = m - 1; i >= 0; i--) {
+    for (let j = n - 1; j >= 0; j--) {
+      if (a[i] === b[j]) dp[i][j] = dp[i + 1][j + 1] + 1;
+      else dp[i][j] = Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const out: DiffLine[] = [];
+  let i = 0, j = 0;
+  while (i < m && j < n) {
+    if (a[i] === b[j]) { out.push({ type: 'same', text: a[i] }); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { out.push({ type: 'del', text: a[i] }); i++; }
+    else { out.push({ type: 'add', text: b[j] }); j++; }
+  }
+  while (i < m) out.push({ type: 'del', text: a[i++] });
+  while (j < n) out.push({ type: 'add', text: b[j++] });
+  return out;
+}
+
+/** Unified red/green diff rendering for UPDATE proposal cards. */
+function DiffBlock({ before, after }: { before: string; after: string }) {
+  const lines = lineDiff(before, after);
+  const added = lines.filter(l => l.type === 'add').length;
+  const removed = lines.filter(l => l.type === 'del').length;
+  return (
+    <div style={{
+      marginTop: 6, background: 'var(--surface-2)', border: '1px solid var(--border)',
+      borderRadius: 6, fontSize: 12, lineHeight: 1.5, fontFamily: 'var(--font-mono)',
+      maxHeight: 320, overflow: 'auto',
+    }}>
+      <div style={{
+        padding: '4px 10px', borderBottom: '1px solid var(--border)',
+        fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-sans)',
+        display: 'flex', gap: 10,
+      }}>
+        <span style={{ color: 'var(--green)' }}>+{added}</span>
+        <span style={{ color: 'var(--red)' }}>−{removed}</span>
+      </div>
+      <div style={{ padding: '6px 0' }}>
+        {lines.map((l, i) => {
+          const bg = l.type === 'add' ? 'rgba(16,185,129,0.12)'
+            : l.type === 'del' ? 'var(--red-soft-bg)'
+              : 'transparent';
+          const color = l.type === 'add' ? 'var(--green)'
+            : l.type === 'del' ? 'var(--red)'
+              : 'var(--text)';
+          const marker = l.type === 'add' ? '+' : l.type === 'del' ? '−' : ' ';
+          return (
+            <div key={i} style={{
+              display: 'flex', background: bg, color,
+              padding: '0 10px', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+            }}>
+              <span style={{ width: 14, flexShrink: 0, userSelect: 'none', opacity: 0.7 }}>{marker}</span>
+              <span style={{ flex: 1 }}>{l.text || ' '}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Look up the pre-change content for a proposal so UPDATE cards can render
+ * a real diff. Returns null when there's nothing to diff against (CREATE,
+ * or the target skill/memory is missing from the local cache).
+ */
+function findProposalBefore(
+  p: CoachProposal,
+  claudeMd: string,
+  skills: Skill[],
+  memories: Memory[],
+): string | null {
+  if (p.kind === 'claude-md') return claudeMd;
+  if (p.kind === 'skill') {
+    if (p.action === 'create') return null;
+    const hit = skills.find(s => s.category === p.category && s.filename === p.filename);
+    return hit ? hit.content : null;
+  }
+  if (p.kind === 'memory') {
+    if (p.action === 'create') return null;
+    const hit = memories.find(m => m.id === p.memoryId);
+    return hit ? hit.content : null;
+  }
+  return null;
 }
