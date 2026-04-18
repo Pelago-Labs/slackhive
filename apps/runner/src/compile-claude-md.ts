@@ -138,19 +138,16 @@ export async function compileClaudeMd(agent: Agent, overrideClaudeMd?: string, f
 
   fs.mkdirSync(workDir, { recursive: true });
 
-  const [allSkills, memories] = await Promise.all([
+  const [skills, memories] = await Promise.all([
     getAgentSkills(agent.id),
     getAgentMemories(agent.id),
   ]);
 
-  // identity.md is virtual — computed from agent fields (name/persona/description), not stored as a skill
-  const skills = allSkills.filter(s => s.filename !== 'identity.md' && s.filename !== 'identity');
-
+  // Identity is rendered from agent.name/persona/description in buildClaudeMd — never a skill row.
   logger.info('Compiling agent workspace', {
     agent: agent.slug,
     skills: skills.length,
     memories: memories.length,
-    hasIdentitySkill: false,
   });
 
   // -------------------------------------------------------------------------
@@ -389,7 +386,7 @@ function buildClaudeMd(
 ): string {
   const sections: string[] = [];
 
-  // 1. Identity — always built from name/persona/description (identity.md is virtual/UI-only)
+  // 1. Identity — always built from agent.name/persona/description. Never a skill row.
   const lines = [`# ${agent.name}`];
   if (agent.persona) lines.push('', agent.persona);
   if (agent.description) lines.push('', agent.description);
