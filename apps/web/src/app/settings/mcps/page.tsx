@@ -447,6 +447,7 @@ export default function McpSettingsPage() {
               onDelete={() => handleDelete(server.id)}
               onToggle={() => handleToggle(server)}
               onTest={() => handleTest(server)}
+              onDismissTest={() => setTestResults(prev => { const n = { ...prev }; delete n[server.id]; return n; })}
               testResult={testResults[server.id]}
               canEdit={canEdit}
             />
@@ -1091,10 +1092,11 @@ function HeaderEntriesEditor({
 // ─── Server row ───────────────────────────────────────────────────────────────
 
 function ServerRow({
-  server, isLast, onEdit, onDelete, onToggle, onTest, testResult, canEdit,
+  server, isLast, onEdit, onDelete, onToggle, onTest, onDismissTest, testResult, canEdit,
 }: {
   server: McpServer; isLast: boolean;
   onEdit: () => void; onDelete: () => void; onToggle: () => void; onTest: () => void;
+  onDismissTest: () => void;
   testResult?: { ok: boolean; message?: string; error?: string; tools?: string[] } | 'testing';
   canEdit: boolean;
 }) {
@@ -1182,6 +1184,7 @@ function ServerRow({
           background: testResult.ok ? 'rgba(5,150,105,0.08)' : 'rgba(239,68,68,0.08)',
           border: `1px solid ${testResult.ok ? 'rgba(5,150,105,0.25)' : 'rgba(239,68,68,0.25)'}`,
           color: testResult.ok ? '#059669' : '#ef4444',
+          position: 'relative', paddingRight: 28,
         }}>
           {testResult.ok ? '✓ ' : '✗ '}{testResult.ok ? testResult.message : testResult.error}
           {testResult.ok && testResult.tools && testResult.tools.length > 0 && (
@@ -1192,6 +1195,16 @@ function ServerRow({
               {testResult.tools.join(', ')}
             </div>
           )}
+          <button
+            onClick={onDismissTest}
+            aria-label="Dismiss test result"
+            style={{
+              position: 'absolute', top: 4, right: 6,
+              width: 20, height: 20, padding: 0,
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              color: 'inherit', opacity: 0.6, fontSize: 14, lineHeight: 1,
+            }}
+          >×</button>
         </div>
       )}
     </div>
