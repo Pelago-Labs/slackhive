@@ -495,10 +495,11 @@ export class AgentRunner {
     const existing = session.participants.get(agent.id);
     if (existing) return existing;
 
-    const [permissions, envVarValues, integration] = await Promise.all([
+    const [permissions, envVarValues, integration, mcpServers] = await Promise.all([
       getAgentPermissions(agent.id),
       getAllEnvVarValues(),
       getPlatformIntegration(agent.id, 'slack'),
+      getAgentMcpServers(agent.id),
     ]);
 
     // `getAgentById` reads the `agents` table only — the bot user ID lives in
@@ -516,7 +517,10 @@ export class AgentRunner {
       session.workDirRoot, agent.slug, agentWorkDir,
     );
 
-    const claudeHandler = new ClaudeHandler(agent, [], permissions, participantWorkDir, envVarValues);
+    // Test sessions now get the agent's real MCP servers. ClaudeHandler's
+    // McpProcessManager retries on port-in-use, so running alongside the live
+    // Slack agent just lands the test proxies on neighbouring ports.
+    const claudeHandler = new ClaudeHandler(agent, mcpServers, permissions, participantWorkDir, envVarValues);
     claudeHandler.initialize();
 
     const adapter = new TestAdapter(() => { /* emit target is set per turn by test-handler-server */ });
