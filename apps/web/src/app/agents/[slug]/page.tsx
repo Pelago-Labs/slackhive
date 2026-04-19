@@ -10,7 +10,7 @@
  */
 
 import React, { useEffect, useState, useRef, use, useMemo } from 'react';
-import { Brain, Camera, Clock, History, Upload, Download, Wand2, Loader2, Link2, FileText, GitBranch, BookOpen, ChevronRight, ChevronDown, ArrowLeft, Folder, FolderOpen, Library, X, Search, Code2, Database, Layers, Briefcase, Sparkles } from 'lucide-react';
+import { Brain, Camera, Clock, History, Upload, Download, Wand2, Loader2, Link2, FileText, GitBranch, BookOpen, ChevronRight, ChevronDown, ArrowLeft, Folder, FolderOpen, Library, X, Search, Code2, Database, Layers, Briefcase, Sparkles, MessageSquare } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { Agent, Skill, McpServer, Memory, Permission, Restriction, AgentSnapshot } from '@slackhive/shared';
@@ -20,6 +20,7 @@ import { Portal } from '@/lib/portal';
 import { useAuth } from '@/lib/auth-context';
 import { FilesChanged, type FileChange } from './diff-view';
 import { CoachPanel } from './coach-panel';
+import { TestPanel } from './test-panel';
 
 type Tab = 'overview' | 'instructions' | 'tools' | 'knowledge' | 'logs' | 'history';
 
@@ -66,6 +67,11 @@ export default function AgentPage({ params }: { params: Promise<{ slug: string }
   const [allAgents, setAllAgents] = useState<Agent[]>([]);
   const [canEdit, setCanEdit] = useState(false);
   const [tab, setTab] = useState<Tab>('overview');
+  /** Full-main-window mode swap. `test` replaces the agent header + tabs +
+   *  tab content with <TestPanel>. The global SlackHive sidebar (rendered by
+   *  layout-shell.tsx) remains visible — clicking it navigates away and
+   *  naturally unmounts this page, resetting back to `normal` on next load. */
+  const [mode, setMode] = useState<'normal' | 'test'>('normal');
 
   // Strip ?coach=open from the URL after the first render so refreshing
   // the page doesn't keep rearming the auto-open.
@@ -123,6 +129,23 @@ export default function AgentPage({ params }: { params: Promise<{ slug: string }
 
   const statusColor = STATUS_COLOR[agent.status] ?? 'var(--border-2)';
 
+  // Test mode swap — renders only the TestPanel as the main window. The
+  // global SlackHive sidebar (from layout-shell.tsx) stays visible; clicking
+  // anything in it navigates away and unmounts this page (exiting test mode
+  // implicitly). No tab state is touched, so hitting × returns to the same
+  // tab the user was on.
+  if (mode === 'test') {
+    return (
+      <div style={{ height: '100vh' }}>
+        <TestPanel
+          agentId={agent.id}
+          agentName={agent.name}
+          onClose={() => setMode('normal')}
+        />
+      </div>
+    );
+  }
+
   return (
     <div style={{ minHeight: '100vh' }} className="fade-up">
 
@@ -159,6 +182,25 @@ export default function AgentPage({ params }: { params: Promise<{ slug: string }
                 <h1 style={{ margin: 0, fontSize: 18, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--text)' }}>
                   {agent.name}
                 </h1>
+                <button
+                  onClick={() => setMode('test')}
+                  title="Test this agent — chat with it without connecting to Slack"
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 5,
+                    padding: '3px 9px',
+                    background: 'rgba(99, 102, 241, 0.1)',
+                    border: '1px solid rgba(99, 102, 241, 0.3)',
+                    color: 'var(--accent)',
+                    borderRadius: 5,
+                    fontSize: 11.5,
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    letterSpacing: 0.2,
+                  }}
+                >
+                  <MessageSquare size={11} />
+                  Test
+                </button>
                 {agent.isBoss && (
                   <span style={{
                     fontSize: 10, fontWeight: 600, letterSpacing: '0.06em',

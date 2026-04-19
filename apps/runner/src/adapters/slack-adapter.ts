@@ -394,6 +394,15 @@ Good:
     return text.replace(new RegExp(`<@${this.botUserId}>\\s*`, 'g'), '').trim();
   }
 
+  /** Slack mention form: `<@U...>`. Returns the bare IDs. */
+  parseMentions(text: string): string[] {
+    const out: string[] = [];
+    const re = /<@([UW][A-Z0-9]+)>/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) !== null) out.push(m[1]);
+    return out;
+  }
+
   async downloadFile(url: string): Promise<Buffer> {
     const token: string = (this.app.client as any).token ?? '';
     const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });

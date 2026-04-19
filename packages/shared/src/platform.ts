@@ -117,6 +117,17 @@ export interface PlatformAdapter {
   stripMention(text: string): string;
 
   /**
+   * Extract all bot-user mentions from a piece of outgoing agent text.
+   * Returns the platform-native user IDs so callers (e.g. the test-mode
+   * orchestrator) can look up the target agent without baking platform
+   * syntax into higher layers.
+   *
+   * Example (Slack): "<@U1> please do X" → ["U1"]
+   * Example (Telegram): "@alice please do X" → ["alice"]
+   */
+  parseMentions(text: string): string[];
+
+  /**
    * Download a file from the platform (e.g., Slack file URLs need auth headers).
    * Returns the file content as a Buffer.
    */

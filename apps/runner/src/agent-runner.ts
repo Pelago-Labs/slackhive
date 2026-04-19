@@ -20,9 +20,12 @@
  * @module runner/agent-runner
  */
 
-import type { Agent, PlatformAdapter } from '@slackhive/shared';
+import * as fs from 'fs';
+import * as path from 'path';
+import type { Agent, PlatformAdapter, ThreadMessage } from '@slackhive/shared';
 import { type AgentEvent, getEventBus, type EventBus } from '@slackhive/shared';
 import { SlackAdapter } from './adapters/slack-adapter';
+import { TestAdapter } from './adapters/test-adapter';
 import { MessageHandler } from './message-handler';
 import { JobScheduler } from './job-scheduler';
 import {
@@ -37,7 +40,7 @@ import {
   updateAgentStatus,
   setResult,
 } from './db';
-import { compileClaudeMd } from './compile-claude-md';
+import { compileClaudeMd, getAgentWorkDir } from './compile-claude-md';
 import { ClaudeHandler } from './claude-handler';
 import { MemoryWatcher } from './memory-watcher';
 import { logger } from './logger';
@@ -54,6 +57,111 @@ interface RunningAgent {
 }
 
 /**
+ * One agent participating in a multi-agent test session. Each participant
+ * has its own adapter + ClaudeHandler + MessageHandler, but they share the
+ * session's `history` so every agent sees the full multi-bot thread.
+ *
+ * The participant's `channelId` / `threadId` are shared across the whole
+ * session (the synthetic "test thread") so `getThreadMessages` returns the
+ * same data for everyone.
+ */
+export interface AgentParticipant {
+  agent: Agent;
+  adapter: TestAdapter;
+  claudeHandler: ClaudeHandler;
+  messageHandler: MessageHandler;
+  workDir: string;
+}
+
+/**
+ * Ephemeral team test session — one per browser tab running test mode.
+ *
+ * Rooted at the agent the user opened Test on. When a participant emits a
+ * `<@U...>` mention in its output, the orchestrator lazy-spins a participant
+ * for the mentioned agent (if not already in the session) and injects the
+ * sender's message as if Slack had delivered an `app_mention`. The shared
+ * `history` is what makes thread context work across the team.
+ *
+ * Deliberately NOT going through {@link AgentRunner.startAgent}:
+ *   - no platform integration (the whole point of test mode)
+ *   - no MemoryWatcher (memory writes stay in a throwaway workDir)
+ *   - mcpServers = [] avoids port-range conflicts with a real running agent
+ *   - restrictions = null so the synthetic channel isn't blocked
+ */
+export interface TeamTestSession {
+  rootAgentId: string;
+  sessionId: string;
+  participants: Map<string, AgentParticipant>;
+  /** Shared ref — every participant's adapter.history points at this. */
+  history: ThreadMessage[];
+  /** Parent dir of every participant's workDir — removed on teardown. */
+  workDirRoot: string;
+  lastUsedAt: number;
+}
+
+/** Sessions idle longer than this are reaped on the next tick. */
+const TEST_SESSION_IDLE_MS = 30 * 60 * 1_000;
+
+/**
+ * Build the root directory for a team test session. One dir per browser tab,
+ * nested under the session's root agent's workDir:
+ *   `{rootAgentWorkDir}/test-sessions/{sessionId}/`
+ * Each participant gets its own subdir under this root (see
+ * {@link buildParticipantWorkDir}).
+ */
+function buildSessionRootDir(rootAgentWorkDir: string, sessionId: string, rootSlug: string): string {
+  const root = path.join(rootAgentWorkDir, 'test-sessions', sessionId);
+  fs.mkdirSync(root, { recursive: true });
+  // Marker file so on-disk inspection distinguishes test sessions.
+  fs.writeFileSync(path.join(root, '.test-session'), rootSlug, 'utf-8');
+  return root;
+}
+
+/**
+ * Create an isolated copy of a participant's compiled workDir inside a team
+ * test session. Keeps CLAUDE.md + .claude/commands/ + (symlinked) knowledge
+ * so the test agent has the same skills + knowledge as the real one, but
+ * memory files it writes during the session land in `{participantDir}/sessions/*`
+ * and are discarded on teardown — never touching the live agent's dir.
+ *
+ * Participants are namespaced by slug so the boss and each specialist have
+ * independent SDK session / memory dirs inside one test session.
+ */
+function buildParticipantWorkDir(
+  sessionRoot: string,
+  agentSlug: string,
+  agentWorkDir: string,
+): string {
+  const participantDir = path.join(sessionRoot, agentSlug);
+  fs.mkdirSync(participantDir, { recursive: true });
+
+  const claudeMdSrc = path.join(agentWorkDir, 'CLAUDE.md');
+  if (fs.existsSync(claudeMdSrc)) {
+    fs.copyFileSync(claudeMdSrc, path.join(participantDir, 'CLAUDE.md'));
+  }
+
+  const commandsSrc = path.join(agentWorkDir, '.claude', 'commands');
+  if (fs.existsSync(commandsSrc)) {
+    const commandsDst = path.join(participantDir, '.claude', 'commands');
+    fs.mkdirSync(commandsDst, { recursive: true });
+    for (const f of fs.readdirSync(commandsSrc)) {
+      fs.copyFileSync(path.join(commandsSrc, f), path.join(commandsDst, f));
+    }
+  }
+
+  // Symlink the wiki if present — avoids duplicating a potentially-large
+  // knowledge base into every participant.
+  const wikiSrc = path.join(agentWorkDir, 'knowledge', 'wiki');
+  const wikiDst = path.join(participantDir, 'knowledge', 'wiki');
+  if (fs.existsSync(wikiSrc) && !fs.existsSync(wikiDst)) {
+    fs.mkdirSync(path.dirname(wikiDst), { recursive: true });
+    try { fs.symlinkSync(wikiSrc, wikiDst); } catch { /* fs without symlink — skip */ }
+  }
+
+  return participantDir;
+}
+
+/**
  * Manages the lifecycle of all Claude Code Slack bot instances.
  *
  * @example
@@ -64,6 +172,9 @@ interface RunningAgent {
 export class AgentRunner {
   /** Map of agent ID → running agent resources. */
   private runningAgents: Map<string, RunningAgent> = new Map();
+
+  /** Map of `${rootAgentId}:${sessionId}` → ephemeral team test session. */
+  private testSessions: Map<string, TeamTestSession> = new Map();
 
   /** Scheduled job executor. */
   private jobScheduler: JobScheduler;
@@ -317,6 +428,145 @@ export class AgentRunner {
     logger.info('Agent stopped', { agent: agent.slug });
   }
 
+  // ===========================================================================
+  // Test sessions — ephemeral in-app agent previews
+  // ===========================================================================
+
+  /**
+   * Lazily create a team test session rooted at `rootAgentId`. Reuses the
+   * session on subsequent turns so multi-turn context (SDK session +
+   * in-memory history) carries across messages in the same panel.
+   *
+   * The root participant (the agent the user opened Test on) is spun up
+   * eagerly. Additional participants are lazy-added by `ensureParticipant`
+   * when the orchestrator sees a `<@U...>` mention for them.
+   */
+  async getOrCreateTeamSession(rootAgentId: string, sessionId: string): Promise<TeamTestSession> {
+    const key = `${rootAgentId}:${sessionId}`;
+    const existing = this.testSessions.get(key);
+    if (existing) {
+      existing.lastUsedAt = Date.now();
+      return existing;
+    }
+
+    const rootAgent = await getAgentById(rootAgentId);
+    if (!rootAgent) throw new Error(`agent ${rootAgentId} not found`);
+
+    // Compile the root agent's CLAUDE.md into its real workDir (deterministic;
+    // safe to run in parallel with the live runtime) so we can clone from it.
+    const rootAgentWorkDir = await compileClaudeMd(rootAgent, undefined, '');
+    const workDirRoot = buildSessionRootDir(rootAgentWorkDir, sessionId, rootAgent.slug);
+
+    const session: TeamTestSession = {
+      rootAgentId,
+      sessionId,
+      participants: new Map(),
+      history: [],
+      workDirRoot,
+      lastUsedAt: Date.now(),
+    };
+    this.testSessions.set(key, session);
+
+    // Eagerly spin the root participant so the first turn doesn't pay the
+    // cold-start cost inside the user-visible latency.
+    await this.ensureParticipant(session, rootAgent);
+
+    logger.info('Team test session created', { rootAgentId, sessionId, workDirRoot });
+
+    // Best-effort idle sweep on every new session.
+    this.reapIdleTestSessions();
+
+    return session;
+  }
+
+  /**
+   * Lazy-create a participant for `agent` in `session`. Returns existing
+   * participant if already present. Called by the orchestrator when a
+   * mention resolves to an agent not yet in the session.
+   *
+   * Each participant gets its own isolated workDir (memory writes stay
+   * inside the session dir) but shares `session.history` so every agent's
+   * `getThreadMessages` sees the full multi-bot thread.
+   */
+  async ensureParticipant(session: TeamTestSession, agent: Agent): Promise<AgentParticipant> {
+    const existing = session.participants.get(agent.id);
+    if (existing) return existing;
+
+    const [permissions, envVarValues] = await Promise.all([
+      getAgentPermissions(agent.id),
+      getAllEnvVarValues(),
+    ]);
+
+    // Compile this agent's CLAUDE.md into its real workDir, then clone
+    // into an isolated participant subdir so test-session memory writes
+    // never leak into the Slack agent's sessions dir.
+    const agentWorkDir = await compileClaudeMd(agent, undefined, '');
+    const participantWorkDir = buildParticipantWorkDir(
+      session.workDirRoot, agent.slug, agentWorkDir,
+    );
+
+    const claudeHandler = new ClaudeHandler(agent, [], permissions, participantWorkDir, envVarValues);
+    claudeHandler.initialize();
+
+    const adapter = new TestAdapter(() => { /* emit target is set per turn by test-handler-server */ });
+    adapter.setSharedHistory(session.history);
+    adapter.setAgentRef({
+      id: agent.id,
+      name: agent.name,
+      botUserId: agent.slackBotUserId,
+    });
+    if (agent.slackBotUserId) adapter.setBotUserId(agent.slackBotUserId);
+
+    const messageHandler = new MessageHandler(adapter, claudeHandler, agent, null);
+    adapter.onMessage(msg => messageHandler.handleMessage(msg));
+
+    const participant: AgentParticipant = {
+      agent, adapter, claudeHandler, messageHandler,
+      workDir: participantWorkDir,
+    };
+    session.participants.set(agent.id, participant);
+    logger.info('Participant added to test session', {
+      rootAgentId: session.rootAgentId,
+      sessionId: session.sessionId,
+      participant: agent.slug,
+    });
+    return participant;
+  }
+
+  /** Tear down a team test session: destroy every participant's ClaudeHandler
+   *  and rm -rf the whole session dir. */
+  async destroyTestSession(rootAgentId: string, sessionId: string): Promise<void> {
+    const key = `${rootAgentId}:${sessionId}`;
+    const session = this.testSessions.get(key);
+    if (!session) return;
+
+    this.testSessions.delete(key);
+
+    for (const p of session.participants.values()) {
+      try { p.claudeHandler.destroy(); } catch { /* swallow */ }
+    }
+
+    try {
+      const fsp = await import('fs/promises');
+      await fsp.rm(session.workDirRoot, { recursive: true, force: true });
+    } catch (err) {
+      logger.warn('Failed to clean test workDir', {
+        workDir: session.workDirRoot, error: (err as Error).message,
+      });
+    }
+    logger.info('Team test session destroyed', { rootAgentId, sessionId });
+  }
+
+  private reapIdleTestSessions(): void {
+    const now = Date.now();
+    for (const [key, session] of this.testSessions) {
+      if (now - session.lastUsedAt > TEST_SESSION_IDLE_MS) {
+        const [aid, sid] = key.split(':');
+        this.destroyTestSession(aid, sid).catch(() => {});
+      }
+    }
+  }
+
   /**
    * Reloads an agent: stops it, re-fetches its config, recompiles, and restarts.
    * Called when the web UI publishes a reload event.
@@ -397,10 +647,8 @@ export class AgentRunner {
     const port = parseInt(process.env.RUNNER_INTERNAL_PORT ?? '3002', 10);
 
     this.internalServer = http.createServer(async (req, res) => {
-      if (req.method !== 'POST') { res.writeHead(405); res.end(); return; }
-
       // Streaming coach turn — writes SSE events directly to the response.
-      if (req.url === '/coach') {
+      if (req.method === 'POST' && req.url === '/coach') {
         let body = '';
         req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
         req.on('end', async () => {
@@ -419,6 +667,30 @@ export class AgentRunner {
         });
         return;
       }
+
+      // Test-mode turn — SSE preview of the agent's runtime.
+      if (req.url === '/test' && (req.method === 'POST' || req.method === 'DELETE')) {
+        let body = '';
+        req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+        req.on('end', async () => {
+          try {
+            const { handleTestStream, handleTestDelete } = await import('./test-handler-server');
+            if (req.method === 'POST') await handleTestStream(body, res, this);
+            else await handleTestDelete(body, res, this);
+          } catch (err) {
+            logger.error('Test stream error', { error: (err as Error).message });
+            if (!res.headersSent) {
+              res.writeHead(500, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: (err as Error).message }));
+            } else {
+              res.end();
+            }
+          }
+        });
+        return;
+      }
+
+      if (req.method !== 'POST') { res.writeHead(405); res.end(); return; }
 
       let body = '';
       req.on('data', (chunk: Buffer) => { body += chunk.toString(); });

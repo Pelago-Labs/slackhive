@@ -131,6 +131,30 @@ export async function getAgentById(id: string): Promise<Agent | null> {
   return result.rows.length > 0 ? rowToAgent(result.rows[0]) : null;
 }
 
+/**
+ * Look up an agent by its Slack bot user ID.
+ *
+ * Used by the test-mode orchestrator to resolve `<@U...>` mentions in a boss
+ * agent's output back to the SlackHive agent they refer to, so the
+ * delegation chain can be simulated in test mode without Slack.
+ *
+ * Read-only: no writes, no caching. The DB is the source of truth and
+ * the roster may change while a test session is open.
+ */
+export async function getAgentBySlackBotUserId(botUserId: string): Promise<Agent | null> {
+  const r = await getDb().query(
+    `SELECT a.* FROM agents a
+     JOIN platform_integrations pi ON pi.agent_id = a.id
+     WHERE pi.platform = $1 AND pi.bot_user_id = $2
+     LIMIT 1`,
+    ['slack', botUserId]
+  );
+  if (r.rows.length === 0) return null;
+  const agent = rowToAgent(r.rows[0]);
+  agent.slackBotUserId = botUserId;
+  return agent;
+}
+
 export async function updateAgentStatus(id: string, status: AgentStatus): Promise<void> {
   await getDb().query(
     'UPDATE agents SET status = $1, updated_at = now() WHERE id = $2',

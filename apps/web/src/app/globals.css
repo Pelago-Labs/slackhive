@@ -95,6 +95,10 @@ body {
 
 ::selection { background: rgba(23,23,23,0.12); }
 [data-theme="dark"] ::selection { background: rgba(255,255,255,0.15); }
+/* User chat bubbles are on an accent background; override selection so the
+   selected text stays legible when the user copies it. */
+.user-bubble::selection,
+.user-bubble *::selection { background: rgba(0,0,0,0.35); color: var(--accent-fg); }
 [data-theme="dark"] .icon-adaptive { filter: invert(1); }
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
