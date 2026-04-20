@@ -104,15 +104,32 @@ export default function AgentPage({ params }: { params: Promise<{ slug: string }
       .then((agents: Agent[]) => {
         setAllAgents(agents);
         const found = agents.find(a => a.slug === slug) ?? null;
-        setAgent(found);
-        if (found) {
-          if (role === 'admin' || role === 'superadmin') {
-            setCanEdit(true);
-          } else if (role === 'editor' || role === 'viewer') {
-            fetch(`/api/agents/${found.id}/access`)
-              .then(r => r.json())
-              .then(data => setCanEdit(role === 'editor' && (data.canWrite ?? false)));
-          }
+        if (!found) {
+          setAgent(null);
+          return;
+        }
+        if (role === 'admin' || role === 'superadmin') {
+          setCanEdit(true);
+          // Admins/superadmins can see Slack tokens — fetch detail endpoint
+          fetch(`/api/agents/${found.id}`)
+            .then(r => r.json())
+            .then((detail: Agent) => setAgent(detail))
+            .catch(() => setAgent(found));
+        } else if (role === 'editor' || role === 'viewer') {
+          setAgent(found);
+          fetch(`/api/agents/${found.id}/access`)
+            .then(r => r.json())
+            .then(data => {
+              const writable = role === 'editor' && (data.canWrite ?? false);
+              setCanEdit(writable);
+              if (writable) {
+                // Editors with write access can also see tokens
+                fetch(`/api/agents/${found.id}`)
+                  .then(r => r.json())
+                  .then((detail: Agent) => setAgent(detail))
+                  .catch(() => {});
+              }
+            });
         }
       })
       .finally(() => setLoading(false));
