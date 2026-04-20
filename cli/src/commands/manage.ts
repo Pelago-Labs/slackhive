@@ -7,7 +7,7 @@
  */
 
 import { execSync, spawn, type ChildProcess } from 'child_process';
-import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync, openSync } from 'fs';
 import { join } from 'path';
 import chalk from 'chalk';
 import ora from 'ora';
@@ -119,11 +119,18 @@ function nativeStart(dir: string): void {
   const spinner = ora('Starting SlackHive...').start();
 
   try {
-    // Check if built
-    const standaloneJs = join(dir, 'apps', 'runner', 'dist', 'standalone.js');
-    if (!existsSync(standaloneJs)) {
-      spinner.text = 'Building TypeScript...';
-      execSync('npm run build', { cwd: dir, stdio: 'ignore', timeout: 120000 });
+    // Run from source via tsx — the claude-agent-sdk is ESM-only and breaks
+    // CommonJS-compiled dist output (ERR_REQUIRE_ESM). tsx transpiles on the
+    // fly and handles the ESM/CJS interop transparently.
+    const standaloneTs = join(dir, 'apps', 'runner', 'src', 'standalone.ts');
+    const tsxBin = join(dir, 'node_modules', '.bin', 'tsx');
+    if (!existsSync(standaloneTs)) {
+      spinner.fail('standalone.ts not found — is this a valid SlackHive repo?');
+      return;
+    }
+    if (!existsSync(tsxBin)) {
+      spinner.text = 'Installing dependencies...';
+      execSync('npm install', { cwd: dir, stdio: 'ignore', timeout: 300000 });
     }
 
     // Build clean env — load from .env but strip stale OAuth tokens
@@ -179,11 +186,17 @@ function nativeStart(dir: string): void {
     if (webPort !== 3001) console.log(chalk.yellow(`  Port 3001 in use, using ${webPort}`));
 
     spinner.text = 'Starting...';
-    const child = spawn('node', [standaloneJs], {
+    // Use a log file for detached output so users can see crashes via `slackhive logs`
+    const logDir = join(process.env.HOME ?? '/tmp', '.slackhive', 'logs');
+    mkdirSync(logDir, { recursive: true });
+    const out = openSync(join(logDir, 'native-stdout.log'), 'a');
+    const err = openSync(join(logDir, 'native-stderr.log'), 'a');
+
+    const child = spawn(tsxBin, [standaloneTs], {
       cwd: dir,
       env,
       detached: true,
-      stdio: 'ignore',
+      stdio: ['ignore', out, err],
     });
 
     child.unref();
@@ -308,12 +321,18 @@ function nativeStatus(): void {
 }
 
 function nativeLogs(follow: boolean): void {
-  const logFile = join(getSlackhiveDir(), 'logs', 'runner.log');
-  if (!existsSync(logFile)) {
-    console.log(chalk.yellow('  No log file found. Is SlackHive running?'));
+  // Tail the winston runner.log (structured agent events) plus the stdout/stderr
+  // streams from the detached process (for crashes and MCP script errors that
+  // never reach winston).
+  const logDir = join(getSlackhiveDir(), 'logs');
+  const files = ['runner.log', 'native-stdout.log', 'native-stderr.log']
+    .map(f => join(logDir, f))
+    .filter(f => existsSync(f));
+  if (files.length === 0) {
+    console.log(chalk.yellow('  No log files found. Is SlackHive running?'));
     return;
   }
-  const args = follow ? ['-f', logFile] : ['-n', '200', logFile];
+  const args = follow ? ['-f', ...files] : ['-n', '200', ...files];
   spawn('tail', args, { stdio: 'inherit' });
 }
 
