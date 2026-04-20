@@ -11,6 +11,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-error';
 import { getAllMcpServers, createMcpServer } from '@/lib/db';
 import type { UpsertMcpServerRequest } from '@slackhive/shared';
 import { guardAdmin } from '@/lib/api-guard';
@@ -29,7 +30,7 @@ export async function GET(): Promise<NextResponse> {
     const servers = await getAllMcpServers();
     return NextResponse.json(servers.map(maskMcpServer));
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    return apiError('mcps', err);
   }
 }
 
@@ -65,10 +66,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const server = await createMcpServer(body);
     return NextResponse.json(server, { status: 201 });
   } catch (err) {
-    const message = (err as Error).message;
-    if (message.includes('unique')) {
+    if ((err as Error).message?.includes('unique')) {
       return NextResponse.json({ error: 'An MCP server with this name already exists' }, { status: 409 });
     }
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiError('mcps POST', err);
   }
 }

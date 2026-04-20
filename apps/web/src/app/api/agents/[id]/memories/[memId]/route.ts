@@ -6,6 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-error';
 import { deleteMemory } from '@/lib/db';
 import { guardAgentWrite } from '@/lib/api-guard';
 
@@ -28,6 +29,6 @@ export async function DELETE(req: NextRequest, { params }: RouteParams): Promise
     await deleteMemory(memId);
     return new NextResponse(null, { status: 204 });
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    return apiError('agents/[id]/memories/[memId]', err);
   }
 }

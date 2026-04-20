@@ -10,6 +10,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole, hashPassword } from '@/lib/auth';
 import { getAllUsers, createUser } from '@/lib/db';
+import { apiError } from '@/lib/api-error';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,10 +57,10 @@ export async function POST(req: Request): Promise<NextResponse> {
     const user = await createUser(username, hash, role || 'viewer');
     return NextResponse.json(user, { status: 201 });
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : 'Unknown error';
+    const msg = e instanceof Error ? e.message : '';
     if (msg.includes('unique') || msg.includes('duplicate')) {
       return NextResponse.json({ error: 'Username already exists' }, { status: 409 });
     }
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return apiError('auth/users POST', e);
   }
 }

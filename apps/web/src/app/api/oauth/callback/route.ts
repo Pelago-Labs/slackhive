@@ -89,6 +89,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.redirect(new URL(`/settings/mcps?oauth=success&state=${state}`, req.url));
   } catch (err) {
     console.error('OAuth callback error:', err);
-    return new NextResponse(`OAuth error: ${(err as Error).message}`, { status: 500 });
+    return new NextResponse('OAuth error', { status: 500 });
   }
 }

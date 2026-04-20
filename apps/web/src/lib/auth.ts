@@ -10,25 +10,9 @@
 import * as crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { getUserByUsername } from './db';
-
-/** Read env lazily so the build step can collect pages without AUTH_SECRET set. */
-function getAuthSecret(): string {
-  const s = process.env.AUTH_SECRET;
-  if (!s && process.env.NODE_ENV === 'production' && !process.env.CI) {
-    throw new Error('AUTH_SECRET must be set in production. See .env.example.');
-  }
-  return s || 'change-this-secret-in-production';
-}
+import { getAuthSecret, getAdminPassword } from './secrets';
 
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
-
-function getAdminPassword(): string {
-  const p = process.env.ADMIN_PASSWORD;
-  if (!p && process.env.NODE_ENV === 'production' && !process.env.CI) {
-    throw new Error('ADMIN_PASSWORD must be set in production. See .env.example.');
-  }
-  return p || 'changeme';
-}
 const COOKIE_NAME = 'auth_session';
 
 /**

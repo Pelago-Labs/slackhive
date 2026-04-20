@@ -8,6 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-error';
 import { setEnvVar, updateEnvVarDescription, deleteEnvVar } from '@/lib/db';
 import { guardAdmin } from '@/lib/api-guard';
 
@@ -40,7 +41,7 @@ export async function PUT(
     }
     return NextResponse.json({ key });
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    return apiError('env-vars/[key]', err);
   }
 }
 
@@ -63,6 +64,6 @@ export async function DELETE(
     await deleteEnvVar(key);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    return apiError('env-vars/[key]', err);
   }
 }

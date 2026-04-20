@@ -31,6 +31,7 @@ import type {
   Restriction,
 } from '@slackhive/shared';
 import { getDb, initDb, encrypt, decrypt } from '@slackhive/shared';
+import { getEncryptionKey } from './secrets';
 import type { DbAdapter } from '@slackhive/shared';
 
 // =============================================================================
@@ -143,7 +144,7 @@ async function enrichAgentWithPlatform(agent: Agent | null): Promise<Agent | nul
   );
   if (r.rows.length > 0) {
     const raw = r.rows[0].credentials as string;
-    const key = process.env.ENV_SECRET_KEY ?? process.env.AUTH_SECRET ?? 'slackhive-default-key';
+    const key = getEncryptionKey();
     let creds: Record<string, string> | null = null;
     try {
       creds = JSON.parse(decrypt(raw, key));
@@ -236,7 +237,7 @@ export async function getAllAgents(): Promise<Agent[]> {
     credsByAgent.set(row.agent_id as string, { credentials: row.credentials as string, botUserId: row.bot_user_id as string | undefined });
   }
 
-  const key = process.env.ENV_SECRET_KEY ?? process.env.AUTH_SECRET ?? 'slackhive-default-key';
+  const key = getEncryptionKey();
   for (const agent of agents) {
     const entry = credsByAgent.get(agent.id);
     if (entry) {
@@ -307,7 +308,7 @@ export async function createAgent(req: CreateAgentRequest, createdBy = 'system')
     await d.query(
       `INSERT INTO platform_integrations (id, agent_id, platform, credentials)
        VALUES ($1, $2, $3, $4)`,
-      [randomUUID(), id, req.platform, encrypt(JSON.stringify(req.platformCredentials), process.env.ENV_SECRET_KEY ?? process.env.AUTH_SECRET ?? 'slackhive-default-key')]
+      [randomUUID(), id, req.platform, encrypt(JSON.stringify(req.platformCredentials), getEncryptionKey())]
     );
   }
 
@@ -369,7 +370,7 @@ export async function updateAgent(id: string, req: UpdateAgentRequest): Promise<
   if (req.platformCredentials) {
     const { encrypt } = await import('@slackhive/shared');
     const d = await db();
-    const encrypted = encrypt(JSON.stringify(req.platformCredentials), process.env.ENV_SECRET_KEY ?? process.env.AUTH_SECRET ?? 'slackhive-default-key');
+    const encrypted = encrypt(JSON.stringify(req.platformCredentials), getEncryptionKey());
 
     // Check if integration row exists
     const existing = await d.query(

@@ -9,6 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-error';
 import { rm } from 'fs/promises';
 import path from 'path';
 import { getAgentById, updateAgent, deleteAgent, publishAgentEvent, applyLiveStatus, userCanWriteAgent } from '@/lib/db';
@@ -47,7 +48,7 @@ export async function GET(req: NextRequest, { params }: RouteParams): Promise<Ne
     const enriched = applyLiveStatus(agent);
     return NextResponse.json(canReveal ? enriched : toAgentPublic(enriched));
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    return apiError('agents/[id]', err);
   }
 }
 
@@ -71,7 +72,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
     await regenerateBossRegistry().catch(() => {});
     return NextResponse.json(updated);
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    return apiError('agents/[id]', err);
   }
 }
 
@@ -97,6 +98,6 @@ export async function DELETE(req: NextRequest, { params }: RouteParams): Promise
     await regenerateBossRegistry().catch(() => {});
     return new NextResponse(null, { status: 204 });
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    return apiError('agents/[id]', err);
   }
 }

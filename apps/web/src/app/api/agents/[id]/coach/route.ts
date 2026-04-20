@@ -87,8 +87,9 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
       autoApply: !!body?.autoApply,
     }),
   }).catch((err: unknown) => {
+    console.error('[api:agents/[id]/coach] runner unreachable', err);
     return new Response(
-      JSON.stringify({ error: `runner unreachable: ${(err as Error).message}` }),
+      JSON.stringify({ error: 'runner unreachable' }),
       { status: 502, headers: { 'Content-Type': 'application/json' } },
     );
   });

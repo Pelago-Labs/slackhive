@@ -16,6 +16,39 @@ const { combine, timestamp, json, colorize, simple } = winston.format;
 
 const isDev = process.env.NODE_ENV !== 'production';
 
+// Redact secrets that tend to land in log payloads. Covers Slack tokens
+// (xoxb-*, xoxp-*, xapp-*), Anthropic keys (sk-ant-*), and generic
+// `Authorization: Bearer <tok>` headers. Applied to every log record
+// across both JSON and dev output before any transport sees it.
+const SECRET_PATTERNS: Array<[RegExp, string]> = [
+  [/\bxox[abpsr]-[A-Za-z0-9-]{10,}\b/g, 'xox*-[REDACTED]'],
+  [/\bxapp-[A-Za-z0-9-]{10,}\b/g, 'xapp-[REDACTED]'],
+  [/\bsk-ant-[A-Za-z0-9_-]{10,}\b/g, 'sk-ant-[REDACTED]'],
+  [/\b(Bearer\s+)[A-Za-z0-9._~+/=-]{10,}/gi, '$1[REDACTED]'],
+];
+
+function redactString(s: string): string {
+  let out = s;
+  for (const [re, rep] of SECRET_PATTERNS) out = out.replace(re, rep);
+  return out;
+}
+
+function redactDeep(v: unknown, depth = 0): unknown {
+  if (depth > 6) return v;
+  if (typeof v === 'string') return redactString(v);
+  if (Array.isArray(v)) return v.map((x) => redactDeep(x, depth + 1));
+  if (v && typeof v === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      out[k] = redactDeep(val, depth + 1);
+    }
+    return out;
+  }
+  return v;
+}
+
+const redact = winston.format((info) => redactDeep(info) as winston.Logform.TransformableInfo)();
+
 // In native (non-Docker) mode, also write logs to a file for the web UI to stream.
 const transports: winston.transport[] = [
   new winston.transports.Console(),
@@ -33,7 +66,7 @@ if (isNativeMode) {
       filename: path.join(logDir, 'runner.log'),
       maxsize: 10 * 1024 * 1024, // 10MB
       maxFiles: 3,
-      format: combine(timestamp(), json()),
+      format: combine(redact, timestamp(), json()),
     })
   );
 }
@@ -46,8 +79,8 @@ if (isNativeMode) {
 export const logger = winston.createLogger({
   level: process.env.LOG_LEVEL ?? (isDev ? 'debug' : 'info'),
   format: isDev
-    ? combine(timestamp(), colorize(), simple())
-    : combine(timestamp(), json()),
+    ? combine(redact, timestamp(), colorize(), simple())
+    : combine(redact, timestamp(), json()),
   transports,
 });
 

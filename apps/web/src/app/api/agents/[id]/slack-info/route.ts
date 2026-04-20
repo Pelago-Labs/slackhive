@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-error';
 import { getAgentById } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
@@ -35,6 +36,6 @@ export async function GET(
       teamName:    auth.team,
     });
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    return apiError('agents/[id]/slack-info', err);
   }
 }

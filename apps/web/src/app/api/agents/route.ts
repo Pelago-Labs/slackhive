@@ -8,6 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-error';
 import {
   getAllAgents,
   createAgent,
@@ -37,7 +38,7 @@ export async function GET(): Promise<NextResponse> {
     const agents = await getAllAgents();
     return NextResponse.json(agents.map(a => toAgentPublic(applyLiveStatus(a))));
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    return apiError('agents', err);
   }
 }
 
@@ -102,10 +103,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     return NextResponse.json(toAgentPublic(agent), { status: 201 });
   } catch (err) {
-    const message = (err as Error).message;
-    if (message.includes('unique')) {
+    if ((err as Error).message?.includes('unique')) {
       return NextResponse.json({ error: 'An agent with this slug already exists' }, { status: 409 });
     }
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiError('agents POST', err);
   }
 }

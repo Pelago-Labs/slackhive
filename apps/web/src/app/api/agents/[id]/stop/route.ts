@@ -6,6 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-error';
 import { getAgentById, updateAgentStatus, updateAgentEnabled, publishAgentEvent } from '@/lib/db';
 import { guardAgentWrite } from '@/lib/api-guard';
 
@@ -32,6 +33,6 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<N
     await updateAgentEnabled(id, false);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    return apiError('agents/[id]/stop', err);
   }
 }

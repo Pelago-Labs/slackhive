@@ -11,12 +11,8 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { getAuthSecret } from './lib/secrets';
 
-if (process.env.NODE_ENV === 'production' && !process.env.CI && !process.env.AUTH_SECRET) {
-  throw new Error('AUTH_SECRET must be set in production. See .env.example.');
-}
-
-const AUTH_SECRET = process.env.AUTH_SECRET || 'change-this-secret-in-production';
 const COOKIE_NAME = 'auth_session';
 
 /** Decode a base64url string to bytes without leaking on invalid input. */
@@ -45,7 +41,7 @@ async function verifyHmac(data: string, sig: string): Promise<boolean> {
   if (!sigBytes) return false;
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey(
-    'raw', enc.encode(AUTH_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']
+    'raw', enc.encode(getAuthSecret()), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']
   );
   return crypto.subtle.verify('HMAC', key, sigBytes as BufferSource, enc.encode(data));
 }

@@ -8,6 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-error';
 import { getAgentById, getAgentSkills, getAgentPermissions, getAgentMcpServers, setAgentMcps, publishAgentEvent, createSnapshot } from '@/lib/db';
 import { guardAgentWrite } from '@/lib/api-guard';
 import { getSessionFromRequest } from '@/lib/auth';
@@ -30,7 +31,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<N
     const mcps = await getAgentMcpServers(id);
     return NextResponse.json(mcps);
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    return apiError('agents/[id]/mcps', err);
   }
 }
 
@@ -74,6 +75,6 @@ export async function PUT(req: NextRequest, { params }: RouteParams): Promise<Ne
     await publishAgentEvent({ type: 'reload', agentId: id });
     return NextResponse.json({ ok: true });
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    return apiError('agents/[id]/mcps', err);
   }
 }

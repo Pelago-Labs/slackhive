@@ -224,16 +224,13 @@ export async function getPlatformIntegration(agentId: string, platform: string):
   const row = r.rows[0];
   const raw = row.credentials as string;
   try {
-    // Try encrypted first
     const { decrypt } = await import('@slackhive/shared');
-    const key = process.env.ENV_SECRET_KEY ?? process.env.AUTH_SECRET ?? 'slackhive-default-key';
-    const creds = JSON.parse(decrypt(raw, key));
+    const { getEncryptionKey } = await import('./secrets.js');
+    const creds = JSON.parse(decrypt(raw, getEncryptionKey()));
     return { credentials: creds, botUserId: row.bot_user_id as string | undefined };
-  } catch {
-    // Fallback: plain JSON (migrated data or dev mode)
-    try {
-      return { credentials: JSON.parse(raw), botUserId: row.bot_user_id as string | undefined };
-    } catch { return null; }
+  } catch (err) {
+    console.error('[db] Failed to decrypt platform credentials — refusing plaintext fallback', err);
+    return null;
   }
 }
 
