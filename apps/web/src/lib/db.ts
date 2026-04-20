@@ -1259,18 +1259,11 @@ export async function deleteSnapshot(id: string): Promise<void> {
 // The runner decrypts values at agent start time using the same key.
 // =============================================================================
 
-/** The symmetric encryption key for env var values. Must be set in .env. */
-function getEnvSecretKey(): string {
-  const key = process.env.ENV_SECRET_KEY;
-  if (!key) throw new Error('ENV_SECRET_KEY is not set — required for env var encryption');
-  return key;
-}
-
 /**
  * Returns decrypted env var values keyed by name. For internal use only — never expose via API.
  */
 export async function getEnvVarValues(): Promise<Record<string, string>> {
-  const encKey = getEnvSecretKey();
+  const encKey = getEncryptionKey();
   const r = await (await db()).query('SELECT key, value FROM env_vars');
   return Object.fromEntries(
     r.rows.map((row) => [row.key as string, decrypt(row.value as string, encKey)])
@@ -1292,15 +1285,17 @@ export async function getAllEnvVars(): Promise<Array<{ key: string; description?
 }
 
 /**
- * Upserts an env var. Value is encrypted using pgcrypto before storage.
+ * Upserts an env var. Value is AES-encrypted with ENV_SECRET_KEY (app-layer,
+ * via @slackhive/shared `encrypt`) before storage. Works identically for
+ * SQLite and Postgres — the column stores ciphertext either way.
  *
  * @param {string} key - Env var key (e.g. "REDSHIFT_DATABASE_URL").
- * @param {string} value - Secret value (encrypted before storage).
+ * @param {string} value - Plaintext secret; encrypted before storage.
  * @param {string} [description] - Optional human-readable description.
  * @returns {Promise<void>}
  */
 export async function setEnvVar(key: string, value: string, description?: string): Promise<void> {
-  const encKey = getEnvSecretKey();
+  const encKey = getEncryptionKey();
   const encrypted = encrypt(value, encKey);
   await (await db()).query(
     `INSERT INTO env_vars (key, value, description)
