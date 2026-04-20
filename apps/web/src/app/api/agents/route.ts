@@ -22,6 +22,7 @@ import { SKILL_TEMPLATES } from '@/lib/skill-templates';
 import { regenerateBossRegistry } from '@/lib/boss-registry';
 import { guardAdmin } from '@/lib/api-guard';
 import { getSessionFromRequest } from '@/lib/auth';
+import { toAgentPublic } from '@/lib/agent-public';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,7 +35,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(): Promise<NextResponse> {
   try {
     const agents = await getAllAgents();
-    return NextResponse.json(agents.map(applyLiveStatus));
+    return NextResponse.json(agents.map(a => toAgentPublic(applyLiveStatus(a))));
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });
   }
@@ -99,7 +100,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Regenerate boss registry now that team has a new member
     await regenerateBossRegistry().catch(() => {});
 
-    return NextResponse.json(agent, { status: 201 });
+    return NextResponse.json(toAgentPublic(agent), { status: 201 });
   } catch (err) {
     const message = (err as Error).message;
     if (message.includes('unique')) {

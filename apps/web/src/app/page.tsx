@@ -363,7 +363,7 @@ function AgentCard({ agent, highlight, compact, multiReport }: {
   compact?: boolean;
   multiReport?: boolean;
 }) {
-  const noCreds = !agent.slackBotToken;
+  const noCreds = !agent.hasSlackCreds;
   const displayStatus = (agent.liveStatus ?? agent.status) as string;
   const color = noCreds ? '#f59e0b' : (STATUS_COLOR[displayStatus] ?? '#a3a3a3');
   const statusLabel = noCreds ? 'Not configured' : STATUS_LABEL[displayStatus];

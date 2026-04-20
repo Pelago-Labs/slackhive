@@ -147,8 +147,8 @@ async function enrichAgentWithPlatform(agent: Agent | null): Promise<Agent | nul
     let creds: Record<string, string> | null = null;
     try {
       creds = JSON.parse(decrypt(raw, key));
-    } catch {
-      try { creds = JSON.parse(raw); } catch { /* not parseable */ }
+    } catch (err) {
+      console.error(`[db] failed to decrypt platform credentials for agent ${agent.id}:`, (err as Error).message);
     }
     if (creds) {
       agent.slackBotToken = creds.botToken;
@@ -241,8 +241,10 @@ export async function getAllAgents(): Promise<Agent[]> {
     const entry = credsByAgent.get(agent.id);
     if (entry) {
       let creds: Record<string, string> | null = null;
-      try { creds = JSON.parse(decrypt(entry.credentials, key)); } catch {
-        try { creds = JSON.parse(entry.credentials); } catch { /* skip */ }
+      try {
+        creds = JSON.parse(decrypt(entry.credentials, key));
+      } catch (err) {
+        console.error(`[db] failed to decrypt platform credentials for agent ${agent.id}:`, (err as Error).message);
       }
       if (creds) {
         agent.slackBotToken = creds.botToken;

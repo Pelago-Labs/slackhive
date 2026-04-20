@@ -110,6 +110,11 @@ export interface Agent {
   slackSigningSecret?: string;
   slackBotUserId?: string;
   /**
+   * Derived presence flag for list endpoints that strip the raw credentials.
+   * True when an active slack platform_integrations row exists for this agent.
+   */
+  hasSlackCreds?: boolean;
+  /**
    * The Claude model to use for this agent.
    * @default "claude-opus-4-6"
    */

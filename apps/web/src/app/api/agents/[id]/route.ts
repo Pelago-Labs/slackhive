@@ -11,10 +11,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { rm } from 'fs/promises';
 import path from 'path';
-import { getAgentById, updateAgent, deleteAgent, publishAgentEvent, applyLiveStatus } from '@/lib/db';
+import { getAgentById, updateAgent, deleteAgent, publishAgentEvent, applyLiveStatus, userCanWriteAgent } from '@/lib/db';
 import type { UpdateAgentRequest } from '@slackhive/shared';
 import { regenerateBossRegistry } from '@/lib/boss-registry';
 import { guardAgentWrite, guardUserAdmin } from '@/lib/api-guard';
+import { getSessionFromRequest } from '@/lib/auth';
+import { toAgentPublic } from '@/lib/agent-public';
 
 const AGENTS_TMP_DIR = process.env.AGENTS_TMP_DIR ?? (
   process.env.DATABASE_TYPE === 'sqlite'
@@ -33,12 +35,17 @@ type RouteParams = { params: Promise<{ id: string }> };
  * @param {RouteParams} ctx
  * @returns {Promise<NextResponse>} Agent JSON or 404.
  */
-export async function GET(_req: NextRequest, { params }: RouteParams): Promise<NextResponse> {
+export async function GET(req: NextRequest, { params }: RouteParams): Promise<NextResponse> {
   try {
     const { id } = await params;
     const agent = await getAgentById(id);
     if (!agent) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    return NextResponse.json(applyLiveStatus(agent));
+    const session = getSessionFromRequest(req);
+    const canReveal = session
+      ? await userCanWriteAgent(id, session.username, session.role)
+      : false;
+    const enriched = applyLiveStatus(agent);
+    return NextResponse.json(canReveal ? enriched : toAgentPublic(enriched));
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });
   }

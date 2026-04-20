@@ -31,6 +31,17 @@ function getAdminPassword(): string {
 }
 const COOKIE_NAME = 'auth_session';
 
+/**
+ * Constant-time string comparison. SHA-256 hashes both inputs to equalize
+ * length before `timingSafeEqual`, so attackers can't distinguish by length
+ * or by character-position timing.
+ */
+function timingSafeStringEqual(a: string, b: string): boolean {
+  const ha = crypto.createHash('sha256').update(a).digest();
+  const hb = crypto.createHash('sha256').update(b).digest();
+  return crypto.timingSafeEqual(ha, hb);
+}
+
 export type Role = 'superadmin' | 'admin' | 'editor' | 'viewer';
 
 export interface SessionPayload {
@@ -61,7 +72,7 @@ export function verifySession(cookie: string): SessionPayload | null {
   if (parts.length !== 2) return null;
   const [data, sig] = parts;
   const expected = crypto.createHmac('sha256', getAuthSecret()).update(data).digest('base64url');
-  if (sig !== expected) return null;
+  if (!timingSafeStringEqual(sig, expected)) return null;
   try {
     return JSON.parse(Buffer.from(data, 'base64url').toString()) as SessionPayload;
   } catch {
@@ -78,8 +89,9 @@ export function verifySession(cookie: string): SessionPayload | null {
  * @returns {Promise<SessionPayload | null>} Session payload or null if auth fails.
  */
 export async function authenticateUser(username: string, password: string): Promise<SessionPayload | null> {
-  // Check superadmin
-  if (username === ADMIN_USERNAME && password === getAdminPassword()) {
+  // Check superadmin. Username compare is non-secret; password compare must be
+  // constant-time to prevent timing oracles on ADMIN_PASSWORD.
+  if (username === ADMIN_USERNAME && timingSafeStringEqual(password, getAdminPassword())) {
     return { username, role: 'superadmin' };
   }
 
