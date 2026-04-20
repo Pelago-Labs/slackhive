@@ -47,7 +47,20 @@ function redactDeep(v: unknown, depth = 0): unknown {
   return v;
 }
 
-const redact = winston.format((info) => redactDeep(info) as winston.Logform.TransformableInfo)();
+// Mutate info in place — rebuilding the object via Object.entries drops
+// Winston's internal symbol keys (LEVEL, MESSAGE, SPLAT), which silently
+// breaks the transport pipeline so no output ever reaches Console/File.
+const redact = winston.format((info) => {
+  for (const k of Object.keys(info)) {
+    const v = (info as Record<string, unknown>)[k];
+    if (typeof v === 'string') {
+      (info as Record<string, unknown>)[k] = redactString(v);
+    } else if (v !== null && typeof v === 'object') {
+      (info as Record<string, unknown>)[k] = redactDeep(v);
+    }
+  }
+  return info;
+})();
 
 // In native (non-Docker) mode, also write logs to a file for the web UI to stream.
 const transports: winston.transport[] = [
