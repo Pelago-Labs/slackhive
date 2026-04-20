@@ -85,18 +85,22 @@ export class McpProcessManager {
       const scriptPath = path.join(scriptDir, `${name}.ts`);
       fs.mkdirSync(scriptDir, { recursive: true });
       fs.writeFileSync(scriptPath, config.tsSource as string, 'utf8');
-      // Resolve tsx — check runner node_modules (Docker) then workspace root (native monorepo)
-      const runnerRoot = path.resolve(__dirname, '..');
-      const workspaceRoot = path.resolve(__dirname, '../..');
-      command = [
-        path.join(runnerRoot, 'node_modules', '.bin', 'tsx'),
-        path.join(workspaceRoot, 'node_modules', '.bin', 'tsx'),
-      ].find(p => fs.existsSync(p)) ?? 'tsx';
+      // Walk up from __dirname to find every node_modules directory on the way
+      // to the filesystem root. Handles both Docker (/app/node_modules) and
+      // npm-workspace layouts (repo-root/node_modules with hoisted deps) on
+      // Mac and Linux without guessing how many `../..` levels to use.
+      const nmDirs: string[] = [];
+      let cur = path.resolve(__dirname);
+      while (cur !== path.dirname(cur)) {
+        const nm = path.join(cur, 'node_modules');
+        if (fs.existsSync(nm)) nmDirs.push(nm);
+        cur = path.dirname(cur);
+      }
+      command = nmDirs
+        .map(nm => path.join(nm, '.bin', 'tsx'))
+        .find(p => fs.existsSync(p)) ?? 'tsx';
       args = [scriptPath];
-      env.NODE_PATH = [
-        path.join(runnerRoot, 'node_modules'),
-        path.join(workspaceRoot, 'node_modules'),
-      ].join(path.delimiter);
+      env.NODE_PATH = nmDirs.join(path.delimiter);
     }
 
     // Connect to the stdio MCP process

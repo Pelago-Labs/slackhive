@@ -370,17 +370,20 @@ export class ClaudeHandler {
       fs.mkdirSync(scriptDir, { recursive: true });
       fs.writeFileSync(scriptPath, c.tsSource as string, 'utf8');
       const resolvedEnv = this.resolveEnvRefs(c);
-      // Resolve tsx — check runner node_modules (Docker) then workspace root (native monorepo)
-      const runnerRoot = path.resolve(__dirname, '..');
-      const workspaceRoot = path.resolve(__dirname, '../..');
-      const tsxPath = [
-        path.join(runnerRoot, 'node_modules', '.bin', 'tsx'),
-        path.join(workspaceRoot, 'node_modules', '.bin', 'tsx'),
-      ].find(p => fs.existsSync(p)) ?? 'tsx';
-      const nodePath = [
-        path.join(runnerRoot, 'node_modules'),
-        path.join(workspaceRoot, 'node_modules'),
-      ].join(path.delimiter);
+      // Walk up from __dirname collecting every node_modules found — handles
+      // Docker (/app/node_modules), workspace hoisted deps, and per-package
+      // installs on any OS without hardcoding parent levels.
+      const nmDirs: string[] = [];
+      let cur = path.resolve(__dirname);
+      while (cur !== path.dirname(cur)) {
+        const nm = path.join(cur, 'node_modules');
+        if (fs.existsSync(nm)) nmDirs.push(nm);
+        cur = path.dirname(cur);
+      }
+      const tsxPath = nmDirs
+        .map(nm => path.join(nm, '.bin', 'tsx'))
+        .find(p => fs.existsSync(p)) ?? 'tsx';
+      const nodePath = nmDirs.join(path.delimiter);
       return {
         command: tsxPath,
         args: [scriptPath],
