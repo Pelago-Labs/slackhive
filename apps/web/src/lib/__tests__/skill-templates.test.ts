@@ -33,6 +33,7 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
     isBoss: false,
     reportsTo: [],
     claudeMd: '',
+    verbose: true,
     createdBy: 'system',
     createdAt: new Date(),
     updatedAt: new Date(),
