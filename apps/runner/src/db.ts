@@ -46,6 +46,8 @@ function rowToAgent(row: Record<string, unknown>): Agent {
     createdAt: row.created_at as Date,
     updatedAt: row.updated_at as Date,
     lastError: (row.last_error as string | null | undefined) ?? null,
+    runnerId: (row.runner_id as string | null | undefined) ?? null,
+    lastHeartbeat: (row.last_heartbeat as string | null | undefined) ?? null,
   };
 }
 
@@ -156,21 +158,53 @@ export async function getAgentBySlackBotUserId(botUserId: string): Promise<Agent
   return agent;
 }
 
-export async function updateAgentStatus(id: string, status: AgentStatus, lastError?: string | null): Promise<void> {
+export async function updateAgentStatus(
+  id: string,
+  status: AgentStatus,
+  lastError?: string | null,
+  runnerId?: string,
+): Promise<void> {
   // When lastError is explicitly passed (even null) we also write it. When it's
   // undefined (default), the existing value is preserved — callers that don't
   // care about the error text shouldn't accidentally wipe it.
-  if (lastError === undefined) {
-    await getDb().query(
-      'UPDATE agents SET status = $1, updated_at = now() WHERE id = $2',
-      [status, id]
-    );
-  } else {
-    await getDb().query(
-      'UPDATE agents SET status = $1, last_error = $2, updated_at = now() WHERE id = $3',
-      [status, lastError, id]
-    );
+  //
+  // When runnerId is provided, also stamp runner_id + last_heartbeat so the
+  // read side can tell the owning runner's writes apart from stray ones.
+  const setHeartbeat = runnerId !== undefined;
+  const params: unknown[] = [status];
+  const sets: string[] = ['status = $1'];
+
+  if (lastError !== undefined) {
+    sets.push(`last_error = $${params.length + 1}`);
+    params.push(lastError);
   }
+  if (setHeartbeat) {
+    sets.push(`runner_id = $${params.length + 1}`);
+    params.push(runnerId);
+    sets.push(`last_heartbeat = now()`);
+  }
+  sets.push('updated_at = now()');
+
+  params.push(id);
+  await getDb().query(
+    `UPDATE agents SET ${sets.join(', ')} WHERE id = $${params.length}`,
+    params,
+  );
+}
+
+/**
+ * Bump `last_heartbeat` for every agent this runner owns. Called on a timer
+ * by AgentRunner so a crashed runner's "running" row decays and the UI can
+ * render it as `stale` instead of a false-positive green.
+ */
+export async function heartbeatAgents(agentIds: string[], runnerId: string): Promise<void> {
+  if (agentIds.length === 0) return;
+  const placeholders = agentIds.map((_, i) => `$${i + 2}`).join(', ');
+  await getDb().query(
+    `UPDATE agents SET last_heartbeat = now(), runner_id = $1
+     WHERE id IN (${placeholders}) AND status = 'running'`,
+    [runnerId, ...agentIds],
+  );
 }
 
 export async function updateAgentSlackUserId(id: string, slackBotUserId: string): Promise<void> {

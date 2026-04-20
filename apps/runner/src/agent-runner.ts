@@ -22,6 +22,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
 import type { Agent, PlatformAdapter, ThreadMessage } from '@slackhive/shared';
 import { type AgentEvent, getEventBus, type EventBus } from '@slackhive/shared';
 import { SlackAdapter } from './adapters/slack-adapter';
@@ -38,6 +39,7 @@ import {
   getAgentSkills,
   getAllEnvVarValues,
   updateAgentStatus,
+  heartbeatAgents,
   setResult,
   getPlatformIntegration,
 } from './db';
@@ -186,6 +188,16 @@ export class AgentRunner {
   /** Internal HTTP server for receiving events from the web process. */
   private internalServer: import('http').Server | null = null;
 
+  /**
+   * Per-process UUID identifying this runner. Written to `agents.runner_id`
+   * on every status transition so a stray runner's writes are distinguishable
+   * from the owning runner's writes.
+   */
+  private readonly runnerId: string = randomUUID();
+
+  /** Interval handle for the heartbeat loop — cleared on stop(). */
+  private heartbeatTimer: NodeJS.Timeout | null = null;
+
   constructor() {
     this.jobScheduler = new JobScheduler((agentId: string) => this.getRunningAgent(agentId));
   }
@@ -215,9 +227,28 @@ export class AgentRunner {
     await this.startInternalServer();
     await this.loadAllAgents();
     await this.jobScheduler.start();
+    this.startHeartbeat();
     this.registerShutdownHandlers();
 
-    logger.info('AgentRunner started', { agents: this.runningAgents.size });
+    logger.info('AgentRunner started', { agents: this.runningAgents.size, runnerId: this.runnerId });
+  }
+
+  /**
+   * Bump last_heartbeat every 15s for all running agents we own. Lets the UI
+   * detect a dead runner (no heartbeat for >45s → render `stale`) instead of
+   * showing a stale "Running" dot forever.
+   */
+  private startHeartbeat(): void {
+    if (this.heartbeatTimer) return;
+    this.heartbeatTimer = setInterval(() => {
+      const ids = Array.from(this.runningAgents.keys());
+      if (ids.length === 0) return;
+      heartbeatAgents(ids, this.runnerId).catch((err) =>
+        logger.warn('Heartbeat write failed', { error: (err as Error).message })
+      );
+    }, 15_000);
+    // Don't keep the event loop alive just for the heartbeat.
+    this.heartbeatTimer.unref?.();
   }
 
   /**
@@ -257,6 +288,9 @@ export class AgentRunner {
    */
   async stop(): Promise<void> {
     logger.info('AgentRunner stopping...');
+
+    // Stop heartbeat
+    if (this.heartbeatTimer) { clearInterval(this.heartbeatTimer); this.heartbeatTimer = null; }
 
     // Stop internal server
     if (this.internalServer) { this.internalServer.close(); this.internalServer = null; }
@@ -298,7 +332,7 @@ export class AgentRunner {
     // sessions. The very next `startAgent` call sets the true current state.
     for (const agent of agents) {
       if (agent.enabled !== false) {
-        await updateAgentStatus(agent.id, 'stopped');
+        await updateAgentStatus(agent.id, 'stopped', undefined, this.runnerId);
       }
     }
 
@@ -315,7 +349,7 @@ export class AgentRunner {
       } catch (err) {
         const msg = (err as Error).message;
         logger.error('Failed to start agent', { agent: agent.slug, error: msg });
-        await updateAgentStatus(agent.id, 'error', msg);
+        await updateAgentStatus(agent.id, 'error', msg, this.runnerId);
       }
     }
   }
@@ -356,7 +390,7 @@ export class AgentRunner {
     if (!integration) {
       logger.warn('No platform integration found — agent cannot start', { agent: agent.slug });
       // 'stopped', not 'error' — this is a not-yet-configured state, not a runtime failure.
-      await updateAgentStatus(agent.id, 'stopped', 'Slack is not configured for this agent.');
+      await updateAgentStatus(agent.id, 'stopped', 'Slack is not configured for this agent.', this.runnerId);
       return;
     }
 
@@ -395,7 +429,7 @@ export class AgentRunner {
 
     this.runningAgents.set(agent.id, { agent, adapter, claudeHandler, memoryWatcher });
     // Success — clear any leftover error message from a prior failed start.
-    await updateAgentStatus(agent.id, 'running', null);
+    await updateAgentStatus(agent.id, 'running', null, this.runnerId);
 
     logger.info('Agent started', {
       agent: agent.slug,
@@ -426,7 +460,7 @@ export class AgentRunner {
     }
 
     this.runningAgents.delete(agentId);
-    await updateAgentStatus(agentId, 'stopped');
+    await updateAgentStatus(agentId, 'stopped', undefined, this.runnerId);
 
     logger.info('Agent stopped', { agent: agent.slug });
   }
@@ -623,7 +657,7 @@ export class AgentRunner {
         case 'reload':
           this.reloadAgent(event.agentId).catch(async (err) => {
             logger.error('Failed to reload agent', { agentId: event.agentId, error: err.message });
-            await updateAgentStatus(event.agentId, 'error', err.message).catch(() => {});
+            await updateAgentStatus(event.agentId, 'error', err.message, this.runnerId).catch(() => {});
           });
           break;
         case 'start':
@@ -631,7 +665,7 @@ export class AgentRunner {
             .then((agent) => agent && this.startAgent(agent))
             .catch(async (err) => {
               logger.error('Failed to start agent', { agentId: event.agentId, error: err.message });
-              await updateAgentStatus(event.agentId, 'error', err.message).catch(() => {});
+              await updateAgentStatus(event.agentId, 'error', err.message, this.runnerId).catch(() => {});
             });
           break;
         case 'stop':
@@ -728,7 +762,7 @@ export class AgentRunner {
                 } catch (err) {
                   const msg = (err as Error).message;
                   logger.error('Failed to start agent', { agent: agent.slug, error: msg });
-                  await updateAgentStatus(agent.id, 'error', msg);
+                  await updateAgentStatus(agent.id, 'error', msg, this.runnerId);
                   throw err;
                 }
               }

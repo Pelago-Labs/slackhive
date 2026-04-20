@@ -43,7 +43,12 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'history',       label: 'History'       },
 ];
 
-const STATUS_COLOR = { running: '#16a34a', stopped: 'var(--border-2)', error: '#ef4444' } as const;
+const STATUS_COLOR = {
+  running: '#16a34a',
+  stopped: 'var(--border-2)',
+  error: '#ef4444',
+  stale: '#f59e0b',
+} as const;
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -127,7 +132,14 @@ export default function AgentPage({ params }: { params: Promise<{ slug: string }
   if (loading) return <PageLoader />;
   if (!agent)  return <NotFound slug={slug} />;
 
-  const statusColor = STATUS_COLOR[agent.status] ?? 'var(--border-2)';
+  // Prefer the API-computed liveStatus (accounts for heartbeat staleness) over
+  // the raw DB status. A green "running" dot with no recent heartbeat means
+  // the owning runner crashed — surface that as an amber "stale" dot instead.
+  const displayStatus = (agent.liveStatus ?? agent.status) as keyof typeof STATUS_COLOR;
+  const statusColor = STATUS_COLOR[displayStatus] ?? 'var(--border-2)';
+  const staleTooltip = displayStatus === 'stale'
+    ? 'Status unconfirmed — no runner heartbeat in over 45s. The owning process may have crashed.'
+    : undefined;
 
   // Test mode swap — renders only the TestPanel as the main window. The
   // global SlackHive sidebar (from layout-shell.tsx) stays visible; clicking
@@ -191,13 +203,13 @@ export default function AgentPage({ params }: { params: Promise<{ slug: string }
                     textTransform: 'uppercase',
                   }}>Boss</span>
                 )}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }} title={staleTooltip}>
                   <div
-                    className={agent.status === 'running' ? 'status-running' : ''}
+                    className={displayStatus === 'running' ? 'status-running' : ''}
                     style={{ width: 7, height: 7, borderRadius: '50%', background: statusColor }}
                   />
                   <span style={{ fontSize: 12, color: statusColor, fontWeight: 500, textTransform: 'capitalize' }}>
-                    {agent.status}
+                    {displayStatus}
                   </span>
                 </div>
               </div>

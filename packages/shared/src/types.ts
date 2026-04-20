@@ -153,6 +153,25 @@ export interface Agent {
    * user immediately sees *why* an agent isn't running.
    */
   lastError?: string | null;
+  /**
+   * UUID of the runner process that last wrote this agent's status. Lets the
+   * UI (and a future owning-runner check) distinguish the authoritative
+   * writer from a stray/legacy runner sharing the same DB.
+   */
+  runnerId?: string | null;
+  /**
+   * ISO timestamp of the last liveness write from the owning runner. The
+   * runner bumps this every 15s for agents it's actively running. If the
+   * read side sees a `running` status with a heartbeat older than ~45s, it
+   * renders the status as `stale` instead of trusting the flag.
+   */
+  lastHeartbeat?: string | null;
+  /**
+   * Derived at read time from `status` + `lastHeartbeat` age. Not persisted.
+   * `stale` means the DB says `running` but no runner heartbeat has landed
+   * recently — the owning process likely crashed.
+   */
+  liveStatus?: AgentStatus | 'stale';
 }
 
 /**

@@ -15,6 +15,7 @@ import {
   upsertSkill,
   upsertPermissions,
   publishAgentEvent,
+  applyLiveStatus,
 } from '@/lib/db';
 import type { CreateAgentRequest } from '@slackhive/shared';
 import { SKILL_TEMPLATES } from '@/lib/skill-templates';
@@ -33,7 +34,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(): Promise<NextResponse> {
   try {
     const agents = await getAllAgents();
-    return NextResponse.json(agents);
+    return NextResponse.json(agents.map(applyLiveStatus));
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });
   }

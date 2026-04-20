@@ -16,6 +16,7 @@
  */
 
 import { App, LogLevel } from '@slack/bolt';
+import { WebClient } from '@slack/web-api';
 import type {
   PlatformAdapter, IncomingMessage, ThreadMessage, FileAttachment, MessagePayload,
   SlackCredentials,
@@ -70,7 +71,7 @@ const MCP_TOOL_LABELS: Record<string, string> = {
 export class SlackAdapter implements PlatformAdapter {
   readonly platform = 'slack';
 
-  private app: App;
+  private app!: App;
   private log: Logger;
   private botUserId?: string;
   private messageHandler?: (msg: IncomingMessage) => Promise<void>;
@@ -79,31 +80,48 @@ export class SlackAdapter implements PlatformAdapter {
   constructor(credentials: SlackCredentials, agentSlug: string) {
     this.credentials = credentials;
     this.log = agentLogger(agentSlug);
-    this.app = new App({
-      token: credentials.botToken,
-      appToken: credentials.appToken,
-      signingSecret: credentials.signingSecret,
-      socketMode: true,
-      logLevel: process.env.LOG_LEVEL === 'debug' ? LogLevel.DEBUG : LogLevel.WARN,
-    });
+    // Don't construct Bolt's App here — it spins up a SocketModeReceiver
+    // that eagerly validates tokens in the background and orphans any
+    // resulting rejection. Build it in start() AFTER the credential probe
+    // passes so a bad-token agent never creates socket machinery.
   }
 
   // ─── Lifecycle ─────────────────────────────────────────────────────
 
   async start(): Promise<void> {
-    // Discover bot user ID. This doubles as a credential probe — if the
-    // botToken is invalid, Slack returns invalid_auth here and we should
-    // surface it as a start failure rather than proceeding to open a Socket
-    // Mode connection (which only uses the appToken and can "succeed" even
+    // Pre-flight credential check using a standalone WebClient (NOT
+    // `this.app.client`). Bolt's own WebClient sits behind retry + rate-limit
+    // middleware that orphans the rejection on failure, producing a stray
+    // `unhandledRejection` even when we await and catch here.
+    //
+    // If the botToken is invalid we must bail before `app.start()` opens the
+    // Socket Mode connection — that uses only the appToken and "succeeds"
     // with a garbage botToken, leaving the agent visibly "running" but
-    // unable to post anything).
+    // unable to post anything.
     try {
-      const auth = await this.app.client.auth.test({ token: this.credentials.botToken });
+      const probe = new WebClient(this.credentials.botToken);
+      const auth = await probe.auth.test();
       this.botUserId = auth.user_id as string;
     } catch (err) {
-      this.log.warn('Could not fetch bot user ID', { error: (err as Error).message });
-      throw new Error(`Slack auth failed: ${(err as Error).message}`);
+      const raw = (err as Error).message;
+      const friendly = /invalid_auth|not_authed|token_revoked/i.test(raw)
+        ? 'Slack bot token is invalid or revoked. Paste fresh bot and app tokens in Settings → Platform Integrations.'
+        : /missing_scope/i.test(raw)
+          ? 'Slack app is missing required OAuth scopes. Reinstall the app with the scopes listed in Settings.'
+          : `Slack auth failed: ${raw}`;
+      this.log.warn('Slack credential probe failed', { error: raw });
+      throw new Error(friendly);
     }
+
+    // Probe passed — build the real App now. Events registered below will be
+    // bound to this instance before start() opens the socket.
+    this.app = new App({
+      token: this.credentials.botToken,
+      appToken: this.credentials.appToken,
+      signingSecret: this.credentials.signingSecret,
+      socketMode: true,
+      logLevel: process.env.LOG_LEVEL === 'debug' ? LogLevel.DEBUG : LogLevel.WARN,
+    });
 
     // Register Slack event handlers
     this.app.event('app_mention', async ({ event, client }) => {

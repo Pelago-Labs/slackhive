@@ -17,12 +17,14 @@ const STATUS_COLOR: Record<string, string> = {
   running: '#059669',
   stopped: '#a3a3a3',
   error:   '#dc2626',
+  stale:   '#f59e0b',
 };
 
 const STATUS_LABEL: Record<string, string> = {
   running: 'Running',
   stopped: 'Stopped',
   error:   'Error',
+  stale:   'Stale',
 };
 
 interface ClaudeStatus {
@@ -362,8 +364,9 @@ function AgentCard({ agent, highlight, compact, multiReport }: {
   multiReport?: boolean;
 }) {
   const noCreds = !agent.slackBotToken;
-  const color = noCreds ? '#f59e0b' : (STATUS_COLOR[agent.status] ?? '#a3a3a3');
-  const statusLabel = noCreds ? 'Not configured' : STATUS_LABEL[agent.status];
+  const displayStatus = (agent.liveStatus ?? agent.status) as string;
+  const color = noCreds ? '#f59e0b' : (STATUS_COLOR[displayStatus] ?? '#a3a3a3');
+  const statusLabel = noCreds ? 'Not configured' : STATUS_LABEL[displayStatus];
 
   return (
     <Link
@@ -459,7 +462,7 @@ function AgentCard({ agent, highlight, compact, multiReport }: {
           flexShrink: 0, marginTop: 2,
         }}>
           <div
-            className={agent.status === 'running' ? 'status-running' : ''}
+            className={displayStatus === 'running' ? 'status-running' : ''}
             style={{ width: 7, height: 7, borderRadius: '50%', background: color }}
           />
           <span style={{ fontSize: 11.5, color, fontWeight: 500 }}>

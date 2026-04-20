@@ -9,7 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getAgentById, updateAgent, deleteAgent, publishAgentEvent } from '@/lib/db';
+import { getAgentById, updateAgent, deleteAgent, publishAgentEvent, applyLiveStatus } from '@/lib/db';
 import type { UpdateAgentRequest } from '@slackhive/shared';
 import { regenerateBossRegistry } from '@/lib/boss-registry';
 import { guardAgentWrite, guardUserAdmin } from '@/lib/api-guard';
@@ -30,7 +30,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<N
     const { id } = await params;
     const agent = await getAgentById(id);
     if (!agent) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    return NextResponse.json(agent);
+    return NextResponse.json(applyLiveStatus(agent));
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });
   }

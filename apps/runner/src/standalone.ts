@@ -16,6 +16,7 @@ import 'dotenv/config';
 import { initDb, setEventBus, getEventBus } from '@slackhive/shared';
 import { AgentRunner } from './agent-runner';
 import { logger } from './logger';
+import { acquireRunnerLock } from './runner-lock';
 import { fork, type ChildProcess } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -24,6 +25,10 @@ import * as fs from 'fs';
 if (!process.env.DATABASE_TYPE) {
   process.env.DATABASE_TYPE = 'sqlite';
 }
+
+// Refuse to boot if another runner is already alive. Prevents stray dev-mode
+// processes from racing on the shared DB (see runner-lock docstring).
+acquireRunnerLock('standalone');
 
 // Sync Claude credentials from system Keychain to ~/.claude/.credentials.json
 // so the SDK can authenticate (same way claude CLI does)

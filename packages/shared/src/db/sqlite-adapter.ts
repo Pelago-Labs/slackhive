@@ -219,7 +219,9 @@ CREATE TABLE IF NOT EXISTS agents (
   created_by           TEXT NOT NULL DEFAULT 'system',
   created_at           TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at           TEXT NOT NULL DEFAULT (datetime('now')),
-  last_error           TEXT
+  last_error           TEXT,
+  runner_id            TEXT,
+  last_heartbeat       TEXT
 );
 
 CREATE TABLE IF NOT EXISTS mcp_servers (
@@ -456,6 +458,12 @@ export function createSqliteAdapter(dbPath?: string): DbAdapter {
   }
   if (!agentCols.includes('last_error')) {
     db.exec('ALTER TABLE agents ADD COLUMN last_error TEXT');
+  }
+  if (!agentCols.includes('runner_id')) {
+    db.exec('ALTER TABLE agents ADD COLUMN runner_id TEXT');
+  }
+  if (!agentCols.includes('last_heartbeat')) {
+    db.exec('ALTER TABLE agents ADD COLUMN last_heartbeat TEXT');
   }
 
   // Install a custom function to generate UUIDs

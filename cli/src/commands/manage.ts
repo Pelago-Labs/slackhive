@@ -198,25 +198,93 @@ function nativeStart(dir: string): void {
   }
 }
 
+/**
+ * Find stray runner processes NOT managed by this CLI's PID file. Covers
+ * orphaned `tsx watch src/index.ts` from `npm run dev` sessions and any
+ * direct `node apps/runner/dist/standalone.js` invocations.
+ *
+ * The PID file tracks only one process group at a time; parallel dev runners
+ * from prior shells stay invisible to it and keep racing on the DB. This
+ * scan closes that gap — see the runner-lock module for the prevention side.
+ */
+function findOrphanRunnerPids(excludePid: number | null): number[] {
+  try {
+    const out = execSync('ps -e -o pid,command', { encoding: 'utf-8' });
+    const pids: number[] = [];
+    for (const line of out.split('\n')) {
+      const m = line.trim().match(/^(\d+)\s+(.*)$/);
+      if (!m) continue;
+      const pid = Number(m[1]);
+      const cmd = m[2];
+      if (pid === process.pid) continue;
+      if (excludePid !== null && pid === excludePid) continue;
+      // Runner entrypoints — two node scripts and the tsx watch wrapper.
+      if (
+        cmd.includes('apps/runner/dist/standalone.js') ||
+        /tsx.*apps\/runner\/src\/index\.ts/.test(cmd) ||
+        /tsx watch src\/index\.ts/.test(cmd)
+      ) {
+        pids.push(pid);
+      }
+    }
+    return pids;
+  } catch {
+    return [];
+  }
+}
+
+function killOrphans(excludePid: number | null): number {
+  const pids = findOrphanRunnerPids(excludePid);
+  if (pids.length === 0) return 0;
+  for (const pid of pids) {
+    try { process.kill(pid, 'SIGTERM'); } catch { /* already dead */ }
+  }
+  // Give SIGTERM a moment, then SIGKILL any stragglers.
+  const deadline = Date.now() + 2000;
+  while (Date.now() < deadline) {
+    const alive = pids.filter(pid => {
+      try { process.kill(pid, 0); return true; } catch { return false; }
+    });
+    if (alive.length === 0) return pids.length;
+    try { execSync('sleep 0.2'); } catch { /* ignore */ }
+  }
+  for (const pid of pids) {
+    try { process.kill(pid, 'SIGKILL'); } catch { /* already dead */ }
+  }
+  return pids.length;
+}
+
 function nativeStop(): void {
   const info = readPidInfo();
-  if (!info) {
-    console.log(chalk.yellow('  SlackHive is not running'));
-    return;
-  }
-
   const spinner = ora('Stopping SlackHive...').start();
   try {
-    try { process.kill(-info.pid, 'SIGTERM'); } catch { /* try individual */ }
-    try { process.kill(info.pid, 'SIGTERM'); } catch { /* already dead */ }
+    if (info) {
+      try { process.kill(-info.pid, 'SIGTERM'); } catch { /* try individual */ }
+      try { process.kill(info.pid, 'SIGTERM'); } catch { /* already dead */ }
 
-    // Clean up the actual ports this instance was using
-    for (const port of [String(info.webPort), String(info.internalPort)]) {
-      try { execSync(`lsof -ti:${port} | xargs kill -9`, { stdio: 'ignore' }); } catch { /* clean */ }
+      // Clean up the actual ports this instance was using
+      for (const port of [String(info.webPort), String(info.internalPort)]) {
+        try { execSync(`lsof -ti:${port} | xargs kill -9`, { stdio: 'ignore' }); } catch { /* clean */ }
+      }
+
+      try { unlinkSync(getPidFile()); } catch { /* ignore */ }
     }
 
-    try { unlinkSync(getPidFile()); } catch { /* ignore */ }
-    spinner.succeed('SlackHive stopped');
+    // Always sweep orphans too — `stop` means "stop everything slackhive-ish",
+    // not "stop only the thing my PID file happens to know about". Catches
+    // stray `tsx watch` / direct standalone.js runs from prior sessions.
+    const killed = killOrphans(info?.pid ?? null);
+
+    // Remove the runner lock file unconditionally so a crashed previous
+    // runner doesn't block the next `slackhive start`.
+    try { unlinkSync(join(getSlackhiveDir(), 'runner.lock')); } catch { /* ignore */ }
+
+    if (!info && killed === 0) {
+      spinner.info('SlackHive was not running');
+      return;
+    }
+    const extra = killed > 0 ? ` (killed ${killed} orphaned runner process${killed === 1 ? '' : 'es'})` : '';
+    spinner.succeed(`SlackHive stopped${extra}`);
   } catch {
     spinner.fail('Failed to stop SlackHive');
   }

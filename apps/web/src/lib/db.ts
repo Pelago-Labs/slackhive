@@ -98,7 +98,39 @@ function rowToAgent(row: Record<string, unknown>): Agent {
     createdAt: row.created_at as Date,
     updatedAt: row.updated_at as Date,
     lastError: (row.last_error as string | null | undefined) ?? null,
+    runnerId: (row.runner_id as string | null | undefined) ?? null,
+    lastHeartbeat: (row.last_heartbeat as string | null | undefined) ?? null,
   };
+}
+
+/**
+ * Compute `liveStatus` from persisted status + heartbeat age. The DB says
+ * "running" but if the owning runner hasn't bumped its heartbeat in >45s
+ * (3× the runner's 15s heartbeat), the process is likely dead. Surface that
+ * as `stale` so the UI doesn't paint a green dot over a ghost.
+ */
+const STALE_HEARTBEAT_MS = 45_000;
+
+/**
+ * SQLite's `datetime('now')` returns naive UTC like `"2026-04-20 00:51:59"`.
+ * `new Date(str)` parses that as LOCAL time, so in UTC+N every fresh
+ * heartbeat looks N hours old. Normalize to ISO-with-Z before parsing.
+ */
+function parseDbTimestampMs(value: string): number {
+  if (!value) return NaN;
+  const hasTz = /[Zz]|[+\-]\d{2}:?\d{2}$/.test(value);
+  const iso = hasTz ? value : value.replace(' ', 'T') + 'Z';
+  return new Date(iso).getTime();
+}
+
+export function applyLiveStatus(agent: Agent): Agent {
+  if (agent.status === 'running' && agent.lastHeartbeat) {
+    const age = Date.now() - parseDbTimestampMs(agent.lastHeartbeat);
+    agent.liveStatus = age > STALE_HEARTBEAT_MS ? 'stale' : 'running';
+  } else {
+    agent.liveStatus = agent.status;
+  }
+  return agent;
 }
 
 /** Enrich agent with platform credentials from platform_integrations table. */
