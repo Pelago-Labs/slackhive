@@ -112,135 +112,62 @@ Pick one of:
 Do not ask clarifying questions in mode (a). Do not skip CLAUDE.md in either mode.`;
 
 const SYSTEM_PROMPT = `You are a coach that helps a SlackHive operator tune one specific agent.
-Your job is to discover what the operator wants the agent to do, inspect the current
-configuration, and then propose edits to the three places behavioral state lives.
+You can ONLY propose edits — a human clicks Apply to actually land them.
 
-**Critical runtime fact:** at build time, every memory row is **automatically inlined**
-into the agent's CLAUDE.md. Memories are not a passive disk store — they are part of
-the system prompt on EVERY Slack turn. This shapes every routing decision below.
+# Runtime facts (true every turn)
+- Every memory row is inlined into the agent's CLAUDE.md at build time, so memories fire on EVERY Slack turn. Stale or conflicting memories are expensive. Total inlined bytes are capped at 32 KB.
+- The agent Greps \`knowledge/wiki/\` at runtime. That's the right home for large bodies of domain facts — docs, runbooks, reference tables, jargon. You cannot write the wiki directly; you hand the user a downloadable \`.md\` via \`propose_wiki_extract\` or the \`wikiExtract\` field on another proposal.
+- You cannot edit the agent's name / persona / description — those are identity fields set at creation. \`propose_claude_md_update\` edits the longer system-prompt body only.
 
-# Where changes land
+# Where things go
 
-1. **System prompt (CLAUDE.md)** — the agent's identity/persona prose. Use this ONLY
-   for rewriting WHO the agent is: tone, voice, the identity paragraph. Do NOT put
-   behavioral rules or facts here — those belong in memories, which are inlined
-   anyway, just structured and removable by name.
-2. **Memories** — the primary home for rules, preferences, facts, and corrections.
-   Types: \`feedback\` (rules like "always X", "never Y"), \`user\` (facts about people),
-   \`project\` (current initiatives/decisions), \`reference\` (short domain facts).
-   Every memory fires on every turn — stale or conflicting memories are now EXPENSIVE.
-   Keep entries short and actionable; put large bodies of knowledge in the wiki instead.
-3. **Skills** — generic, reusable \`category/filename.md\` files, triggered on-demand
-   by their description (NOT always-on). A skill is a workflow/procedure — the agent
-   invokes it when the task matches. Prefer many small skills over one giant one.
-   Skills are for HOW to do a task, not for WHAT the agent knows.
-4. **Wiki (knowledge base)** — you CANNOT edit the wiki from here; no tool for it
-   exists on purpose. But if the user's ask is really "teach the agent this body of
-   domain knowledge" (docs, runbook, reference material, a bunch of facts about a
-   system), point them at the wiki: tell them to add a page under \`knowledge/wiki/\`
-   with the content, and the agent will be able to Grep/Read it at runtime.
-   Do NOT cram large knowledge dumps into memories or CLAUDE.md.
+| Content the user wants to store | Store | Tool |
+|---|---|---|
+| Identity / persona / tone (who the agent is) | CLAUDE.md | \`propose_claude_md_update\` |
+| Rule / preference / short fact / correction | Memory (feedback / user / project / reference) | \`propose_memory_change\` |
+| Workflow / procedure / multi-step task (multi-job agent) | Skill | \`propose_skill_change\` |
+| Workflow / procedure for a single-purpose agent (e.g. "birthday bot") | CLAUDE.md | \`propose_claude_md_update\` |
+| Domain knowledge — systems, products, data models, jargon, reference material | Wiki | \`propose_wiki_extract\` (or \`wikiExtract\` attached to a cleanup edit) |
+| Recurring / scheduled task | Workflow → CLAUDE.md or Skill as above; schedule → tell the user to open \`/jobs\` in SlackHive and create a Job (you cannot create Jobs) | — |
 
-# Routing: which tool to use
+Note: memories are already inlined into CLAUDE.md, so there is no value in "promoting" a memory into CLAUDE.md prose. The only useful promotion is memory → skill when the content is a workflow that should run on-demand instead of always-on.
 
-- **Rule / preference / short fact / correction** ("always X", "never Y", "when user
-  is U…", "the Redshift cluster is called prod-east") → \`propose_memory_change\`
-  with the appropriate type. NOT \`propose_claude_md_update\`.
-- **Identity / persona / tone rewrite** ("make this agent more formal", "rewrite the
-  description paragraph") → \`propose_claude_md_update\`.
-- **Workflow / procedure / multi-step task** that only applies to certain tasks
-  ("when analyzing fraud, do steps 1-2-3", "how to triage a support ticket") →
-  \`propose_skill_change\`. Skills are generic and reusable — one task per skill,
-  named after the task. **Only choose skill when the agent has multiple jobs
-  and needs on-demand dispatch.** For a single-purpose agent whose WHOLE job
-  is this workflow (e.g. "birthday reminder agent", "standup bot"), the workflow
-  IS the identity — put it in CLAUDE.md via \`propose_claude_md_update\`. A skill
-  would add a pointless dispatch step.
-- **Large body of domain knowledge** (docs, runbook, reference material, lots of facts
-  about a system, compiled research) → DO NOT create a memory or skill. In your chat
-  reply, tell the user to add it to the wiki (a page under \`knowledge/wiki/\`) with
-  the content. The agent will Grep/Read it automatically when relevant.
-- **Recurring / scheduled task** ("remind every morning", "run this daily at 9am",
-  "every Monday post…") → the WORKFLOW goes in CLAUDE.md (if single-purpose) or a
-  skill (if multi-purpose), and the SCHEDULE lives in SlackHive's **Jobs** feature.
-  Tell the user to open \`/jobs\` in the SlackHive UI and create a Job: pick this
-  agent, set the cron schedule, set the target channel/DM, and write a short
-  trigger prompt (e.g. "Check today's birthdays."). Do NOT tell them to set up an
-  external cron — SlackHive has a built-in scheduler. You cannot create the Job
-  yourself (no tool for it), but pointing at \`/jobs\` is the right handoff.
+# Workflow for every turn
+1. **Inspect first.** Call \`read_claude_md\` / \`list_skills\` / \`read_skill\` / \`read_memories\` / \`list_mcps\` as needed. Never guess at current state.
+2. **Classify the user's intent** against the table above.
+3. **Propose.** For cleanups or when any store holds domain knowledge: propose UPDATE (strip the domain block) or DELETE (if the row/skill is fully domain), and attach \`wikiExtract\` with the extracted content + a descriptive lowercase-kebab \`suggestedPath\` (e.g. \`domain/fraud-pipeline.md\`, \`reference/redshift-tables.md\`). If the user is simply teaching the agent a body of domain knowledge with nothing to strip, call \`propose_wiki_extract\` directly.
+4. **Keep prose short.** The UI renders cards — do not repeat their content in chat. One-line framing at most.
 
-**Do not "promote" a memory into a CLAUDE.md rule.** That path is obsolete — memories
-are already inlined into CLAUDE.md at build time, so "promoting" just converts a
-named, removable row into freeform text. The only valid promotion is memory → skill,
-when the content is a procedure/workflow that belongs on-demand instead of always-on.
+# Audit checklist
+Use this same checklist when the user asks to review memories (\`read_memories\`), CLAUDE.md (\`read_claude_md\`), or a skill (\`read_skill\`). Apply in priority order; flag only what's actually wrong:
+1. **Conflicts** — two \`feedback\` rules that contradict each other both fire every turn. Propose deleting one; rationale explains which survives and why.
+2. **Duplicates / near-duplicates** — merge into one; propose deleting the others.
+3. **User-ID format** — rules keyed on \`when user is U…\` must match the runtime format \`[Sender: name (U…) …]\` (all-caps Slack ID). Flag malformed or stale IDs.
+4. **Staleness** — \`project\` memories referencing past deadlines, shipped work, or people who left → propose deletion with the date as rationale.
+5. **Type mismatch** — a \`feedback\` row that's really a \`reference\` fact (or vice versa). Propose an UPDATE that changes \`memoryType\`.
+6. **Budget (memories only)** — total inlined bytes vs the 32 KB cap. If >70% full, propose trimming lowest-signal entries first; rewrite huge memories shorter.
+7. **Workflow-shaped memory** — a long procedural memory that only matters for certain tasks → propose creating a skill with the same content AND deleting the memory.
+8. **Domain-knowledge-shaped (anywhere)** — content that describes the user's systems/products/jargon/reference material is wiki content, not identity/rules/workflow. UPDATE to strip (if partial) or DELETE (if fully domain); always attach \`wikiExtract\` so the user can download the extracted wiki page.
+9. **Skill that's mostly WHAT not HOW** — a skill that's a lookup table or reference dump is wiki content. Propose DELETE + \`wikiExtract\`.
+10. **Rule buried in CLAUDE.md prose** — "always format…", "never mention…" → propose extracting into a \`feedback\` memory.
+11. **Long procedural block in CLAUDE.md** (multi-job agent) → propose extracting into a skill.
 
-# Identity is read-only
-The agent's **name**, **persona**, and **description** are identity fields set at
-creation. You cannot edit them — no tool exists for them on purpose. If the user asks
-to change name/persona/description, tell them identity lives on the agent's settings
-page. \`propose_claude_md_update\` edits the longer system-prompt body, NOT these fields.
-
-# Your tools
-- Inspection: \`read_claude_md\`, \`list_skills\`, \`read_skill\`, \`list_mcps\`, \`read_memories\`.
-  Use them before proposing changes — never guess at current state.
-- Proposals: \`propose_claude_md_update\`, \`propose_skill_change\`, \`propose_memory_change\`.
-  These do NOT apply anything. They surface a card in the UI; the human clicks Apply.
-  You may propose multiple changes in one turn.
-
-# Memory review workflow (runtime-aware)
-
-When the user asks you to audit / review / clean up memories, call \`read_memories\`
-first. The output includes per-memory byte counts and total-vs-cap. Then walk the
-list looking for these specific runtime problems — in priority order:
-
-1. **Conflicts** — two \`feedback\` rules that contradict each other will BOTH fire
-   on every turn and confuse the model. Flag as a pair and propose deleting one
-   (with rationale explaining which survives and why).
-2. **Duplicates / near-duplicates** — merge content into one row and propose deleting
-   the others.
-3. **User-keyed rules** ("when user is U…") — verify the Slack user ID format matches
-   what the runtime injects (\`[Sender: name (U…) …]\`, all-caps user ID). Flag
-   malformed or obviously stale IDs.
-4. **Staleness** — \`project\` memories referencing past deadlines, shipped work, or
-   people who left → propose deletion with the date as rationale.
-5. **Type mismatches** — a \`feedback\` row that's really a \`reference\` fact (or
-   vice versa). Propose an update that changes \`memoryType\`.
-6. **Budget** — total inlined bytes vs. the 32KB cap. If >70% full, propose trimming
-   lowest-signal entries first. If a memory is huge, propose a shorter rewrite.
-7. **Workflow-shaped** — a long procedural memory that only matters for certain tasks
-   → propose creating a skill with the same content AND deleting the memory.
-
-If there is nothing to fix, reply in ONE short line (e.g. "Memory clean — 2 rows,
-1% of budget. No cleanup needed."). Do NOT recap every criterion you checked.
-If there are proposals, the UI already renders them as cards — keep your prose to
-a 1-line framing plus, if useful, a bullet per proposal. Never repeat a card's
-payload back in prose.
-
-# Response style
-- Be terse and action-first. The operator reads diffs, not essays.
-- Lead with the action (proposal card) when there is one; the UI shows it inline.
-- Skip chatty framing ("I reviewed…", "here's a summary…", "a couple of
-  observations…"). Start with the finding or the action.
-- No negative-space recaps. If there are no conflicts, don't say "no conflicts,
-  no duplicates, no staleness" — just say "no cleanup needed".
-- Ask one clarifying question when intent is ambiguous. Don't offer three
-  hypothetical follow-ups.
+If nothing needs fixing, reply in ONE short line (e.g. "Memory clean — 2 rows, 1% of budget."). Do NOT recap every criterion you checked.
 
 # Rules
-- You have ONLY the tools above. You cannot read the filesystem, run commands, or
-  browse the web. If the user asks for anything outside tuning this one agent's
-  CLAUDE.md/skills/memories, politely decline.
-- Ask clarifying questions when intent is ambiguous. Short ones.
-- If the user pastes a failed conversation, diagnose what's missing and propose
-  targeted edits. Pick the right store for the fix:
-  - Missing rule or preference → memory (usually \`feedback\`).
-  - Missing workflow / "the agent didn't know how to do X" → new or updated skill.
-  - Missing domain knowledge / "the agent didn't know about Y" → tell the user to
-    add it to the wiki, don't cram it into memory/CLAUDE.md.
-  - Broken persona / tone → CLAUDE.md (identity only).
-- Never invent MCPs or skills that do not exist. Call \`list_mcps\` / \`list_skills\` first.
-- For each proposal, include a one-sentence rationale grounded in what the user said
-  or what \`read_memories\` surfaced.`;
+- You can ONLY propose. Apply is always the human's click. (Exception: bootstrap mode — see any appendix at the bottom of this prompt.)
+- You have ONLY the listed tools (\`read_*\`, \`list_*\`, \`propose_*\`). No filesystem, no shell, no web. Decline anything outside tuning this agent.
+- Inspect before proposing; never guess.
+- Prefer one proposal per distinct change — do not bundle unrelated edits into one card.
+- Never invent MCPs or skills that don't exist. Call \`list_mcps\` / \`list_skills\` first.
+- Each proposal carries a one-sentence rationale grounded in the user's words or inspection output.
+- Ask ONE short clarifying question when intent is ambiguous. Don't offer three hypothetical follow-ups.
+- For a pasted failed conversation, diagnose what's missing and route the fix through the table above.
+
+# Response style
+- Terse. Action-first. The UI shows cards — don't re-narrate them.
+- No chatty framing ("I reviewed…", "here's a summary…"). Start with the finding or the action.
+- No negative-space recaps. If there are no conflicts, just say "no cleanup needed".`;
 
 // ────────────────────────────────────────────────────────────────────────────
 // Session storage (settings table)
@@ -400,21 +327,31 @@ function buildToolbox(ctx: ToolContext) {
     { annotations: { readOnlyHint: true } }
   );
 
+  // Shared Zod shape for the optional wiki-extract payload. When set on a
+  // propose_* call, the proposal card gets a "Download wiki page" button the
+  // user clicks to save the extracted content under knowledge/wiki/.
+  const wikiExtractSchema = z.object({
+    suggestedPath: z.string().min(1, 'suggestedPath required (e.g. "domain/fraud-pipeline.md")'),
+    content: z.string().min(1, 'content required'),
+    summary: z.string().min(1, 'summary required'),
+  }).optional();
+
   const proposeClaudeMd = defTool(
     'propose_claude_md_update',
-    'Propose a full replacement for CLAUDE.md. Does not apply — surfaces an approval card in the UI. Provide the complete new content plus a one-sentence rationale.',
+    'Propose a full replacement for CLAUDE.md. Does not apply — surfaces an approval card in the UI. Provide the complete new content plus a one-sentence rationale. If you are stripping a domain-knowledge block, attach wikiExtract so the user can download it as a wiki page.',
     {
       content: z.string().min(1, 'content required'),
       rationale: z.string().min(1, 'rationale required'),
+      wikiExtract: wikiExtractSchema,
     },
-    wrap('propose_claude_md_update', async ({ content, rationale }) => {
+    wrap('propose_claude_md_update', async ({ content, rationale, wikiExtract }) => {
       const id = randomUUID();
       if (ctx.autoApply) {
         await updateAgentClaudeMd(ctx.agentId, content);
-        ctx.proposals.push({ kind: 'claude-md', id, content, rationale, status: 'applied' });
+        ctx.proposals.push({ kind: 'claude-md', id, content, rationale, status: 'applied', wikiExtract });
         return textResult(`Applied (id=${id}).`);
       }
-      ctx.proposals.push({ kind: 'claude-md', id, content, rationale, status: 'pending' });
+      ctx.proposals.push({ kind: 'claude-md', id, content, rationale, status: 'pending', wikiExtract });
       return textResult(`Proposal queued (id=${id}). The user will see a diff card and choose to Apply or Reject.`);
     }),
     { annotations: { readOnlyHint: false, destructiveHint: false } }
@@ -422,15 +359,16 @@ function buildToolbox(ctx: ToolContext) {
 
   const proposeSkill = defTool(
     'propose_skill_change',
-    'Propose creating, updating, or deleting ONE skill file. Does not apply — surfaces an approval card. For create/update include full content. For delete omit content.',
+    'Propose creating, updating, or deleting ONE skill file. Does not apply — surfaces an approval card. For create/update include full content. For delete omit content. If you are removing a skill that is really reference material (not a workflow), attach wikiExtract so the user can download the content as a wiki page.',
     {
       category: z.string().min(1),
       filename: z.string().min(1),
       action: z.enum(['create', 'update', 'delete']),
       content: z.string().optional(),
       rationale: z.string().min(1),
+      wikiExtract: wikiExtractSchema,
     },
-    wrap('propose_skill_change', async ({ category, filename, action, content, rationale }) => {
+    wrap('propose_skill_change', async ({ category, filename, action, content, rationale, wikiExtract }) => {
       assertSafeSkillPath(category, filename);
       if ((action === 'create' || action === 'update') && !content) {
         throw new Error('content is required for create/update');
@@ -450,14 +388,14 @@ function buildToolbox(ctx: ToolContext) {
         ctx.proposals.push({
           kind: 'skill', id, category, filename, action,
           content: action === 'delete' ? undefined : content,
-          rationale, status: 'applied',
+          rationale, status: 'applied', wikiExtract,
         });
         return textResult(`Applied ${action} for ${category}/${filename}.`);
       }
       ctx.proposals.push({
         kind: 'skill', id, category, filename, action,
         content: action === 'delete' ? undefined : content,
-        rationale, status: 'pending',
+        rationale, status: 'pending', wikiExtract,
       });
       return textResult(`Proposal queued (id=${id}) for ${action} ${category}/${filename}.`);
     }),
@@ -466,7 +404,7 @@ function buildToolbox(ctx: ToolContext) {
 
   const proposeMemory = defTool(
     'propose_memory_change',
-    'Propose creating, rewriting, or deleting ONE memory row. For `create`, provide name + memoryType + content (memoryId is ignored). For `update`, provide memoryId + content (memoryType optional — include it to retype a mis-categorized memory). For `delete`, provide memoryId only.',
+    'Propose creating, rewriting, or deleting ONE memory row. For `create`, provide name + memoryType + content (memoryId is ignored). For `update`, provide memoryId + content (memoryType optional — include it to retype a mis-categorized memory). For `delete`, provide memoryId only. If the edit strips domain knowledge out of the memory, attach wikiExtract so the user can download it as a wiki page.',
     {
       action: z.enum(['create', 'update', 'delete']),
       /** Required for update/delete. Ignored on create. Get this from read_memories. */
@@ -478,8 +416,9 @@ function buildToolbox(ctx: ToolContext) {
       /** Required for create and update. Omit for delete. */
       content: z.string().optional(),
       rationale: z.string().min(1),
+      wikiExtract: wikiExtractSchema,
     },
-    wrap('propose_memory_change', async ({ action, memoryId, name, memoryType, content, rationale }) => {
+    wrap('propose_memory_change', async ({ action, memoryId, name, memoryType, content, rationale, wikiExtract }) => {
       const id = randomUUID();
 
       if (action === 'create') {
@@ -498,7 +437,7 @@ function buildToolbox(ctx: ToolContext) {
           memoryName: name, memoryType,
           action: 'create',
           content,
-          rationale, status: 'pending',
+          rationale, status: 'pending', wikiExtract,
         });
         return textResult(`Proposal queued (id=${id}) for create memory ${name}.`);
       }
@@ -518,14 +457,33 @@ function buildToolbox(ctx: ToolContext) {
         action,
         memoryType: action === 'update' ? memoryType : undefined,
         content: action === 'delete' ? undefined : content,
-        rationale, status: 'pending',
+        rationale, status: 'pending', wikiExtract,
       });
       return textResult(`Proposal queued (id=${id}) for ${action} memory ${hit.name}.`);
     }),
     { annotations: { readOnlyHint: false, destructiveHint: true } }
   );
 
-  return [readClaudeMd, listSkills, readSkill, listMcps, readMemories, proposeClaudeMd, proposeSkill, proposeMemory];
+  const proposeWikiExtract = defTool(
+    'propose_wiki_extract',
+    'Propose a standalone wiki page — no CLAUDE.md/skill/memory edit involved. Use this when the user asks you to teach the agent a body of domain knowledge (facts about their systems, products, jargon, reference material) and there is nothing to strip from an existing store. The UI shows a card with only a Download button; the user saves the .md under knowledge/wiki/ themselves.',
+    {
+      wikiExtract: z.object({
+        suggestedPath: z.string().min(1, 'suggestedPath required (e.g. "domain/fraud-pipeline.md")'),
+        content: z.string().min(1, 'content required'),
+        summary: z.string().min(1, 'summary required'),
+      }),
+      rationale: z.string().min(1),
+    },
+    wrap('propose_wiki_extract', async ({ wikiExtract, rationale }) => {
+      const id = randomUUID();
+      ctx.proposals.push({ kind: 'wiki-extract', id, wikiExtract, rationale, status: 'pending' });
+      return textResult(`Proposal queued (id=${id}) for wiki page ${wikiExtract.suggestedPath}.`);
+    }),
+    { annotations: { readOnlyHint: true } }
+  );
+
+  return [readClaudeMd, listSkills, readSkill, listMcps, readMemories, proposeClaudeMd, proposeSkill, proposeMemory, proposeWikiExtract];
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -586,6 +544,7 @@ export async function runCoachTurn(input: CoachTurnInput): Promise<{
     'mcp__coach__propose_claude_md_update',
     'mcp__coach__propose_skill_change',
     'mcp__coach__propose_memory_change',
+    'mcp__coach__propose_wiki_extract',
   ];
 
   const userBlock = input.attachment

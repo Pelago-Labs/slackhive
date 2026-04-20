@@ -13,7 +13,7 @@
  * @module web/app/agents/[slug]/coach-panel
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Send, Loader2, RotateCcw, Wand2, ChevronDown, ChevronRight, Check, FileText, History, ArrowLeft } from 'lucide-react';
+import { X, Send, Loader2, RotateCcw, Wand2, ChevronDown, ChevronRight, Check, FileText, History, ArrowLeft, Download, BookOpen } from 'lucide-react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { CoachMessage, CoachProposal, Skill, Memory } from '@slackhive/shared';
@@ -421,6 +421,10 @@ export function CoachPanel({
 
   const applyProposal = async (messageIndex: number, proposal: CoachProposal) => {
     if (!canEdit) return;
+    // Wiki-extract proposals have no store edit to apply — the UI exposes only
+    // a Download button for them, so this branch exists to satisfy the type
+    // narrowing below in case `onApply` is ever wired up accidentally.
+    if (proposal.kind === 'wiki-extract') return;
     let res: Response;
     if (proposal.kind === 'claude-md') {
       res = await fetch(`/api/agents/${agentId}/claude-md`, {
@@ -866,6 +870,22 @@ function MessageBubble({
   );
 }
 
+/**
+ * Trigger a client-side blob download for a wiki extract. The user is expected
+ * to drop the downloaded file into their agent's `knowledge/wiki/` directory.
+ */
+function downloadWikiExtract(extract: { suggestedPath: string; content: string }): void {
+  const blob = new Blob([extract.content], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = extract.suggestedPath.split('/').pop() || 'wiki-extract.md';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function ProposalCard({
   proposal, canEdit, onApply, onReject, before,
 }: {
@@ -881,15 +901,24 @@ function ProposalCard({
   const applied = proposal.status === 'applied';
   const rejected = proposal.status === 'rejected';
 
+  const isWikiOnly = proposal.kind === 'wiki-extract';
+  const wikiExtract = proposal.kind === 'wiki-extract'
+    ? proposal.wikiExtract
+    : proposal.wikiExtract;
+
   const label = proposal.kind === 'claude-md'
     ? 'System Prompt (CLAUDE.md)'
     : proposal.kind === 'memory'
       ? `Memory: ${proposal.memoryName}${proposal.memoryType ? ` (${proposal.memoryType})` : ''}`
-      : `Skill: ${proposal.category}/${proposal.filename}`;
+      : proposal.kind === 'skill'
+        ? `Skill: ${proposal.category}/${proposal.filename}`
+        : `Wiki: ${proposal.wikiExtract.suggestedPath}`;
 
   const actionLabel = proposal.kind === 'claude-md'
     ? 'UPDATE'
-    : proposal.action.toUpperCase();
+    : proposal.kind === 'wiki-extract'
+      ? 'SAVE'
+      : proposal.action.toUpperCase();
 
   // Destructive = deletes (skill or memory). Everything else is additive/editing.
   const isDestructive = (proposal.kind === 'skill' && proposal.action === 'delete')
@@ -897,7 +926,8 @@ function ProposalCard({
   const hasExpandableContent =
     proposal.kind === 'claude-md'
     || (proposal.kind === 'skill' && proposal.action !== 'delete' && !!proposal.content)
-    || (proposal.kind === 'memory' && proposal.action !== 'delete' && !!proposal.content);
+    || (proposal.kind === 'memory' && proposal.action !== 'delete' && !!proposal.content)
+    || (!!wikiExtract); // wiki extract body is always worth showing
 
   return (
     <div style={{
@@ -907,17 +937,37 @@ function ProposalCard({
       opacity: rejected ? 0.55 : 1,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-        <FileText size={13} style={{ color: 'var(--muted)' }} />
+        {isWikiOnly
+          ? <BookOpen size={13} style={{ color: 'var(--muted)' }} />
+          : <FileText size={13} style={{ color: 'var(--muted)' }} />}
         <span style={{
           fontSize: 11, fontWeight: 700, padding: '1px 6px', borderRadius: 3,
-          background: isDestructive ? 'var(--red-soft-bg)' : 'rgba(16,185,129,0.1)',
-          color: isDestructive ? 'var(--red)' : 'var(--green)',
+          background: isDestructive
+            ? 'var(--red-soft-bg)'
+            : isWikiOnly ? 'rgba(99,102,241,0.12)' : 'rgba(16,185,129,0.1)',
+          color: isDestructive
+            ? 'var(--red)'
+            : isWikiOnly ? 'var(--accent)' : 'var(--green)',
         }}>{actionLabel}</span>
         <span style={{ fontSize: 12.5, fontWeight: 500, fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{label}</span>
       </div>
       <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: '2px 0 6px', lineHeight: 1.5 }}>
         {proposal.rationale}
       </p>
+
+      {/* Wiki-extract hint line — shown when the proposal carries an extract
+          alongside a store edit. For wiki-only proposals the summary lives in
+          the rationale above. */}
+      {wikiExtract && !isWikiOnly && (
+        <p style={{
+          fontSize: 11.5, color: 'var(--muted)', margin: '0 0 6px',
+          display: 'inline-flex', alignItems: 'center', gap: 4,
+        }}>
+          <BookOpen size={11} />
+          Wiki page: <code style={{ fontFamily: 'var(--font-mono)' }}>{wikiExtract.suggestedPath}</code>
+          {wikiExtract.summary ? ` — ${wikiExtract.summary}` : ''}
+        </p>
+      )}
 
       {hasExpandableContent && (
         <button
@@ -934,19 +984,48 @@ function ProposalCard({
       )}
 
       {expanded && hasExpandableContent && (() => {
+        // Wiki-only cards have no "before" — only the extract body matters.
+        if (isWikiOnly) {
+          return <ContentBlock text={proposal.wikiExtract.content} />;
+        }
         const afterText = proposal.kind === 'claude-md'
           ? proposal.content
           : (proposal.content ?? '');
-        // Show a line-diff when we have prior content that actually differs.
-        // Falls back to a plain block for CREATE proposals or no-op edits.
-        if (before !== null && before !== afterText) {
-          return <DiffBlock before={before} after={afterText} />;
-        }
-        return <ContentBlock text={afterText} />;
+        return (
+          <>
+            {/* Show a line-diff when we have prior content that actually differs.
+                Falls back to a plain block for CREATE proposals or no-op edits. */}
+            {before !== null && before !== afterText
+              ? <DiffBlock before={before} after={afterText} />
+              : (afterText ? <ContentBlock text={afterText} /> : null)}
+            {wikiExtract && (
+              <div style={{ marginTop: 6 }}>
+                <div style={{
+                  fontSize: 11, fontWeight: 600, color: 'var(--muted)',
+                  textTransform: 'uppercase', letterSpacing: 0.4, margin: '4px 0 3px',
+                }}>Wiki page to save</div>
+                <ContentBlock text={wikiExtract.content} />
+              </div>
+            )}
+          </>
+        );
       })()}
 
       <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-        {applied ? (
+        {isWikiOnly ? (
+          <button
+            onClick={() => downloadWikiExtract(proposal.wikiExtract)}
+            style={{
+              fontSize: 12, fontWeight: 500, padding: '5px 11px', borderRadius: 5,
+              background: 'var(--accent)', color: 'var(--accent-fg)',
+              border: 'none', cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              fontFamily: 'var(--font-sans)',
+            }}
+          >
+            <Download size={12} /> Download wiki page
+          </button>
+        ) : applied ? (
           <span style={{
             fontSize: 12, fontWeight: 500, color: 'var(--green)',
             display: 'inline-flex', alignItems: 'center', gap: 4,
@@ -976,6 +1055,25 @@ function ProposalCard({
               }}
             >Reject</button>
           </>
+        )}
+        {/* Download button alongside Apply/Reject when the proposal carries an
+            extract. Stays active after apply/reject — downloading is always
+            safe and doesn't depend on the store edit succeeding. */}
+        {!isWikiOnly && wikiExtract && (
+          <button
+            onClick={() => downloadWikiExtract(wikiExtract)}
+            title={`Save ${wikiExtract.suggestedPath}`}
+            style={{
+              fontSize: 12, fontWeight: 500, padding: '5px 11px', borderRadius: 5,
+              background: 'transparent', color: 'var(--muted)',
+              border: '1px solid var(--border)', cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              fontFamily: 'var(--font-sans)',
+              marginLeft: (applied || rejected) ? 0 : 'auto',
+            }}
+          >
+            <Download size={12} /> Download wiki page
+          </button>
         )}
       </div>
     </div>

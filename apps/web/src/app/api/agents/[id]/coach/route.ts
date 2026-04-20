@@ -271,7 +271,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
     ? 'CLAUDE.md update'
     : hit.kind === 'memory'
       ? `memory ${hit.action} ${hit.memoryName}${hit.memoryType ? ` (${hit.memoryType})` : ''}`
-      : `skill ${hit.action} ${hit.category}/${hit.filename}`;
+      : hit.kind === 'wiki-extract'
+        ? 'wiki extract'
+        : `skill ${hit.action} ${hit.category}/${hit.filename}`;
   const prevNotesRaw = await getSetting(notesKey(id));
   let notes: string[] = [];
   if (prevNotesRaw) {
