@@ -415,7 +415,14 @@ export default function McpSettingsPage() {
 
       {/* Server list */}
       {loading ? (
-        <div style={{ color: 'var(--muted)', fontSize: 13 }}>Loading…</div>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+          padding: '48px 0', color: 'var(--muted)', fontSize: 13,
+          border: '1px solid var(--border)', borderRadius: 12,
+        }}>
+          <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+          Loading tools…
+        </div>
       ) : servers.length === 0 && !showForm ? (
         <div style={{
           border: '1px dashed var(--border)', borderRadius: 12, padding: '48px',
