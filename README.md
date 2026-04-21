@@ -75,6 +75,20 @@ The CLI will:
 
 Open `http://localhost:3001` and create your first agent.
 
+#### Hit `EACCES: permission denied` on install?
+
+If you installed Node from nodejs.org on macOS/Linux, `/usr/local/lib/node_modules` is root-owned and `npm install -g` fails without sudo. Point npm at a user-owned prefix once — no sudo needed again:
+
+```bash
+mkdir -p ~/.npm-global
+npm config set prefix '~/.npm-global'
+echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.zshrc   # or ~/.bashrc
+source ~/.zshrc
+npm install -g slackhive
+```
+
+Installing Node via [nvm](https://github.com/nvm-sh/nvm) or Homebrew (`brew install node`) puts it in a user-writable location by default and avoids this entirely. If you'd rather skip global install, `npx slackhive init` works too — just prefix every command with `npx`.
+
 ### CLI Commands
 
 | Command | Description |
