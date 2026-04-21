@@ -1286,11 +1286,31 @@ export class AgentRunner {
     await updateStatus(`${effectiveMode === 'sync' ? 'Syncing' : 'Ingesting'} ${srcName}...`);
     const now = new Date().toISOString().split('T')[0];
 
+    // Scale the target article count to the source. Code repos have many
+    // modules/classes/flows and warrant 20-40+ articles. A single file or URL
+    // is usually one document — asking for 20-40 pages from it makes the
+    // model invent filler and takes 5-15 minutes per ingest. For a doc-shaped
+    // source, a handful of concept pages is enough.
+    const isCode = srcType === 'repo';
+    const targetRange = isCode ? '20-40' : '3-8';
+    const articleTypesList = isCode
+      ? [
+          '- `modules/xxx.md` — one per major module, directory, service, or component',
+          '- `concepts/xxx.md` — one per pattern, algorithm, architectural decision, or important idea',
+          '- `entities/xxx.md` — one per data model, class, database table, or key type',
+          '- `flows/xxx.md` — one per end-to-end flow showing function call chains',
+        ].join('\n')
+      : [
+          '- `concepts/xxx.md` — one per distinct topic or idea the source introduces',
+          '- `entities/xxx.md` — optional; only for named things (products, teams, systems) the source defines',
+        ].join('\n');
+    const codebaseWord = isCode ? 'codebase' : 'document';
+
     const modeInstruction = effectiveMode === 'first'
-      ? `This is the FIRST source being ingested into an empty wiki. Create a comprehensive wiki from scratch — 20-40 articles covering every module, concept, entity, and flow.`
+      ? `This is the FIRST source being ingested into an empty wiki. Create the initial wiki from this ${codebaseWord} — aim for ${targetRange} articles covering the distinct topics it contains. Don't pad; only create an article if there's real substance for it.`
       : effectiveMode === 'new-source'
-      ? `This is a NEW source being added to an existing wiki. This is a DIFFERENT codebase from what's already there. Create COMPREHENSIVE articles for EVERYTHING in this source — every module, every concept, every entity, every flow. Aim for 15-30+ new articles. Also update existing articles where this source adds relevant cross-references or shared concepts.`
-      : `This source was previously ingested and is being RE-SYNCED. Check what changed and update affected articles. Add new articles for any new code or concepts.`;
+      ? `This is a NEW source being added to an existing wiki. This is a DIFFERENT ${codebaseWord} from what's already there. Create articles for the distinct topics in this source — aim for ${targetRange} new articles, don't invent filler. Also update existing articles where this source adds relevant cross-references or shared concepts.`
+      : `This source was previously ingested and is being RE-SYNCED. Check what changed and update affected articles. Add new articles for any new ${isCode ? 'code or concepts' : 'topics'}.`;
 
     const prompt = `You are maintaining a knowledge wiki following the Karpathy LLM Wiki pattern.
 
@@ -1307,20 +1327,17 @@ ${content}
 
 ## Your task
 
-1. Read the source thoroughly — understand every module, class, function, pattern
+1. Read the source thoroughly — ${isCode ? 'understand every module, class, function, pattern' : 'identify the distinct topics, named entities, and ideas it covers'}
 2. ${effectiveMode === 'first'
-  ? 'Create the initial wiki: overview.md + module pages + concept pages + entity pages + flow pages. Be exhaustive — 20-40 articles.'
+  ? `Create the initial wiki: overview.md + ${isCode ? 'module pages + concept pages + entity pages + flow pages' : 'concept pages (plus entity pages only if the source introduces named things)'}. Aim for ${targetRange} articles — don't pad, only what the source actually warrants.`
   : effectiveMode === 'new-source'
-  ? 'Create COMPREHENSIVE articles for everything in this source. Each module, concept, entity, and flow deserves its own article. Do NOT skip anything because a similar concept exists from another source — this is a different codebase. Also update existing articles where this source adds new information.'
-  : 'Check what changed vs existing wiki. Update affected articles. Add new articles for new code/concepts.'}
+  ? `Create articles for the distinct topics in this source — target ${targetRange} new articles. ${isCode ? 'Each major module, concept, entity, and flow deserves its own article.' : 'Focus on the concepts the source introduces.'} Do NOT skip things just because a similar topic exists from another source — this is a different ${codebaseWord}. Also update existing articles where this source adds new information.`
+  : `Check what changed vs existing wiki. Update affected articles. Add new articles for new ${isCode ? 'code/concepts' : 'topics'}.`}
 3. ${effectiveMode === 'first' ? 'Create' : 'Update'} index.md — full catalog of ALL articles
 4. Write a log entry
 
 ## Article types — create ALL that apply
-- \`modules/xxx.md\` — one per major module, directory, service, or component
-- \`concepts/xxx.md\` — one per pattern, algorithm, architectural decision, or important idea
-- \`entities/xxx.md\` — one per data model, class, database table, or key type
-- \`flows/xxx.md\` — one per end-to-end flow showing function call chains
+${articleTypesList}
 
 ## Rules
 - Cross-reference between articles: \`[Name](entities/name.md)\`
