@@ -9,7 +9,8 @@
  * @module web/api/system/claude-status
  */
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { guardAdmin } from '@/lib/api-guard';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -61,7 +62,9 @@ function formatExpiresIn(expiresAtMs: number): string {
   return `${mins}m`;
 }
 
-export async function GET(): Promise<NextResponse<ClaudeStatus>> {
+export async function GET(req: NextRequest): Promise<NextResponse<ClaudeStatus>> {
+  const denied = guardAdmin(req);
+  if (denied) return denied as NextResponse<ClaudeStatus>;
   // 1. Check credential file
   let oauth = readCredentialsFile();
   let source: ClaudeStatus['source'] = 'file';

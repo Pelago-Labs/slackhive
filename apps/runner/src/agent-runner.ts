@@ -911,11 +911,15 @@ export class AgentRunner {
       if (src.pat_env_ref) {
         const envVars = await getAllEnvVarValues();
         const pat = envVars[src.pat_env_ref as string];
-        if (pat && cloneUrl.startsWith('https://')) cloneUrl = cloneUrl.replace('https://', `https://${pat}@`);
+        if (pat && cloneUrl.startsWith('https://')) {
+          const u = new URL(cloneUrl);
+          u.username = pat;
+          cloneUrl = u.toString();
+        }
       }
 
       const branch = (src.branch as string) || 'main';
-      execSync(`git clone --depth 1 --branch ${branch} "${cloneUrl}" "${tmpDir}"`, { stdio: 'ignore', timeout: 120000 });
+      execSync(`git clone --depth 1 --branch "${branch}" "${cloneUrl}" "${tmpDir}"`, { stdio: 'ignore', timeout: 120000 });
 
       const sections: string[] = [];
       sections.push(`# Repository: ${src.name}\nBranch: ${branch} | URL: ${src.repo_url}`);

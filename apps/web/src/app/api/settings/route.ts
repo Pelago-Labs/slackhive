@@ -7,7 +7,7 @@
  * @module web/api/settings
  */
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getAllSettings, setSetting } from '@/lib/db';
 import { guardAdmin } from '@/lib/api-guard';
 
@@ -18,7 +18,9 @@ export const dynamic = 'force-dynamic';
  *
  * @returns {Promise<NextResponse>} JSON response with all settings.
  */
-export async function GET(): Promise<NextResponse> {
+export async function GET(req: NextRequest): Promise<NextResponse> {
+  const denied = guardAdmin(req);
+  if (denied) return denied;
   const settings = await getAllSettings();
   return NextResponse.json(settings);
 }

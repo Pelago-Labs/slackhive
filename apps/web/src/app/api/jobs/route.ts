@@ -7,7 +7,7 @@
  * @module web/api/jobs
  */
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { guardAdmin } from '@/lib/api-guard';
 import { getAllJobs, createJob, publishAgentEvent } from '@/lib/db';
 
@@ -18,7 +18,9 @@ export const dynamic = 'force-dynamic';
  *
  * @returns {Promise<NextResponse>} JSON array of jobs.
  */
-export async function GET(): Promise<NextResponse> {
+export async function GET(req: NextRequest): Promise<NextResponse> {
+  const denied = guardAdmin(req);
+  if (denied) return denied;
   const jobs = await getAllJobs();
   return NextResponse.json(jobs);
 }
