@@ -290,13 +290,19 @@ export function CoachPanel({
     return () => { cancelled = true; if (timer) clearTimeout(timer); };
   }, [open, agentId]);
 
-  // Sticky-bottom auto-scroll: only follow new content if the user is already
-  // near the bottom. Lets them scroll up to read earlier turns while a long
-  // stream continues, without being yanked back down every token.
+  // Always scroll to bottom when a new message turn starts (sending flips true).
+  // During streaming, only follow if already near the bottom.
+  const prevSending = useRef(false);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    const justStarted = sending && !prevSending.current;
+    prevSending.current = sending;
+    if (justStarted) {
+      el.scrollTo({ top: el.scrollHeight });
+      return;
+    }
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
     if (nearBottom) el.scrollTo({ top: el.scrollHeight });
   }, [messages, sending]);
 
