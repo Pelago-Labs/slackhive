@@ -1534,7 +1534,7 @@ ${effectiveMode !== 'first' ? `- When this source mentions entities/concepts tha
       for (let i = 0; i < pendingSources.length; i++) {
         const src = pendingSources[i];
         await setResult(`knowledge-build:${requestId}`, JSON.stringify({
-          status: 'building', startedAt,
+          status: 'building', startedAt: Date.now(),
           step: `${isFullRebuild ? 'Rebuilding' : 'Ingesting'} ${src.name} (${i + 1}/${pendingSources.length})...`,
         }));
 
