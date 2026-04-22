@@ -25,7 +25,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import type { Agent, Memory } from '@slackhive/shared';
+import type { Agent, Memory, Skill } from '@slackhive/shared';
 import { getAgentSkills, getAgentMemories } from './db';
 import { logger } from './logger';
 
@@ -153,7 +153,7 @@ export async function compileClaudeMd(agent: Agent, overrideClaudeMd?: string, f
   // -------------------------------------------------------------------------
   // 1. Write CLAUDE.md (identity + inlined memories + knowledge base index)
   // -------------------------------------------------------------------------
-  const claudeMdContent = buildClaudeMd(agent, memories, overrideClaudeMd, formattingRules);
+  const claudeMdContent = buildClaudeMd(agent, memories, skills, overrideClaudeMd, formattingRules);
   fs.writeFileSync(claudeMdPath, claudeMdContent, 'utf-8');
 
   logger.debug('CLAUDE.md written', {
@@ -370,6 +370,32 @@ If you cannot verify, say so explicitly: "The wiki says X — verify this is sti
 }
 
 /**
+ * Builds the skills index section — a compact list of available slash commands
+ * inlined into CLAUDE.md so the agent knows what skills exist without needing
+ * to read the commands directory.
+ */
+function buildSkillsIndexSection(skills: Skill[], hasWiki: boolean): string | null {
+  if (skills.length === 0 && !hasWiki) return null;
+
+  const lines: string[] = [];
+
+  if (hasWiki) {
+    lines.push('- `/wiki <topic>` — look up the knowledge base');
+  }
+
+  for (const skill of skills) {
+    const name = skill.filename.replace(/\.md$/, '');
+    lines.push(`- \`/${name}\``);
+  }
+
+  return `# Available Skills
+
+Invoke these slash commands when relevant — they load the full procedure on demand:
+
+${lines.join('\n')}`;
+}
+
+/**
  * Builds the CLAUDE.md content for an agent.
  * Structure: identity → platform formatting rules → memory system instructions.
  *
@@ -381,6 +407,7 @@ If you cannot verify, say so explicitly: "The wiki says X — verify this is sti
 function buildClaudeMd(
   agent: Agent,
   memories: Memory[],
+  skills: Skill[],
   overrideClaudeMd?: string,
   formattingRules?: string,
 ): string {
@@ -408,8 +435,15 @@ function buildClaudeMd(
 
   // 5. Knowledge base index — inlined so the model knows what exists without
   //    a Read round-trip. See buildWikiIndexSection.
-  const wikiSection = buildWikiIndexSection(getAgentWorkDir(agent.slug));
+  const workDir = getAgentWorkDir(agent.slug);
+  const wikiSection = buildWikiIndexSection(workDir);
   if (wikiSection) sections.push(wikiSection);
+
+  // 6. Skills index — compact list of available slash commands so the agent
+  //    knows what it can invoke without reading the commands directory.
+  const hasWiki = fs.existsSync(path.join(workDir, 'knowledge', 'wiki'));
+  const skillsSection = buildSkillsIndexSection(skills, hasWiki);
+  if (skillsSection) sections.push(skillsSection);
 
   // 6. Memory-writing guidance — how the agent SAVES new memories. Reading
   //    existing memories is handled by the inlined section above; this block
