@@ -12,7 +12,7 @@ import { rateLimit, clientIp } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
-const LOGIN_LIMIT = 5;
+const LOGIN_LIMIT = 100;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 
 /**
