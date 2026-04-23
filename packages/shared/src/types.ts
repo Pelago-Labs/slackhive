@@ -860,3 +860,75 @@ export interface AgentSnapshot {
 export interface CreateSnapshotRequest {
   label?: string;
 }
+
+// =============================================================================
+// Activity Dashboard — tasks, activities, tool calls
+// =============================================================================
+
+/** Messaging platform on which a task lives. Reuses the PlatformIntegration literal. */
+export type Platform = 'slack' | 'discord' | 'telegram' | 'whatsapp' | 'teams';
+
+/** Lifecycle state of one agent's work inside a task. */
+export type ActivityStatus = 'in_progress' | 'done' | 'error';
+
+/** What triggered an activity — a human user or a delegating agent. */
+export type ActivityInitiatorKind = 'user' | 'agent';
+
+/** Lifecycle state of one tool invocation inside an activity. */
+export type ToolCallStatus = 'in_progress' | 'ok' | 'error';
+
+/**
+ * A task = one conversation thread on a messaging platform.
+ * For Slack: `{channel_id}:{thread_ts}` identifies it.
+ * Every agent that replies in the thread contributes an `Activity` to this task.
+ */
+export interface Task {
+  id: string;
+  platform: Platform;
+  channelId: string;
+  threadTs: string;
+  initiatorUserId?: string;
+  initiatorHandle?: string;
+  initialAgentId?: string;
+  summary?: string;
+  startedAt: string;
+  lastActivityAt: string;
+  activityCount: number;
+}
+
+/** One agent's turn inside a task — the unit that the runner writes. */
+export interface Activity {
+  id: string;
+  taskId: string;
+  agentId: string;
+  platform: Platform;
+  initiatorKind: ActivityInitiatorKind;
+  initiatorUserId?: string;
+  messageRef?: string;
+  messagePreview?: string;
+  startedAt: string;
+  finishedAt?: string;
+  status: ActivityStatus;
+  error?: string;
+  toolCallCount: number;
+}
+
+/** One tool invocation captured from the SDK stream. */
+export interface ToolCall {
+  id: string;
+  activityId: string;
+  toolName: string;
+  argsPreview?: string;
+  startedAt: string;
+  finishedAt?: string;
+  status: ToolCallStatus;
+  resultPreview?: string;
+}
+
+/** Filter for `listTasks` queries. */
+export interface ActivityFilter {
+  agentId?: string;
+  userId?: string;
+  status?: 'active' | 'recent' | 'errored';
+  since?: string;
+}

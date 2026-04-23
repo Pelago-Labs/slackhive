@@ -370,6 +370,48 @@ CREATE TABLE IF NOT EXISTS platform_integrations (
   UNIQUE(agent_id, platform)
 );
 
+CREATE TABLE IF NOT EXISTS tasks (
+  id                  TEXT PRIMARY KEY,
+  platform            TEXT NOT NULL DEFAULT 'slack',
+  channel_id          TEXT NOT NULL,
+  thread_ts           TEXT NOT NULL,
+  initiator_user_id   TEXT,
+  initiator_handle    TEXT,
+  initial_agent_id    TEXT REFERENCES agents(id) ON DELETE SET NULL,
+  summary             TEXT,
+  started_at          TEXT NOT NULL DEFAULT (datetime('now')),
+  last_activity_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  activity_count      INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(platform, channel_id, thread_ts)
+);
+
+CREATE TABLE IF NOT EXISTS activities (
+  id                 TEXT PRIMARY KEY,
+  task_id            TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  agent_id           TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+  platform           TEXT NOT NULL DEFAULT 'slack',
+  initiator_kind     TEXT NOT NULL CHECK (initiator_kind IN ('user','agent')),
+  initiator_user_id  TEXT,
+  message_ref        TEXT,
+  message_preview    TEXT,
+  started_at         TEXT NOT NULL DEFAULT (datetime('now')),
+  finished_at        TEXT,
+  status             TEXT NOT NULL DEFAULT 'in_progress' CHECK (status IN ('in_progress','done','error')),
+  error              TEXT,
+  tool_call_count    INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS tool_calls (
+  id              TEXT PRIMARY KEY,
+  activity_id     TEXT NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
+  tool_name       TEXT NOT NULL,
+  args_preview    TEXT,
+  started_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  finished_at     TEXT,
+  status          TEXT NOT NULL DEFAULT 'in_progress' CHECK (status IN ('in_progress','ok','error')),
+  result_preview  TEXT
+);
+
 CREATE TABLE IF NOT EXISTS knowledge_sources (
   id          TEXT PRIMARY KEY,
   agent_id    TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
@@ -408,6 +450,12 @@ CREATE INDEX IF NOT EXISTS idx_agent_access_agent      ON agent_access(agent_id)
 CREATE INDEX IF NOT EXISTS idx_users_created           ON users(created_at);
 CREATE INDEX IF NOT EXISTS idx_job_runs_job            ON job_runs(job_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_agent_restrictions_agent ON agent_restrictions(agent_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_last_activity     ON tasks(last_activity_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tasks_platform_keys     ON tasks(platform, channel_id, thread_ts);
+CREATE INDEX IF NOT EXISTS idx_activities_task         ON activities(task_id, started_at);
+CREATE INDEX IF NOT EXISTS idx_activities_agent        ON activities(agent_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_activities_in_progress  ON activities(status) WHERE status = 'in_progress';
+CREATE INDEX IF NOT EXISTS idx_tool_calls_activity     ON tool_calls(activity_id, started_at);
 `;
 
 // =============================================================================
@@ -475,7 +523,7 @@ export function createSqliteAdapter(dbPath?: string): DbAdapter {
   const tablesWithUuid = [
     'agents', 'mcp_servers', 'skills', 'permissions', 'memories',
     'sessions', 'users', 'scheduled_jobs', 'job_runs', 'agent_snapshots',
-    'agent_restrictions',
+    'agent_restrictions', 'tasks', 'activities', 'tool_calls',
   ];
 
   for (const table of tablesWithUuid) {
