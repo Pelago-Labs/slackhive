@@ -2,11 +2,12 @@
  * @fileoverview Interactive "Coach" for tuning an agent's CLAUDE.md and skills.
  *
  * Wraps the Claude Agent SDK as a sandboxed multi-turn helper. The model can
- * only inspect the agent's current config and propose edits through a
- * whitelisted set of in-process MCP tools — it cannot write to disk, hit the
- * DB, or call any built-in tool (Read/Write/Edit/Bash/Grep/...). Proposals are
- * surfaced as approval cards in the web UI; the human clicks Apply to actually
- * mutate state via the existing REST routes.
+ * inspect the agent's current config and propose edits through a whitelisted
+ * set of in-process MCP tools, and it has read-only web access (WebFetch /
+ * WebSearch) to look things up while drafting — but it cannot write to disk,
+ * hit the DB, or call any other built-in tool (Read/Write/Edit/Bash/Grep/...).
+ * Proposals are surfaced as approval cards in the web UI; the human clicks
+ * Apply to actually mutate state via the existing REST routes.
  *
  * @module runner/coach-handler
  */
@@ -82,7 +83,7 @@ export type CoachStreamEvent =
 
 const BUILT_IN_TOOLS_TO_DENY = [
   'Read', 'Write', 'Edit', 'MultiEdit', 'Bash', 'BashOutput',
-  'Grep', 'Glob', 'WebFetch', 'WebSearch', 'Task', 'NotebookEdit',
+  'Grep', 'Glob', 'Task', 'NotebookEdit',
   'TodoWrite', 'ExitPlanMode',
 ];
 
@@ -159,7 +160,7 @@ If nothing needs fixing, reply in ONE short line (e.g. "Memory clean — 2 rows,
 
 # Rules
 - You can ONLY propose. Apply is always the human's click. (Exception: bootstrap mode — see any appendix at the bottom of this prompt.)
-- You have ONLY the listed tools (\`read_*\`, \`list_*\`, \`propose_*\`). No filesystem, no shell, no web. Decline anything outside tuning this agent.
+- You have the listed tools (\`read_*\`, \`list_*\`, \`propose_*\`) plus \`WebFetch\` and \`WebSearch\` for looking things up on the open web when it helps you draft better proposals (e.g. verifying API shapes, pulling a canonical reference the user mentioned). No filesystem, no shell. Decline anything outside tuning this agent.
 - Inspect before proposing; never guess.
 - Prefer one proposal per distinct change — do not bundle unrelated edits into one card.
 - Never invent MCPs or skills that don't exist. Call \`list_mcps\` / \`list_skills\` first.
@@ -548,6 +549,8 @@ export async function runCoachTurn(input: CoachTurnInput): Promise<{
     'mcp__coach__propose_skill_change',
     'mcp__coach__propose_memory_change',
     'mcp__coach__propose_wiki_extract',
+    'WebFetch',
+    'WebSearch',
   ];
 
   const userBlock = input.attachment

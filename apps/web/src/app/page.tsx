@@ -643,24 +643,44 @@ function EmptyState() {
           {canEdit ? 'Create your first Claude Code agent and connect it to Slack to get started.' : 'No agents have been configured yet. Ask an admin to set one up.'}
         </p>
       </div>
-      {canEdit && (
-        <Link href="/agents/new" style={{
-          display: 'inline-flex', alignItems: 'center', gap: 7,
-          background: 'var(--accent)', color: 'var(--accent-fg)',
-          padding: '10px 22px', borderRadius: 8,
-          fontSize: 14, fontWeight: 500, textDecoration: 'none',
-          boxShadow: 'var(--shadow-sm)',
-          transition: 'opacity 0.15s',
-        }}
-          onMouseEnter={e => (e.currentTarget.style.opacity = '0.85')}
-          onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {canEdit && (
+          <Link href="/agents/new" style={{
+            display: 'inline-flex', alignItems: 'center', gap: 7,
+            background: 'var(--accent)', color: 'var(--accent-fg)',
+            padding: '10px 22px', borderRadius: 8,
+            fontSize: 14, fontWeight: 500, textDecoration: 'none',
+            boxShadow: 'var(--shadow-sm)',
+            transition: 'opacity 0.15s',
+          }}
+            onMouseEnter={e => (e.currentTarget.style.opacity = '0.85')}
+            onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+            </svg>
+            Create First Agent
+          </Link>
+        )}
+        <a
+          href="https://slackhive.mintlify.app/quickstart"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            color: 'var(--muted)', fontSize: 13, textDecoration: 'none',
+            padding: '10px 14px', borderRadius: 8,
+            transition: 'color 0.15s, background 0.15s',
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text)'; (e.currentTarget as HTMLElement).style.background = 'var(--surface-2)'; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--muted)'; (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
         >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-            <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+          Read the docs
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+            <path d="M6 3h7v7M13 3L5 11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
           </svg>
-          Create First Agent
-        </Link>
-      )}
+        </a>
+      </div>
     </div>
   );
 }

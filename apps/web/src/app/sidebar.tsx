@@ -319,6 +319,33 @@ export function Sidebar({ children, mobileOpen, onMobileClose }: { children?: Re
                   <div style={{ fontSize: 11, color: 'var(--subtle)', textTransform: 'capitalize' }}>{role}</div>
                 </div>
               )}
+              <a
+                href="https://slackhive.mintlify.app"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setProfileOpen(false)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  width: '100%', padding: '10px 14px',
+                  background: 'transparent', textDecoration: 'none',
+                  color: 'var(--muted)', fontSize: 13,
+                  fontFamily: 'var(--font-sans)',
+                  transition: 'background 0.12s',
+                  borderBottom: '1px solid var(--border)',
+                  boxSizing: 'border-box',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+                  <path d="M3 2.5h6a2 2 0 012 2V13a1.5 1.5 0 00-1.5-1.5H3v-9z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
+                  <path d="M13 2.5H7a2 2 0 00-2 2V13a1.5 1.5 0 011.5-1.5H13v-9z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
+                </svg>
+                <span style={{ flex: 1 }}>Documentation</span>
+                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, color: 'var(--subtle)' }}>
+                  <path d="M6 3h7v7M13 3L5 11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                </svg>
+              </a>
               <button
                 onClick={toggleTheme}
                 style={{
