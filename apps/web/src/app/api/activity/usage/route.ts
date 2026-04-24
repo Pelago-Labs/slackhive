@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   getTokensByAgent,
   getTopUsers,
-  getCurrentSessionUsage,
+  getUsageBuckets,
   type ActivityFilter,
 } from '@slackhive/shared';
 import { apiError } from '@/lib/api-error';
@@ -33,9 +33,10 @@ function windowFloor(w: string | null): string | undefined {
 /**
  * GET /api/activity/usage?window=24h&agent=
  *
- * Returns `{ byAgent, byUser, totals, currentSession }`.
- * `currentSession` always spans the rolling last 5 hours regardless of the
- * `window` param — it mirrors Claude Code's `/usage` cadence.
+ * Returns `{ byAgent, byUser, totals, buckets }`. `buckets` holds four
+ * canonical windows (`session5h`, `today`, `last7d`, `last30d`) computed
+ * independently of the `window` filter — the UI renders one at a time via a
+ * pill toggle, defaulting to `session5h`.
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
@@ -56,10 +57,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       accessibleAgentIds: accessibleAgentIds ?? undefined,
     };
 
-    const [byAgent, byUser, currentSession] = await Promise.all([
+    const [byAgent, byUser, buckets] = await Promise.all([
       getTokensByAgent(filter),
       getTopUsers(filter, 10),
-      getCurrentSessionUsage(accessibleAgentIds ?? undefined),
+      getUsageBuckets(accessibleAgentIds ?? undefined),
     ]);
 
     const totals = byAgent.reduce(
@@ -73,7 +74,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, turnCount: 0 },
     );
 
-    return NextResponse.json({ byAgent, byUser, totals, currentSession });
+    return NextResponse.json({ byAgent, byUser, totals, buckets });
   } catch (err) {
     return apiError('activity-usage', err);
   }

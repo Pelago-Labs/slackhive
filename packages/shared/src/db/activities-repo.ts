@@ -510,23 +510,33 @@ export interface UserActivitySummary {
   totalTokens: number;
 }
 
-export interface CurrentSessionUsage {
+export interface UsageBucket {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
   turnCount: number;
-  windowStart: string;
 }
 
-/** Five-hour rolling window. Mirrors Claude Code's `/usage` cadence. */
-const CURRENT_SESSION_WINDOW_MS = 5 * 60 * 60 * 1000;
+/**
+ * Four canonical windows surfaced on the Usage page's Current-session card.
+ * `session5h` mirrors Claude Code's `/usage` cadence and is the default.
+ * `today` is since local midnight; `last7d`/`last30d` are rolling.
+ */
+export interface UsageBuckets {
+  session5h: UsageBucket;
+  today:     UsageBucket;
+  last7d:    UsageBucket;
+  last30d:   UsageBucket;
+}
 
 /**
- * Render a SQLite `IN (…)` clause for the accessible-agent allowlist.
- * Returns `null` when there are no accessible agents (caller should short-circuit),
- * or a pair `{ sql, params }` when there is a restriction, or `{ sql: '', params: [] }`
- * for admin (unrestricted) callers.
+ * Render a bare SQLite `IN (…)` clause for the accessible-agent allowlist —
+ * the caller decides whether to join it with `AND` or prepend it.
+ *
+ * Returns `null` when there are no accessible agents (caller should short-circuit
+ * to an empty result), `{ sql: '', params: [] }` for admin callers (no restriction),
+ * or `{ sql: 'a.agent_id IN (...)', params: [...] }` when there is a restriction.
  */
 function accessClause(
   accessibleAgentIds: string[] | undefined,
@@ -535,7 +545,7 @@ function accessClause(
   if (accessibleAgentIds === undefined) return { sql: '', params: [] };
   if (accessibleAgentIds.length === 0) return null;
   const placeholders = accessibleAgentIds.map((_, i) => `$${startIdx + i}`).join(', ');
-  return { sql: ` AND a.agent_id IN (${placeholders})`, params: [...accessibleAgentIds] };
+  return { sql: `a.agent_id IN (${placeholders})`, params: [...accessibleAgentIds] };
 }
 
 /** Sum token columns per agent within the filter window. Sorted by descending total. */
@@ -557,7 +567,7 @@ export async function getTokensByAgent(filter: ActivityFilter = {}): Promise<Age
   const access = accessClause(filter.accessibleAgentIds, params.length + 1);
   if (access === null) return [];
   if (access.sql) {
-    wheres.push(access.sql.replace(/^\s*AND\s*/, ''));
+    wheres.push(access.sql);
     params.push(...access.params);
   }
 
@@ -590,6 +600,10 @@ export async function getTokensByAgent(filter: ActivityFilter = {}): Promise<Age
 /**
  * Top N users by distinct task count within the filter window. Ties broken
  * by turn count descending. Excludes rows with no initiator_user_id.
+ *
+ * All counts filter on `a.started_at` so a user's totals match what the
+ * per-agent bars show for the same window — the earlier version filtered
+ * on `t.last_activity_at`, which over-counted turns on long-lived tasks.
  */
 export async function getTopUsers(
   filter: ActivityFilter = {},
@@ -600,7 +614,7 @@ export async function getTopUsers(
   const params: unknown[] = [];
 
   if (filter.since) {
-    wheres.push(`t.last_activity_at >= $${params.length + 1}`);
+    wheres.push(`a.started_at >= $${params.length + 1}`);
     params.push(filter.since);
   }
 
@@ -612,12 +626,15 @@ export async function getTopUsers(
   const access = accessClause(filter.accessibleAgentIds, params.length + 1);
   if (access === null) return [];
   if (access.sql) {
-    wheres.push(access.sql.replace(/^\s*AND\s*/, ''));
+    wheres.push(access.sql);
     params.push(...access.params);
   }
 
   params.push(limit);
 
+  // MAX(initiator_handle) is a SQLite-idiomatic way to pull any one handle
+  // for the grouped user — we only store one handle per task, so it's
+  // effectively "pick the lexicographically largest" (stable, arbitrary).
   const { rows } = await db.query(
     `SELECT t.initiator_user_id                                      AS user_id,
             MAX(t.initiator_handle)                                  AS handle,
@@ -643,51 +660,91 @@ export async function getTopUsers(
 }
 
 /**
- * Usage in the rolling last 5 hours across all accessible agents, ignoring
- * whatever window the caller is currently browsing. Matches Claude Code's
- * `/usage` cadence.
+ * Convert a Date to SQLite's stored format (`YYYY-MM-DD HH:MM:SS` in UTC).
+ * Activity rows use `datetime('now')` which is UTC, so all floors must be too.
  */
-export async function getCurrentSessionUsage(
+function toSqliteUtc(d: Date): string {
+  return d.toISOString().replace('T', ' ').slice(0, 19);
+}
+
+/**
+ * Usage totals for four canonical windows — session (5h rolling), today
+ * (since local midnight), last 7 days, last 30 days. Returned in a single
+ * query via FILTER clauses so the widest scan covers all four buckets.
+ */
+export async function getUsageBuckets(
   accessibleAgentIds?: string[],
-): Promise<CurrentSessionUsage> {
-  const windowStartDate = new Date(Date.now() - CURRENT_SESSION_WINDOW_MS);
-  const windowStart = windowStartDate.toISOString().replace('T', ' ').slice(0, 19);
-  const empty: CurrentSessionUsage = {
-    inputTokens: 0,
-    outputTokens: 0,
-    cacheReadTokens: 0,
-    cacheCreationTokens: 0,
-    turnCount: 0,
-    windowStart,
+): Promise<UsageBuckets> {
+  const now = new Date();
+  const session5hFloor = toSqliteUtc(new Date(now.getTime() - 5 * 60 * 60 * 1000));
+  const todayFloor     = toSqliteUtc(new Date(now.getFullYear(), now.getMonth(), now.getDate()));
+  const last7dFloor    = toSqliteUtc(new Date(now.getTime() - 7  * 24 * 60 * 60 * 1000));
+  const last30dFloor   = toSqliteUtc(new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000));
+
+  const zero: UsageBucket = {
+    inputTokens: 0, outputTokens: 0,
+    cacheReadTokens: 0, cacheCreationTokens: 0, turnCount: 0,
+  };
+  const empty: UsageBuckets = {
+    session5h: { ...zero }, today: { ...zero },
+    last7d: { ...zero }, last30d: { ...zero },
   };
 
   const db = getDb();
-  const params: unknown[] = [windowStart];
+  const params: unknown[] = [session5hFloor, todayFloor, last7dFloor, last30dFloor];
   let whereExtra = '';
 
   const access = accessClause(accessibleAgentIds, params.length + 1);
   if (access === null) return empty;
-  whereExtra = access.sql;
-  params.push(...access.params);
+  if (access.sql) {
+    whereExtra = ` AND ${access.sql}`;
+    params.push(...access.params);
+  }
 
   const { rows } = await db.query(
-    `SELECT COALESCE(SUM(a.input_tokens), 0)          AS input_tokens,
-            COALESCE(SUM(a.output_tokens), 0)         AS output_tokens,
-            COALESCE(SUM(a.cache_read_tokens), 0)     AS cache_read_tokens,
-            COALESCE(SUM(a.cache_creation_tokens), 0) AS cache_creation_tokens,
-            COUNT(*)                                   AS turn_count
-       FROM activities a
-      WHERE a.started_at >= $1${whereExtra}`,
+    `SELECT
+       -- session5h: last 5 hours
+       COALESCE(SUM(a.input_tokens)          FILTER (WHERE a.started_at >= $1), 0) AS s_in,
+       COALESCE(SUM(a.output_tokens)         FILTER (WHERE a.started_at >= $1), 0) AS s_out,
+       COALESCE(SUM(a.cache_read_tokens)     FILTER (WHERE a.started_at >= $1), 0) AS s_cr,
+       COALESCE(SUM(a.cache_creation_tokens) FILTER (WHERE a.started_at >= $1), 0) AS s_cc,
+       COUNT(*)                              FILTER (WHERE a.started_at >= $1)     AS s_turns,
+       -- today: since local midnight
+       COALESCE(SUM(a.input_tokens)          FILTER (WHERE a.started_at >= $2), 0) AS t_in,
+       COALESCE(SUM(a.output_tokens)         FILTER (WHERE a.started_at >= $2), 0) AS t_out,
+       COALESCE(SUM(a.cache_read_tokens)     FILTER (WHERE a.started_at >= $2), 0) AS t_cr,
+       COALESCE(SUM(a.cache_creation_tokens) FILTER (WHERE a.started_at >= $2), 0) AS t_cc,
+       COUNT(*)                              FILTER (WHERE a.started_at >= $2)     AS t_turns,
+       -- last7d
+       COALESCE(SUM(a.input_tokens)          FILTER (WHERE a.started_at >= $3), 0) AS w_in,
+       COALESCE(SUM(a.output_tokens)         FILTER (WHERE a.started_at >= $3), 0) AS w_out,
+       COALESCE(SUM(a.cache_read_tokens)     FILTER (WHERE a.started_at >= $3), 0) AS w_cr,
+       COALESCE(SUM(a.cache_creation_tokens) FILTER (WHERE a.started_at >= $3), 0) AS w_cc,
+       COUNT(*)                              FILTER (WHERE a.started_at >= $3)     AS w_turns,
+       -- last30d (outer floor — widest scan)
+       COALESCE(SUM(a.input_tokens),          0) AS m_in,
+       COALESCE(SUM(a.output_tokens),         0) AS m_out,
+       COALESCE(SUM(a.cache_read_tokens),     0) AS m_cr,
+       COALESCE(SUM(a.cache_creation_tokens), 0) AS m_cc,
+       COUNT(*)                                   AS m_turns
+     FROM activities a
+     WHERE a.started_at >= $4${whereExtra}`,
     params,
   );
 
   const row = rows[0] ?? {};
+  const bucket = (inK: string, outK: string, crK: string, ccK: string, tK: string): UsageBucket => ({
+    inputTokens:         Number(row[inK]  ?? 0),
+    outputTokens:        Number(row[outK] ?? 0),
+    cacheReadTokens:     Number(row[crK]  ?? 0),
+    cacheCreationTokens: Number(row[ccK]  ?? 0),
+    turnCount:           Number(row[tK]   ?? 0),
+  });
+
   return {
-    inputTokens: Number(row.input_tokens ?? 0),
-    outputTokens: Number(row.output_tokens ?? 0),
-    cacheReadTokens: Number(row.cache_read_tokens ?? 0),
-    cacheCreationTokens: Number(row.cache_creation_tokens ?? 0),
-    turnCount: Number(row.turn_count ?? 0),
-    windowStart,
+    session5h: bucket('s_in', 's_out', 's_cr', 's_cc', 's_turns'),
+    today:     bucket('t_in', 't_out', 't_cr', 't_cc', 't_turns'),
+    last7d:    bucket('w_in', 'w_out', 'w_cr', 'w_cc', 'w_turns'),
+    last30d:   bucket('m_in', 'm_out', 'm_cr', 'm_cc', 'm_turns'),
   };
 }

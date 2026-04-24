@@ -43,21 +43,36 @@ interface Totals {
   turnCount: number;
 }
 
-interface CurrentSession {
+interface UsageBucket {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
   turnCount: number;
-  windowStart: string;
+}
+
+type BucketKey = 'session5h' | 'today' | 'last7d' | 'last30d';
+
+interface UsageBuckets {
+  session5h: UsageBucket;
+  today:     UsageBucket;
+  last7d:    UsageBucket;
+  last30d:   UsageBucket;
 }
 
 interface UsageResponse {
   byAgent: AgentTokenUsage[];
   byUser: UserActivitySummary[];
   totals: Totals;
-  currentSession: CurrentSession;
+  buckets: UsageBuckets;
 }
+
+const BUCKET_OPTIONS: { key: BucketKey; label: string }[] = [
+  { key: 'session5h', label: 'Last 5 hours' },
+  { key: 'today',     label: 'Today' },
+  { key: 'last7d',    label: 'Last 7 days' },
+  { key: 'last30d',   label: 'Last 30 days' },
+];
 
 const CLAUDE_USAGE_URL = 'https://claude.ai/settings/usage';
 
@@ -82,6 +97,7 @@ function UsagePageBody(): React.JSX.Element {
   );
   const [data, setData] = useState<UsageResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [bucketKey, setBucketKey] = useState<BucketKey>('session5h');
 
   useEffect(() => {
     fetch('/api/agents').then(r => r.json()).then((rows: AgentLite[]) => setAgents(rows)).catch(() => {});
@@ -138,7 +154,11 @@ function UsagePageBody(): React.JSX.Element {
 
       <TabSwitcher />
 
-      <CurrentSessionCard session={data?.currentSession ?? null} />
+      <CurrentSessionCard
+        buckets={data?.buckets ?? null}
+        bucketKey={bucketKey}
+        onBucketChange={setBucketKey}
+      />
 
       <FilterRow
         agents={agents}
@@ -168,8 +188,14 @@ function windowLabel(w: WindowKey): string {
        : 'last 30 days';
 }
 
-function CurrentSessionCard(props: { session: CurrentSession | null }): React.JSX.Element {
-  const { session } = props;
+function CurrentSessionCard(props: {
+  buckets: UsageBuckets | null;
+  bucketKey: BucketKey;
+  onBucketChange: (k: BucketKey) => void;
+}): React.JSX.Element {
+  const { buckets, bucketKey, onBucketChange } = props;
+  const bucket = buckets?.[bucketKey] ?? null;
+
   return (
     <div style={{
       padding: '14px 16px', marginBottom: 16,
@@ -179,22 +205,43 @@ function CurrentSessionCard(props: { session: CurrentSession | null }): React.JS
     }}>
       <div>
         <div style={{
-          fontSize: 10, fontWeight: 600, letterSpacing: '0.06em',
-          color: 'var(--subtle)', textTransform: 'uppercase', marginBottom: 4,
+          display: 'inline-flex', alignItems: 'center', gap: 3,
+          padding: 2, marginBottom: 8,
+          background: 'var(--surface-2)', border: '1px solid var(--border)',
+          borderRadius: 6,
         }}>
-          Current session · last 5 hours
+          {BUCKET_OPTIONS.map(opt => {
+            const active = opt.key === bucketKey;
+            return (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={() => onBucketChange(opt.key)}
+                style={{
+                  padding: '3px 9px', fontSize: 11, fontWeight: 500,
+                  color: active ? 'var(--text)' : 'var(--muted)',
+                  background: active ? 'var(--surface)' : 'transparent',
+                  border: 'none', borderRadius: 4,
+                  cursor: 'pointer', fontFamily: 'var(--font-sans)',
+                  boxShadow: active ? 'var(--shadow-sm)' : 'none',
+                }}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
         </div>
         <div style={{
           fontSize: 20, fontWeight: 700, letterSpacing: '-0.01em',
           color: 'var(--text)', lineHeight: 1.2, fontVariantNumeric: 'tabular-nums',
         }}>
-          {session
-            ? `${formatTokens(session.inputTokens)} in · ${formatTokens(session.outputTokens)} out · ${session.turnCount} turn${session.turnCount === 1 ? '' : 's'}`
+          {bucket
+            ? `${formatTokens(bucket.inputTokens)} in · ${formatTokens(bucket.outputTokens)} out · ${bucket.turnCount} turn${bucket.turnCount === 1 ? '' : 's'}`
             : '— in · — out · 0 turns'}
         </div>
-        {session && (session.cacheReadTokens > 0 || session.cacheCreationTokens > 0) && (
+        {bucket && (bucket.cacheReadTokens > 0 || bucket.cacheCreationTokens > 0) && (
           <div style={{ fontSize: 11, color: 'var(--subtle)', marginTop: 4 }}>
-            cache: {formatTokens(session.cacheReadTokens)} read · {formatTokens(session.cacheCreationTokens)} written
+            cache: {formatTokens(bucket.cacheReadTokens)} read · {formatTokens(bucket.cacheCreationTokens)} written
           </div>
         )}
       </div>

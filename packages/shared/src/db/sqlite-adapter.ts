@@ -458,6 +458,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_last_activity     ON tasks(last_activity_at
 CREATE INDEX IF NOT EXISTS idx_tasks_platform_keys     ON tasks(platform, channel_id, thread_ts);
 CREATE INDEX IF NOT EXISTS idx_activities_task         ON activities(task_id, started_at);
 CREATE INDEX IF NOT EXISTS idx_activities_agent        ON activities(agent_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_activities_started      ON activities(started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_activities_in_progress  ON activities(status) WHERE status = 'in_progress';
 CREATE INDEX IF NOT EXISTS idx_tool_calls_activity     ON tool_calls(activity_id, started_at);
 `;
