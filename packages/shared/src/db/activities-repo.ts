@@ -290,6 +290,10 @@ export async function listTasks(
   const params: unknown[] = [];
 
   // Column-specific filter against subqueries over `activities`.
+  // Priority: active > errored > recent.
+  // A task is "active" if any activity is in_progress (takes full priority).
+  // A task is "errored" if its most-recent activity is error AND none are in_progress.
+  // A task is "recent" if it has no in_progress or error activities.
   if (column === 'active') {
     wheres.push(`EXISTS (
       SELECT 1 FROM activities a
@@ -305,10 +309,16 @@ export async function listTasks(
        WHERE a.task_id = tasks.id AND a.status = 'error'
     )`);
   } else if (column === 'errored') {
-    wheres.push(`EXISTS (
+    // Most-recent activity is error, and no activity is currently in_progress
+    wheres.push(`NOT EXISTS (
       SELECT 1 FROM activities a
-       WHERE a.task_id = tasks.id AND a.status = 'error'
+       WHERE a.task_id = tasks.id AND a.status = 'in_progress'
     )`);
+    wheres.push(`(
+      SELECT a.status FROM activities a
+       WHERE a.task_id = tasks.id
+       ORDER BY a.started_at DESC LIMIT 1
+    ) = 'error'`);
   }
 
   if (filter.agentId) {
@@ -452,4 +462,27 @@ export async function countInProgressByAgent(
     out[row.agent_id as string] = Number(row.n ?? 0);
   }
   return out;
+}
+
+/**
+ * Mark any activities/tool_calls that are still `in_progress` as `error`.
+ * Called once at runner startup to recover from unclean shutdowns (SIGKILL,
+ * crashes) that bypassed the normal closeActivity path.
+ */
+export async function sweepStaleActivities(): Promise<number> {
+  const db = getDb();
+  await db.query(
+    `UPDATE tool_calls SET status = 'error'
+      WHERE status = 'in_progress'`,
+    [],
+  );
+  const { rows } = await db.query(
+    `UPDATE activities
+        SET status = 'error', error = 'Interrupted — runner restarted',
+            finished_at = datetime('now')
+      WHERE status = 'in_progress'
+  RETURNING id`,
+    [],
+  );
+  return rows.length;
 }
