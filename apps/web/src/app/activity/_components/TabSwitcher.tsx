@@ -12,14 +12,14 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { Activity as ActivityIcon, BarChart3 } from 'lucide-react';
-import { useAuth } from '@/lib/auth-context';
+import { useAuth, type Role } from '@/lib/auth-context';
 
 interface Tab {
   href: string;
   label: string;
   icon: React.ReactNode;
   /** Only render this tab when the user's role is in this list. `undefined` = visible to everyone. */
-  roles?: ('superadmin' | 'admin' | 'editor' | 'viewer')[];
+  roles?: Role[];
 }
 
 const TABS: Tab[] = [
