@@ -43,7 +43,7 @@ async function loadRoute() {
 beforeEach(() => {
   vi.mocked(getTokensByAgent).mockReset().mockResolvedValue([]);
   vi.mocked(getTopUsers).mockReset().mockResolvedValue([]);
-  vi.mocked(listAccessibleAgentIds).mockReset().mockResolvedValue(undefined);
+  vi.mocked(listAccessibleAgentIds).mockReset().mockResolvedValue(null);
 });
 
 describe('GET /api/activity/usage — auth gate', () => {
