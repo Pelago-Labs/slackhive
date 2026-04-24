@@ -108,27 +108,32 @@ function UsagePageBody(): React.JSX.Element {
             Token usage across your agents and team.
           </p>
         </div>
-        <button
-          onClick={load}
-          disabled={loading}
-          title="Refresh"
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '6px 10px', fontSize: 12, fontWeight: 500,
-            color: 'var(--muted)', background: 'var(--surface)',
-            border: '1px solid var(--border)', borderRadius: 8,
-            cursor: loading ? 'wait' : 'pointer',
-            opacity: loading ? 0.6 : 1,
-            fontFamily: 'var(--font-sans)',
-          }}
-        >
-          <RefreshCw size={12} /> Refresh
-        </button>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <a
+            href={CLAUDE_USAGE_URL}
+            target="_blank"
+            rel="noreferrer"
+            title="Check remaining quota on Anthropic"
+            style={headerButtonStyle}
+          >
+            Check remaining <ExternalLink size={12} />
+          </a>
+          <button
+            onClick={load}
+            disabled={loading}
+            title="Refresh"
+            style={{
+              ...headerButtonStyle,
+              cursor: loading ? 'wait' : 'pointer',
+              opacity: loading ? 0.6 : 1,
+            }}
+          >
+            <RefreshCw size={12} /> Refresh
+          </button>
+        </div>
       </div>
 
       <TabSwitcher />
-
-      <HeadlineCard totals={data?.totals ?? null} windowLabel={windowLabel(windowKey)} />
 
       <TotalsStrip totals={data?.totals ?? null} windowLabel={windowLabel(windowKey)} />
 
@@ -161,57 +166,14 @@ function windowLabel(w: WindowKey): string {
        : 'last 30 days';
 }
 
-function HeadlineCard(props: {
-  totals: Totals | null;
-  windowLabel: string;
-}): React.JSX.Element {
-  const { totals, windowLabel } = props;
-
-  return (
-    <div style={{
-      padding: '14px 16px', marginBottom: 16,
-      background: 'linear-gradient(90deg, var(--surface) 0%, var(--surface-2) 100%)',
-      border: '1px solid var(--border)', borderRadius: 12,
-      display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', alignItems: 'center', gap: 16,
-    }}>
-      <div>
-        <div style={{
-          fontSize: 10, fontWeight: 600, letterSpacing: '0.06em',
-          color: 'var(--subtle)', textTransform: 'uppercase', marginBottom: 4,
-        }}>
-          Usage · {windowLabel}
-        </div>
-        <div style={{
-          fontSize: 20, fontWeight: 700, letterSpacing: '-0.01em',
-          color: 'var(--text)', lineHeight: 1.2, fontVariantNumeric: 'tabular-nums',
-        }}>
-          {totals
-            ? `${formatTokens(totals.inputTokens)} in · ${formatTokens(totals.outputTokens)} out · ${totals.turnCount} turn${totals.turnCount === 1 ? '' : 's'}`
-            : '— in · — out · 0 turns'}
-        </div>
-        {totals && (totals.cacheReadTokens > 0 || totals.cacheCreationTokens > 0) && (
-          <div style={{ fontSize: 11, color: 'var(--subtle)', marginTop: 4 }}>
-            cache: {formatTokens(totals.cacheReadTokens)} read · {formatTokens(totals.cacheCreationTokens)} written
-          </div>
-        )}
-      </div>
-      <a
-        href={CLAUDE_USAGE_URL}
-        target="_blank"
-        rel="noreferrer"
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          padding: '7px 12px', fontSize: 12, fontWeight: 500,
-          color: 'var(--text)', background: 'var(--surface)',
-          border: '1px solid var(--border)', borderRadius: 8,
-          textDecoration: 'none', whiteSpace: 'nowrap',
-        }}
-      >
-        Check remaining <ExternalLink size={12} />
-      </a>
-    </div>
-  );
-}
+const headerButtonStyle: React.CSSProperties = {
+  display: 'inline-flex', alignItems: 'center', gap: 6,
+  padding: '6px 10px', fontSize: 12, fontWeight: 500,
+  color: 'var(--muted)', background: 'var(--surface)',
+  border: '1px solid var(--border)', borderRadius: 8,
+  cursor: 'pointer', fontFamily: 'var(--font-sans)',
+  textDecoration: 'none', whiteSpace: 'nowrap',
+};
 
 function TotalsStrip(props: { totals: Totals | null; windowLabel: string }): React.JSX.Element {
   const { totals, windowLabel } = props;
