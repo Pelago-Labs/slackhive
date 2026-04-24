@@ -472,7 +472,7 @@ export async function countInProgressByAgent(
 export async function sweepStaleActivities(): Promise<number> {
   const db = getDb();
   await db.query(
-    `UPDATE tool_calls SET status = 'error'
+    `UPDATE tool_calls SET status = 'ok'
       WHERE status = 'in_progress'`,
     [],
   );
