@@ -47,6 +47,7 @@
             "pages": [
               "configuration/env-vars",
               "configuration/slack-app",
+              "configuration/networking",
               "configuration/mcp-servers",
               "configuration/mcp-oauth"
             ]
@@ -73,6 +74,7 @@
               "features/import-export",
               "features/logs",
               "features/history",
+              "features/activity",
               "features/users"
             ]
           },

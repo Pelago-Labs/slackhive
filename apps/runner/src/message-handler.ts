@@ -11,12 +11,38 @@
  */
 
 import type { PlatformAdapter, IncomingMessage, FileAttachment } from '@slackhive/shared';
-import type { Agent, Restriction } from '@slackhive/shared';
+import type { Agent, Restriction, Platform } from '@slackhive/shared';
+import {
+  upsertTask,
+  beginActivity,
+  finishActivity,
+  beginToolCall,
+  finishToolCall,
+} from '@slackhive/shared';
 import type { ClaudeHandler } from './claude-handler';
 import { CorrectionHandler } from './correction-handler';
 import { agentLogger } from './logger';
 import type { Logger } from 'winston';
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources';
+
+/**
+ * Feature flag — when unset, all activity-recorder hooks no-op so the Slack
+ * hot path never touches the new tables. Read fresh each call so toggling
+ * `.env` + restart is enough.
+ */
+function activityDashboardEnabled(): boolean {
+  return process.env.ACTIVITY_DASHBOARD === '1';
+}
+
+/** Stringify arbitrary JSON for an `args_preview` column, safely. */
+function safeJsonPreview(value: unknown): string | undefined {
+  if (value == null) return undefined;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
 
 const MAX_THREAD_CONTEXT_CHARS = 8_000;
 
@@ -80,6 +106,13 @@ export class MessageHandler {
     // Build prompt with sender header + thread context + files
     const prompt = await this.buildPrompt(userId, channelId, threadId, text, files);
 
+    // Activity dashboard recorder — no-ops when ACTIVITY_DASHBOARD is off.
+    // A Slack thread == one task; each agent's reply in the thread is a new
+    // activity row under that task. The runner holds activityId for the
+    // duration of this stream and pairs tool_use ids → tool_call db ids.
+    const recorder = await this.openActivity(msg, text);
+    const toolUseIdToDbId = new Map<string, string>();
+
     let sentMessages: string[] = [];
     let lastAssistantText: string | null = null;
     let lastToolResultText: string | null = null;
@@ -97,6 +130,22 @@ export class MessageHandler {
 
           if (hasToolUse) {
             await this.swapReaction(channelId, messageId, sessionKey, 'gear');
+            // Record each tool_use — paired with its tool_result below via tool_use_id.
+            if (recorder) {
+              for (const block of content) {
+                if (block?.type !== 'tool_use' || typeof block.id !== 'string') continue;
+                try {
+                  const tcId = await beginToolCall({
+                    activityId: recorder.activityId,
+                    toolName: String(block.name ?? 'unknown'),
+                    argsPreview: safeJsonPreview(block.input),
+                  });
+                  toolUseIdToDbId.set(block.id, tcId);
+                } catch (err) {
+                  this.log.warn('activity: beginToolCall failed', { error: (err as Error).message });
+                }
+              }
+            }
             // Update status with tool info
             const toolStatus = this.formatToolStatus(content);
             if (statusMsgId && toolStatus) {
@@ -114,11 +163,28 @@ export class MessageHandler {
           const userContent = (message as any).message?.content;
           if (Array.isArray(userContent)) {
             for (const part of userContent) {
+              let resultText: string | null = null;
               if (part.type === 'tool_result' && typeof part.content === 'string' && part.content.length > 0) {
-                lastToolResultText = part.content;
+                resultText = part.content;
               } else if (part.type === 'tool_result' && Array.isArray(part.content)) {
                 const textParts = part.content.filter((p: any) => p.type === 'text').map((p: any) => p.text);
-                if (textParts.length > 0) lastToolResultText = textParts.join('');
+                if (textParts.length > 0) resultText = textParts.join('');
+              }
+              if (resultText != null) {
+                lastToolResultText = resultText;
+                // Finish the matching tool_call db row.
+                if (recorder && part.type === 'tool_result' && typeof part.tool_use_id === 'string') {
+                  const tcId = toolUseIdToDbId.get(part.tool_use_id);
+                  if (tcId) {
+                    const status = part.is_error ? 'error' : 'ok';
+                    try {
+                      await finishToolCall(tcId, status, resultText);
+                    } catch (err) {
+                      this.log.warn('activity: finishToolCall failed', { error: (err as Error).message });
+                    }
+                    toolUseIdToDbId.delete(part.tool_use_id);
+                  }
+                }
               }
             }
           }
@@ -150,11 +216,14 @@ export class MessageHandler {
       if (statusMsgId) await this.adapter.updateMessage(channelId, statusMsgId, ':white_check_mark:').catch(() => {});
       await this.swapReaction(channelId, messageId, sessionKey, 'white_check_mark');
 
+      if (recorder) await this.closeActivity(recorder.activityId, 'done');
+
     } catch (error: any) {
       if (error?.name === 'AbortError') {
         this.log.debug('Request aborted', { sessionKey });
         if (statusMsgId) await this.adapter.updateMessage(channelId, statusMsgId, ':stop_button:').catch(() => {});
         await this.swapReaction(channelId, messageId, sessionKey, 'stop_button');
+        if (recorder) await this.closeActivity(recorder.activityId, 'error', 'aborted');
       } else {
         this.log.error('Error streaming Claude response', { sessionKey, error: error?.message });
         const errText = error?.message?.startsWith('AUTH_EXPIRED:')
@@ -162,10 +231,72 @@ export class MessageHandler {
           : `Something went wrong: \`${error?.message ?? 'Unknown error'}\``;
         if (statusMsgId) await this.adapter.updateMessage(channelId, statusMsgId, errText).catch(() => {});
         await this.swapReaction(channelId, messageId, sessionKey, 'x');
+        if (recorder) await this.closeActivity(recorder.activityId, 'error', error?.message ?? 'unknown error');
       }
     } finally {
       this.activeControllers.delete(sessionKey);
       setTimeout(() => this.currentReactions.delete(sessionKey), 5 * 60 * 1000);
+    }
+  }
+
+  /**
+   * Open a task + activity row for this incoming message. Returns `null` when
+   * the feature flag is off or the write fails — callers use the null check
+   * to skip all further activity bookkeeping.
+   */
+  private async openActivity(
+    msg: IncomingMessage,
+    text: string,
+  ): Promise<{ activityId: string } | null> {
+    if (!activityDashboardEnabled()) return null;
+    const platform = (msg.platform || this.adapter.platform || 'slack') as Platform;
+    const threadTs = msg.threadId ?? msg.id;
+    // Boss → specialist delegation comes in with the boss's bot_id set on
+    // the raw event. Fall back to 'user' when no adapter signal is present.
+    const initiatorKind: 'user' | 'agent' =
+      (msg.raw as any)?.bot_id || (msg.raw as any)?.app_id ? 'agent' : 'user';
+
+    try {
+      let initiatorHandle: string | undefined;
+      try {
+        initiatorHandle = await this.adapter.getUserDisplayName(msg.userId);
+      } catch { /* best effort */ }
+
+      const taskId = await upsertTask({
+        platform,
+        channelId: msg.channelId,
+        threadTs,
+        initiatorUserId: msg.userId,
+        initiatorHandle,
+        initialAgentId: this.agent.id,
+        openingPreview: text,
+      });
+      const activityId = await beginActivity({
+        taskId,
+        agentId: this.agent.id,
+        platform,
+        initiatorKind,
+        initiatorUserId: msg.userId,
+        messageRef: msg.id,
+        messagePreview: text,
+      });
+      return { activityId };
+    } catch (err) {
+      this.log.warn('activity: openActivity failed', { error: (err as Error).message });
+      return null;
+    }
+  }
+
+  /** Finish an activity — errors here must never interrupt the hot path. */
+  private async closeActivity(
+    activityId: string,
+    status: 'done' | 'error',
+    error?: string,
+  ): Promise<void> {
+    try {
+      await finishActivity(activityId, status, error);
+    } catch (err) {
+      this.log.warn('activity: finishActivity failed', { error: (err as Error).message });
     }
   }
 

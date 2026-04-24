@@ -993,7 +993,9 @@ function Step2Persona({ state, update }: { state: WizardState; update: (p: Parti
   const filtered = useMemo(() => {
     let list = search.trim() ? searchPersonas(search) : PERSONA_CATALOG;
     if (category !== 'all') list = list.filter(p => p.category === category);
-    return list;
+    // The hardcoded card above already represents "Blank" (selectedPersona: null);
+    // excluding it here prevents a duplicate entry in the grid.
+    return list.filter(p => p.id !== 'blank');
   }, [search, category]);
 
   const selected = state.selectedPersona;

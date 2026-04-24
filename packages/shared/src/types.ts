@@ -420,21 +420,6 @@ export type AgentEvent = AgentReloadEvent | AgentStartEvent | AgentStopEvent | J
  * or a memory row. Surfaced in the chat UI as an approval card — never
  * auto-applied (except during wizard bootstrap).
  */
-/**
- * When a proposal removes domain-knowledge content from its store, the Coach
- * can attach a ready-to-download wiki page here. The Coach cannot write to
- * `knowledge/wiki/` directly — this payload is the handoff: the user clicks
- * a download button on the proposal card and drops the `.md` into the wiki.
- */
-export interface CoachWikiExtract {
-  /** Path suggestion under knowledge/wiki/. E.g. "domain/fraud-pipeline.md". */
-  suggestedPath: string;
-  /** Full markdown body of the wiki page (starts with a `#` heading). */
-  content: string;
-  /** One-line summary rendered under the download button. */
-  summary: string;
-}
-
 export type CoachProposal =
   | {
       kind: 'claude-md';
@@ -444,7 +429,6 @@ export type CoachProposal =
       /** Server-assigned id, unique within a session. */
       id: string;
       status: 'pending' | 'applied' | 'rejected';
-      wikiExtract?: CoachWikiExtract;
     }
   | {
       kind: 'skill';
@@ -456,7 +440,6 @@ export type CoachProposal =
       rationale: string;
       id: string;
       status: 'pending' | 'applied' | 'rejected';
-      wikiExtract?: CoachWikiExtract;
     }
   | {
       kind: 'memory';
@@ -475,17 +458,24 @@ export type CoachProposal =
       rationale: string;
       id: string;
       status: 'pending' | 'applied' | 'rejected';
-      wikiExtract?: CoachWikiExtract;
     }
   | {
       /**
-       * Standalone wiki-page suggestion — no store edit. Used when the user's
-       * ask is "teach the agent this body of knowledge" and there's nothing
-       * to strip from an existing memory/skill/CLAUDE.md. The card only
-       * offers a Download button; Apply/Reject are hidden.
+       * A change to a file-type knowledge source — verbatim reference content
+       * the agent reads at runtime from `knowledge/sources/<name>.md`. The
+       * coach proposes create/update/delete; human approval applies via the
+       * knowledge-sources CRUD routes. The wiki itself is NOT re-synced from
+       * this flow — the user is prompted to sync from the Knowledge tab so
+       * they can see progress on the tool that owns it.
        */
-      kind: 'wiki-extract';
-      wikiExtract: CoachWikiExtract;
+      kind: 'file-source';
+      action: 'create' | 'update' | 'delete';
+      /** Target source row id — required for update/delete, unset on create. */
+      sourceId?: string;
+      /** Display name — shown on the approval card; also the DB `name` column on create. */
+      name: string;
+      /** Verbatim text to store (create/update). Omit for delete. Capped at 1 MB. */
+      content?: string;
       rationale: string;
       id: string;
       status: 'pending' | 'applied' | 'rejected';
@@ -859,4 +849,82 @@ export interface AgentSnapshot {
  */
 export interface CreateSnapshotRequest {
   label?: string;
+}
+
+// =============================================================================
+// Activity Dashboard — tasks, activities, tool calls
+// =============================================================================
+
+/** Messaging platform on which a task lives. Reuses the PlatformIntegration literal. */
+export type Platform = 'slack' | 'discord' | 'telegram' | 'whatsapp' | 'teams';
+
+/** Lifecycle state of one agent's work inside a task. */
+export type ActivityStatus = 'in_progress' | 'done' | 'error';
+
+/** What triggered an activity — a human user or a delegating agent. */
+export type ActivityInitiatorKind = 'user' | 'agent';
+
+/** Lifecycle state of one tool invocation inside an activity. */
+export type ToolCallStatus = 'in_progress' | 'ok' | 'error';
+
+/**
+ * A task = one conversation thread on a messaging platform.
+ * For Slack: `{channel_id}:{thread_ts}` identifies it.
+ * Every agent that replies in the thread contributes an `Activity` to this task.
+ */
+export interface Task {
+  id: string;
+  platform: Platform;
+  channelId: string;
+  threadTs: string;
+  initiatorUserId?: string;
+  initiatorHandle?: string;
+  initialAgentId?: string;
+  summary?: string;
+  startedAt: string;
+  lastActivityAt: string;
+  activityCount: number;
+}
+
+/** One agent's turn inside a task — the unit that the runner writes. */
+export interface Activity {
+  id: string;
+  taskId: string;
+  agentId: string;
+  platform: Platform;
+  initiatorKind: ActivityInitiatorKind;
+  initiatorUserId?: string;
+  messageRef?: string;
+  messagePreview?: string;
+  startedAt: string;
+  finishedAt?: string;
+  status: ActivityStatus;
+  error?: string;
+  toolCallCount: number;
+}
+
+/** One tool invocation captured from the SDK stream. */
+export interface ToolCall {
+  id: string;
+  activityId: string;
+  toolName: string;
+  argsPreview?: string;
+  startedAt: string;
+  finishedAt?: string;
+  status: ToolCallStatus;
+  resultPreview?: string;
+}
+
+/** Filter for `listTasks` queries. */
+export interface ActivityFilter {
+  agentId?: string;
+  userId?: string;
+  status?: 'active' | 'recent' | 'errored';
+  since?: string;
+  /**
+   * Restrict results to tasks with at least one activity from one of these
+   * agent IDs. `undefined` = no restriction (admin view); empty array = the
+   * user has access to nothing, so the query returns zero rows.
+   */
+  accessibleAgentIds?: string[];
 }
