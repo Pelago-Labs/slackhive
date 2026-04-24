@@ -43,36 +43,11 @@ interface Totals {
   turnCount: number;
 }
 
-interface UsageBucket {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheCreationTokens: number;
-  turnCount: number;
-}
-
-type BucketKey = 'session5h' | 'today' | 'last7d' | 'last30d';
-
-interface UsageBuckets {
-  session5h: UsageBucket;
-  today:     UsageBucket;
-  last7d:    UsageBucket;
-  last30d:   UsageBucket;
-}
-
 interface UsageResponse {
   byAgent: AgentTokenUsage[];
   byUser: UserActivitySummary[];
   totals: Totals;
-  buckets: UsageBuckets;
 }
-
-const BUCKET_OPTIONS: { key: BucketKey; label: string }[] = [
-  { key: 'session5h', label: 'Last 5 hours' },
-  { key: 'today',     label: 'Today' },
-  { key: 'last7d',    label: 'Last 7 days' },
-  { key: 'last30d',   label: 'Last 30 days' },
-];
 
 const CLAUDE_USAGE_URL = 'https://claude.ai/settings/usage';
 
@@ -92,12 +67,11 @@ function UsagePageBody(): React.JSX.Element {
   const [windowKey, setWindowKey] = useState<WindowKey>(
     ((): WindowKey => {
       const w = searchParams?.get('window');
-      return w === '1h' || w === '24h' || w === '7d' || w === '30d' ? w : '24h';
+      return w === '1h' || w === '5h' || w === '24h' || w === '7d' || w === '30d' ? w : '5h';
     })(),
   );
   const [data, setData] = useState<UsageResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [bucketKey, setBucketKey] = useState<BucketKey>('session5h');
 
   useEffect(() => {
     fetch('/api/agents').then(r => r.json()).then((rows: AgentLite[]) => setAgents(rows)).catch(() => {});
@@ -154,12 +128,6 @@ function UsagePageBody(): React.JSX.Element {
 
       <TabSwitcher />
 
-      <CurrentSessionCard
-        buckets={data?.buckets ?? null}
-        bucketKey={bucketKey}
-        onBucketChange={setBucketKey}
-      />
-
       <FilterRow
         agents={agents}
         agentFilter={agentFilter}
@@ -167,6 +135,8 @@ function UsagePageBody(): React.JSX.Element {
         onAgentChange={setAgentFilter}
         onWindowChange={setWindowKey}
       />
+
+      <HeadlineCard totals={data?.totals ?? null} windowLabel={windowLabel(windowKey)} />
 
       <TotalsStrip totals={data?.totals ?? null} windowLabel={windowLabel(windowKey)} />
 
@@ -183,18 +153,17 @@ function UsagePageBody(): React.JSX.Element {
 
 function windowLabel(w: WindowKey): string {
   return w === '1h' ? 'last hour'
+       : w === '5h' ? 'last 5 hours'
        : w === '24h' ? 'last 24 hours'
        : w === '7d' ? 'last 7 days'
        : 'last 30 days';
 }
 
-function CurrentSessionCard(props: {
-  buckets: UsageBuckets | null;
-  bucketKey: BucketKey;
-  onBucketChange: (k: BucketKey) => void;
+function HeadlineCard(props: {
+  totals: Totals | null;
+  windowLabel: string;
 }): React.JSX.Element {
-  const { buckets, bucketKey, onBucketChange } = props;
-  const bucket = buckets?.[bucketKey] ?? null;
+  const { totals, windowLabel } = props;
 
   return (
     <div style={{
@@ -205,43 +174,22 @@ function CurrentSessionCard(props: {
     }}>
       <div>
         <div style={{
-          display: 'inline-flex', alignItems: 'center', gap: 3,
-          padding: 2, marginBottom: 8,
-          background: 'var(--surface-2)', border: '1px solid var(--border)',
-          borderRadius: 6,
+          fontSize: 10, fontWeight: 600, letterSpacing: '0.06em',
+          color: 'var(--subtle)', textTransform: 'uppercase', marginBottom: 4,
         }}>
-          {BUCKET_OPTIONS.map(opt => {
-            const active = opt.key === bucketKey;
-            return (
-              <button
-                key={opt.key}
-                type="button"
-                onClick={() => onBucketChange(opt.key)}
-                style={{
-                  padding: '3px 9px', fontSize: 11, fontWeight: 500,
-                  color: active ? 'var(--text)' : 'var(--muted)',
-                  background: active ? 'var(--surface)' : 'transparent',
-                  border: 'none', borderRadius: 4,
-                  cursor: 'pointer', fontFamily: 'var(--font-sans)',
-                  boxShadow: active ? 'var(--shadow-sm)' : 'none',
-                }}
-              >
-                {opt.label}
-              </button>
-            );
-          })}
+          Usage · {windowLabel}
         </div>
         <div style={{
           fontSize: 20, fontWeight: 700, letterSpacing: '-0.01em',
           color: 'var(--text)', lineHeight: 1.2, fontVariantNumeric: 'tabular-nums',
         }}>
-          {bucket
-            ? `${formatTokens(bucket.inputTokens)} in · ${formatTokens(bucket.outputTokens)} out · ${bucket.turnCount} turn${bucket.turnCount === 1 ? '' : 's'}`
+          {totals
+            ? `${formatTokens(totals.inputTokens)} in · ${formatTokens(totals.outputTokens)} out · ${totals.turnCount} turn${totals.turnCount === 1 ? '' : 's'}`
             : '— in · — out · 0 turns'}
         </div>
-        {bucket && (bucket.cacheReadTokens > 0 || bucket.cacheCreationTokens > 0) && (
+        {totals && (totals.cacheReadTokens > 0 || totals.cacheCreationTokens > 0) && (
           <div style={{ fontSize: 11, color: 'var(--subtle)', marginTop: 4 }}>
-            cache: {formatTokens(bucket.cacheReadTokens)} read · {formatTokens(bucket.cacheCreationTokens)} written
+            cache: {formatTokens(totals.cacheReadTokens)} read · {formatTokens(totals.cacheCreationTokens)} written
           </div>
         )}
       </div>

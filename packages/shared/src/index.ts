@@ -25,10 +25,10 @@ export {
   upsertTask, beginActivity, finishActivity,
   beginToolCall, finishToolCall,
   listTasks, getTaskWithDetails, countInProgressByAgent,
-  recordActivityUsage, getTokensByAgent, getTopUsers, getUsageBuckets,
+  recordActivityUsage, getTokensByAgent, getTopUsers,
 } from './db/activities-repo';
 export type {
   BeginActivityInput, BeginToolCallInput, TaskListColumn, TaskListResult,
   TaskWithDetails,
-  ActivityUsageInput, AgentTokenUsage, UserActivitySummary, UsageBucket, UsageBuckets,
+  ActivityUsageInput, AgentTokenUsage, UserActivitySummary,
 } from './db/activities-repo';

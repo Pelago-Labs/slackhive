@@ -15,7 +15,7 @@ import { listAccessibleAgentIds } from '@/lib/db';
 export const dynamic = 'force-dynamic';
 
 const VALID_COLUMNS: TaskListColumn[] = ['active', 'recent', 'errored'];
-const VALID_WINDOWS = new Set(['1h', '24h', '7d', '30d']);
+const VALID_WINDOWS = new Set(['1h', '5h', '24h', '7d', '30d']);
 
 /**
  * Translate a UI window string to an ISO timestamp floor. SQLite stores
@@ -27,6 +27,7 @@ function windowFloor(w: string | null): string | undefined {
   const now = Date.now();
   const ms =
     w === '1h'  ? 60 * 60 * 1000 :
+    w === '5h'  ? 5 * 60 * 60 * 1000 :
     w === '24h' ? 24 * 60 * 60 * 1000 :
     w === '7d'  ? 7 * 24 * 60 * 60 * 1000 :
                   30 * 24 * 60 * 60 * 1000;

@@ -9,7 +9,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   getTokensByAgent,
   getTopUsers,
-  getUsageBuckets,
   type ActivityFilter,
 } from '@slackhive/shared';
 import { apiError } from '@/lib/api-error';
@@ -18,12 +17,13 @@ import { listAccessibleAgentIds } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
-const VALID_WINDOWS = new Set(['1h', '24h', '7d', '30d']);
+const VALID_WINDOWS = new Set(['1h', '5h', '24h', '7d', '30d']);
 
 function windowFloor(w: string | null): string | undefined {
   if (!w || !VALID_WINDOWS.has(w)) return undefined;
   const ms =
     w === '1h'  ? 60 * 60 * 1000 :
+    w === '5h'  ? 5 * 60 * 60 * 1000 :
     w === '24h' ? 24 * 60 * 60 * 1000 :
     w === '7d'  ? 7 * 24 * 60 * 60 * 1000 :
                   30 * 24 * 60 * 60 * 1000;
@@ -31,12 +31,11 @@ function windowFloor(w: string | null): string | undefined {
 }
 
 /**
- * GET /api/activity/usage?window=24h&agent=
+ * GET /api/activity/usage?window=5h&agent=
  *
- * Returns `{ byAgent, byUser, totals, buckets }`. `buckets` holds four
- * canonical windows (`session5h`, `today`, `last7d`, `last30d`) computed
- * independently of the `window` filter — the UI renders one at a time via a
- * pill toggle, defaulting to `session5h`.
+ * Returns `{ byAgent, byUser, totals }` — all three scoped by the `window`
+ * query param. The UI renders the headline card, totals strip, agent bars,
+ * and power-users list all off the same window.
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
@@ -57,10 +56,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       accessibleAgentIds: accessibleAgentIds ?? undefined,
     };
 
-    const [byAgent, byUser, buckets] = await Promise.all([
+    const [byAgent, byUser] = await Promise.all([
       getTokensByAgent(filter),
       getTopUsers(filter, 10),
-      getUsageBuckets(accessibleAgentIds ?? undefined),
     ]);
 
     const totals = byAgent.reduce(
@@ -74,7 +72,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, turnCount: 0 },
     );
 
-    return NextResponse.json({ byAgent, byUser, totals, buckets });
+    return NextResponse.json({ byAgent, byUser, totals });
   } catch (err) {
     return apiError('activity-usage', err);
   }

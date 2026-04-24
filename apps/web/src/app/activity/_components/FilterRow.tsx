@@ -11,7 +11,7 @@
 import React from 'react';
 import { Filter as FilterIcon } from 'lucide-react';
 
-export type WindowKey = '1h' | '24h' | '7d' | '30d';
+export type WindowKey = '1h' | '5h' | '24h' | '7d' | '30d';
 
 interface AgentOption {
   id: string;
@@ -20,6 +20,7 @@ interface AgentOption {
 
 export const WINDOWS: { key: WindowKey; label: string }[] = [
   { key: '1h',  label: 'Last 1 hour' },
+  { key: '5h',  label: 'Last 5 hours' },
   { key: '24h', label: 'Last 24 hours' },
   { key: '7d',  label: 'Last 7 days' },
   { key: '30d', label: 'Last 30 days' },
