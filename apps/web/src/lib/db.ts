@@ -928,9 +928,11 @@ export async function updateUserPassword(id: string, passwordHash: string): Prom
  */
 export async function getAgentWriteUsers(agentId: string): Promise<{ userId: string; username: string; canWrite: boolean; isOwner: boolean }[]> {
   const r = await (await db()).query(
-    `SELECT aa.user_id, u.username, aa.can_write, 0 as is_owner
+    `SELECT aa.user_id, u.username, aa.can_write,
+            CASE WHEN a.created_by = u.username THEN 1 ELSE 0 END as is_owner
      FROM agent_access aa
      JOIN users u ON u.id = aa.user_id
+     JOIN agents a ON a.id = aa.agent_id
      WHERE aa.agent_id = $1
      UNION
      SELECT u.id as user_id, u.username, 1 as can_write, 1 as is_owner
