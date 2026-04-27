@@ -79,7 +79,12 @@ Pull the latest code and rebuild.
 slackhive update
 ```
 
-Runs `git pull`, `npm install`, rebuilds the runner and web app, restarts services. Your data (`~/.slackhive/data.db`) is preserved.
+Rebuilds and restarts SlackHive. Your data (`~/.slackhive/data.db`) is preserved.
+
+- **npm install (recommended):** `slackhive update` detects your install type. If you installed via npm, it will tell you to run `npm update -g slackhive` instead.
+- **git clone install:** runs `git pull`, `npm install`, rebuilds the runner and web app, restarts.
+
+If `git pull` fails (e.g. local changes), stash them first: `git stash && slackhive update`.
 
 ## Where data lives
 

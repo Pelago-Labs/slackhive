@@ -34,7 +34,7 @@ export async function handleCoachStream(
   body: string,
   res: ServerResponse,
 ): Promise<void> {
-  let parsed: { agentId?: string; userMessage?: string; attachment?: string; autoApply?: boolean };
+  let parsed: { agentId?: string; userMessage?: string; attachment?: string; attachmentName?: string; autoApply?: boolean };
   try { parsed = JSON.parse(body); }
   catch {
     res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -69,7 +69,8 @@ export async function handleCoachStream(
   const userMsg: CoachMessage = {
     id: randomUUID(),
     role: 'user',
-    text: parsed.attachment ? `${userMessage}\n\n[attachment: failed conversation]` : userMessage,
+    text: userMessage,
+    attachmentName: parsed.attachmentName,
     createdAt: new Date().toISOString(),
   };
 
@@ -95,6 +96,7 @@ export async function handleCoachStream(
       agentId,
       userMessage,
       attachment: parsed.attachment,
+      attachmentName: parsed.attachmentName,
       sdkSessionId: prior.sdkSessionId,
       autoApply,
       emit: (ev) => writeSse(res, ev),

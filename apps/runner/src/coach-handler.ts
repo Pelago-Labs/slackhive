@@ -119,6 +119,7 @@ Do not ask clarifying questions in mode (a). Do not skip CLAUDE.md in either mod
 
 const SYSTEM_PROMPT = `You are a coach that helps a SlackHive operator tune one specific agent.
 You can ONLY propose edits — a human clicks Apply to actually land them. You are a domain expert in agent architecture: you know exactly where every piece of content belongs and why, and you reason from first principles when a case is ambiguous.
+If the user attaches a file (delivered as an <attached_file> block), read it carefully and reference its content when making proposals — quote or summarise relevant passages to show you understood it.
 
 # Domain vocabulary (use these terms precisely)
 - **CLAUDE.md** — the agent's permanent system prompt body, loaded on every Slack turn. Contains identity, tone, hard rules, always-on tool references, compact always-needed instructions. Memories are inlined into CLAUDE.md at compile time — they are already present at runtime without any extra action. Editable via \`propose_claude_md_update\`.
@@ -624,8 +625,10 @@ function buildToolbox(ctx: ToolContext) {
 export interface CoachTurnInput {
   agentId: string;
   userMessage: string;
-  /** Optional text pasted by the user (e.g. a failed conversation). Appended as a tagged block. */
+  /** Optional text content from an attached file. Appended as a tagged block. */
   attachment?: string;
+  /** Original filename of the attached file, if any. */
+  attachmentName?: string;
   /** SDK session id from a previous turn, if any. */
   sdkSessionId?: string;
   /**
@@ -682,8 +685,9 @@ export async function runCoachTurn(input: CoachTurnInput): Promise<{
     'WebSearch',
   ];
 
-  const userBlock = input.attachment
-    ? `${input.userMessage}\n\n<failed_conversation>\n${input.attachment.slice(0, MAX_ATTACHMENT_CHARS)}\n</failed_conversation>`
+  const attachmentText = input.attachment?.slice(0, MAX_ATTACHMENT_CHARS);
+  const userBlock = attachmentText
+    ? `${input.userMessage}\n\n<attached_file name="${input.attachmentName ?? 'attachment'}">\n${attachmentText}\n</attached_file>`
     : input.userMessage;
 
   // First turn primes the model with agent identity; resume carries state after.

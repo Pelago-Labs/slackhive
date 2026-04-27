@@ -13,7 +13,7 @@
  * @module web/app/agents/[slug]/coach-panel
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Send, Loader2, RotateCcw, Wand2, ChevronDown, ChevronRight, Check, FileText, History, ArrowLeft, BookOpen } from 'lucide-react';
+import { X, Send, Loader2, RotateCcw, Wand2, ChevronDown, ChevronRight, Check, FileText, History, ArrowLeft, BookOpen, Paperclip } from 'lucide-react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { CoachMessage, CoachProposal, Skill, Memory, KnowledgeSource } from '@slackhive/shared';
@@ -209,6 +209,8 @@ export function CoachPanel({
   const [view, setView] = useState<View>({ mode: 'current' });
   const [archive, setArchive] = useState<ArchivedConversation[]>([]);
   const [archiveLoaded, setArchiveLoaded] = useState(false);
+  const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   // Controller for the in-flight SSE fetch. Used to abort cleanly when the
   // user clicks "New conversation" mid-stream (otherwise the reader hangs
@@ -321,10 +323,12 @@ export function CoachPanel({
     setError('');
     setSending(true);
 
+    const fileForMsg = attachedFile;
     const userMsg: CoachMessage = {
       id: uid(),
       role: 'user',
       text,
+      attachmentName: fileForMsg?.name,
       createdAt: new Date().toISOString(),
     };
     const draft: CoachMessage = {
@@ -337,14 +341,27 @@ export function CoachPanel({
     };
     setMessages(prev => [...prev, userMsg, draft]);
     setInput('');
+    setAttachedFile(null);
 
     const controller = new AbortController();
     abortRef.current = controller;
     try {
+      let body: BodyInit;
+      const headers: Record<string, string> = {};
+      if (fileForMsg) {
+        const form = new FormData();
+        form.append('userMessage', text);
+        form.append('file', fileForMsg);
+        body = form;
+        // Let browser set Content-Type with boundary automatically
+      } else {
+        body = JSON.stringify({ userMessage: text });
+        headers['Content-Type'] = 'application/json';
+      }
       const res = await fetch(`/api/agents/${agentId}/coach`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userMessage: text }),
+        headers,
+        body,
         signal: controller.signal,
       });
       if (!res.ok || !res.body) {
@@ -749,6 +766,13 @@ export function CoachPanel({
           {/* Antigravity-style unified composer: textarea on top, action row
               inside the same bordered container. Whole thing reads as a single
               input affordance, not three glued-together widgets. */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".txt,.md,.csv,.json,.yaml,.yml,.xml,.html,.rst,.log,.pdf"
+            style={{ display: 'none' }}
+            onChange={e => { const f = e.target.files?.[0]; if (f) setAttachedFile(f); e.target.value = ''; }}
+          />
           <div style={{
             background: 'var(--surface)',
             border: '1px solid var(--border)',
@@ -756,6 +780,25 @@ export function CoachPanel({
             padding: '8px 10px 6px',
             display: 'flex', flexDirection: 'column', gap: 4,
           }}>
+            {attachedFile && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  fontSize: 11.5, background: 'var(--surface-3)', borderRadius: 4,
+                  padding: '2px 7px', color: 'var(--text)', border: '1px solid var(--border)',
+                }}>
+                  <Paperclip size={10} />
+                  {attachedFile.name}
+                </span>
+                <button
+                  onClick={() => setAttachedFile(null)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', padding: 0, lineHeight: 1 }}
+                  title="Remove attachment"
+                >
+                  <X size={11} />
+                </button>
+              </div>
+            )}
             <textarea
               value={input}
               onChange={e => setInput(e.target.value)}
@@ -783,6 +826,17 @@ export function CoachPanel({
               }}
             />
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={composerDisabled}
+                title="Attach a file"
+                style={{
+                  background: 'none', border: 'none', cursor: composerDisabled ? 'not-allowed' : 'pointer',
+                  color: attachedFile ? 'var(--accent)' : 'var(--muted)', padding: '2px 4px', lineHeight: 1,
+                }}
+              >
+                <Paperclip size={14} />
+              </button>
               <span style={{ flex: 1 }} />
               <span style={{ fontSize: 11, color: 'var(--subtle)', fontFamily: 'var(--font-sans)' }}>
                 ↵ send · ⇧↵ newline
@@ -865,6 +919,16 @@ function MessageBubble({
           : (isLiveDraft(message) || isStreaming)
             ? <DraftingIndicator />
             : ''}
+        {isUser && message.attachmentName && (
+          <div style={{
+            marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 4,
+            fontSize: 11.5, background: 'rgba(0,0,0,0.15)', borderRadius: 4, padding: '2px 7px',
+            color: 'var(--accent-fg)', opacity: 0.85,
+          }}>
+            <Paperclip size={10} />
+            {message.attachmentName}
+          </div>
+        )}
       </div>
 
       {/* Tool-call chips */}

@@ -27,6 +27,23 @@ Make it lead with the answer, then show the SQL.
 
 Coach reads the current system prompt, skills, memories, and knowledge, then streams a reply.
 
+## Attach a file
+
+Click the **paperclip icon** in the composer to attach a document. Coach will read it and reference it when drafting proposals — useful for sharing a style guide, a sample conversation log, an API spec, or any context you want Coach to reason from.
+
+```
+[attach: slack-log.txt]
+The agent gave this response but it's too long. Make it punchier.
+```
+
+Supported types: **PDF, Markdown, text, CSV, JSON, YAML, XML, HTML** — up to 20 KB of extracted text per message.
+
+The file is **session-only** — it's not stored. If Coach decides the content should be a permanent knowledge source, it will propose adding it to the Knowledge Base for you to apply.
+
+<Tip>
+  Attaching a PDF style guide and asking "does this agent match our tone?" is a fast way to audit and tighten instructions in one pass.
+</Tip>
+
 ## Review proposal cards
 
 Coach's changes arrive as **proposal cards** - one per distinct change. Each card shows:
