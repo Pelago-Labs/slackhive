@@ -5,7 +5,7 @@
 # SlackHive
 
 ### Build your AI-first company on Slack
-#### Deploy and orchestrate Claude Code agents as your teammates
+#### A Karpathy-inspired team of humans and AI specialists, powered by Claude Code
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![npm](https://img.shields.io/npm/v/slackhive?color=cb3837&logo=npm&logoColor=white)](https://www.npmjs.com/package/slackhive)
@@ -24,9 +24,11 @@
 
 ## Why SlackHive?
 
-Your Slack workspace is where your team already lives. Every question, decision, and escalation happens there. SlackHive makes that workspace a mix of **people and agents** — side by side, in the same channels, in the same threads.
+Andrej Karpathy made two observations that changed how we think about AI systems: LLMs read **wikis** better than file dumps, and **specialists beat generalists**. SlackHive is what fell out when we took both seriously.
 
-These aren't chatbots you switch to. They're colleagues you @mention. Each agent connects to the tools your team already uses — Notion, Jira, GitHub, Figma, your database, your analytics stack. **Anyone on the team can create one.** No engineers, no platform team — if you can describe what you need, you can deploy it in minutes.
+One agent per role. Each with its own Karpathy-style wiki, its own tools, its own memory. A Boss agent that delegates instead of cramming everything into one context window. And all of it living in the workspace your team already uses — Slack.
+
+These aren't chatbots you switch to. They're **colleagues you @mention** — side by side with your people, in the same channels, in the same threads. Each agent connects to the tools your team already uses — Notion, Jira, GitHub, Figma, your database, your analytics stack. **Anyone on the team can create one.** No engineers, no platform team — if you can describe what you need, you can deploy it in minutes.
 
 ```
 CEO:        @data-analyst revenue is down 8% this week, can you dig in?

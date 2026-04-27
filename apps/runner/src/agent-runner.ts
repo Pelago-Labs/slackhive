@@ -24,7 +24,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import type { Agent, PlatformAdapter, ThreadMessage } from '@slackhive/shared';
-import { type AgentEvent, getEventBus, type EventBus } from '@slackhive/shared';
+import { type AgentEvent, getEventBus, type EventBus, sweepStaleActivities } from '@slackhive/shared';
 import { SlackAdapter } from './adapters/slack-adapter';
 import { TestAdapter } from './adapters/test-adapter';
 import { MessageHandler } from './message-handler';
@@ -232,6 +232,12 @@ export class AgentRunner {
 
     await this.connectEventBus();
     await this.cleanupStaleRequests();
+    try {
+      const swept = await sweepStaleActivities();
+      if (swept > 0) logger.info('Swept stale in-progress activities', { count: swept });
+    } catch (err) {
+      logger.warn('Failed to sweep stale activities', { error: (err as Error).message });
+    }
     await this.startInternalServer();
     await this.loadAllAgents();
     await this.jobScheduler.start();
