@@ -1459,10 +1459,14 @@ function ServerRow({
           </span>
         ) : (
           <span style={{
+            width: 28, height: 28, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+          <span style={{
             fontSize: 10.5, fontFamily: 'var(--font-mono)', fontWeight: 500,
             background: 'var(--border)', color: 'var(--muted)',
-            padding: '2px 8px', borderRadius: 5, flexShrink: 0, letterSpacing: '0.02em',
+            padding: '2px 6px', borderRadius: 5, letterSpacing: '0.02em',
           }}>{isTs ? 'ts' : server.type}</span>
+          </span>
         )}
 
         {/* Info */}
