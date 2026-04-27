@@ -34,15 +34,15 @@ export async function PUT(
     const { key } = await params;
     const session = getSessionFromRequest(request);
     const isAdmin = session?.role === 'admin' || session?.role === 'superadmin';
+    const owner = await getEnvVarCreatedBy(key);
     if (!isAdmin) {
-      const owner = await getEnvVarCreatedBy(key);
       if (owner !== session?.username) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
       }
     }
     const body = (await request.json()) as { value?: string; description?: string };
     if (body.value !== undefined) {
-      await setEnvVar(key, body.value, body.description, session?.username ?? 'admin');
+      await setEnvVar(key, body.value, body.description, owner ?? session?.username ?? 'admin');
     } else if (body.description !== undefined) {
       await updateEnvVarDescription(key, body.description);
     } else {
