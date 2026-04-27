@@ -285,7 +285,7 @@ function UsersTab() {
     await Promise.all(agents.map(async (a) => {
       const r = await fetch(`/api/agents/${a.id}/access`);
       const data = await r.json();
-      const match = data.accessUsers?.find((w: { userId: string; canWrite: boolean; isOwner: boolean }) => w.userId === userId);
+      const match = data.writeUsers?.find((w: { userId: string; canWrite: boolean; isOwner: boolean }) => w.userId === userId);
       if (match) {
         grants[a.id] = match.canWrite ? 'edit' : 'view';
         if (match.isOwner) owners.add(a.id);
