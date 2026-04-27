@@ -493,6 +493,8 @@ export interface CoachMessage {
   toolCalls?: { name: string; input: Record<string, unknown>; ok: boolean }[];
   proposals?: CoachProposal[];
   createdAt: string;
+  /** For user messages: original filename of an attached file, if any. */
+  attachmentName?: string;
   /**
    * Assistant messages only — set to true while the runner is still producing
    * this turn. Lets the UI show a "drafting" indicator when the user arrives
