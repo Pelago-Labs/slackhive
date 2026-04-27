@@ -20,6 +20,7 @@ import {
   getAllEnvVars,
   updateEnvVarDescription,
   deleteEnvVar,
+  getEnvVarCreatedBy,
 } from '@/lib/db';
 
 // ─── Fake adapter ────────────────────────────────────────────────────────────
@@ -42,13 +43,20 @@ beforeEach(() => {
 // ─── setEnvVar ───────────────────────────────────────────────────────────────
 
 describe('setEnvVar', () => {
-  it('passes the key, encrypted value, and description as parameters', async () => {
-    await setEnvVar('MY_KEY', 'my-value', 'a description');
+  it('passes the key, encrypted value, description, and createdBy as parameters', async () => {
+    await setEnvVar('MY_KEY', 'my-value', 'a description', 'alice');
     expect(mockQuery).toHaveBeenCalledOnce();
     const [, params] = mockQuery.mock.calls[0];
-    expect(params).toHaveLength(3);
+    expect(params).toHaveLength(4);
     expect(params![0]).toBe('MY_KEY');
     expect(params![2]).toBe('a description');
+    expect(params![3]).toBe('alice');
+  });
+
+  it('defaults createdBy to "admin" when not supplied', async () => {
+    await setEnvVar('MY_KEY', 'my-value');
+    const [, params] = mockQuery.mock.calls[0];
+    expect(params![3]).toBe('admin');
   });
 
   it('encrypts the value before binding — ciphertext is not plaintext', async () => {
@@ -78,6 +86,7 @@ describe('setEnvVar', () => {
     await setEnvVar('NO_DESC', 'value');
     const [, params] = mockQuery.mock.calls[0];
     expect(params![2]).toBeNull();
+    expect(params).toHaveLength(4);
   });
 
   it('does not embed any pgp_sym_encrypt call in the SQL (app-layer encryption)', async () => {
@@ -129,19 +138,19 @@ describe('getEnvVarValues', () => {
 // ─── getAllEnvVars ───────────────────────────────────────────────────────────
 
 describe('getAllEnvVars', () => {
-  it('maps rows to { key, description, updatedAt } and sorts by key', async () => {
+  it('maps rows to { key, description, createdBy, updatedAt } and sorts by key', async () => {
     const now = new Date('2026-01-01T00:00:00Z');
     mockQuery.mockResolvedValueOnce({
       rows: [
-        { key: 'A_KEY', description: 'first', updated_at: now },
-        { key: 'B_KEY', description: null, updated_at: now },
+        { key: 'A_KEY', description: 'first', created_by: 'alice', updated_at: now },
+        { key: 'B_KEY', description: null, created_by: null, updated_at: now },
       ],
       rowCount: 2,
     });
     const result = await getAllEnvVars();
     expect(result).toEqual([
-      { key: 'A_KEY', description: 'first', updatedAt: now },
-      { key: 'B_KEY', description: undefined, updatedAt: now },
+      { key: 'A_KEY', description: 'first', createdBy: 'alice', updatedAt: now },
+      { key: 'B_KEY', description: undefined, createdBy: 'admin', updatedAt: now },
     ]);
     expect(mockQuery.mock.calls[0][0]).toContain('ORDER BY key');
   });
@@ -150,6 +159,12 @@ describe('getAllEnvVars', () => {
     await getAllEnvVars();
     const [sql] = mockQuery.mock.calls[0];
     expect(sql).not.toMatch(/SELECT[^;]*\bvalue\b/);
+  });
+
+  it('selects created_by column', async () => {
+    await getAllEnvVars();
+    const [sql] = mockQuery.mock.calls[0];
+    expect(sql).toContain('created_by');
   });
 });
 
@@ -180,5 +195,27 @@ describe('deleteEnvVar', () => {
     expect(sql).toContain('DELETE FROM env_vars');
     expect(sql).toContain('WHERE key = $1');
     expect(params).toEqual(['DOOMED_KEY']);
+  });
+});
+
+// ─── getEnvVarCreatedBy ───────────────────────────────────────────────────────
+
+describe('getEnvVarCreatedBy', () => {
+  it('returns the created_by value when the key exists', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ created_by: 'alice' }], rowCount: 1 });
+    await expect(getEnvVarCreatedBy('MY_KEY')).resolves.toBe('alice');
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql).toContain('WHERE key = $1');
+    expect(params).toEqual(['MY_KEY']);
+  });
+
+  it('returns "admin" when created_by is null', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ created_by: null }], rowCount: 1 });
+    await expect(getEnvVarCreatedBy('MY_KEY')).resolves.toBe('admin');
+  });
+
+  it('returns null when the key does not exist', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+    await expect(getEnvVarCreatedBy('MISSING_KEY')).resolves.toBeNull();
   });
 });

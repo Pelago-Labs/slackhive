@@ -24,6 +24,7 @@ function makeServer(overrides: Partial<McpServer> = {}): McpServer {
     config: { command: 'node', args: ['server.js'], env: { SECRET: 'real-secret', API_KEY: 'real-key' } },
     description: 'Test server',
     enabled: true,
+    createdBy: 'admin',
     createdAt: new Date(),
     ...overrides,
   };
