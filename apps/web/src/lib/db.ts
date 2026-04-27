@@ -923,21 +923,29 @@ export async function updateUserPassword(id: string, passwordHash: string): Prom
 // =============================================================================
 
 /**
- * Returns all users with explicit access grants to an agent, including can_write flag.
+ * Returns all users with access to an agent — both explicit grants and the creator.
+ * isOwner=true means access comes from created_by (not a grant row).
  */
-export async function getAgentWriteUsers(agentId: string): Promise<{ userId: string; username: string; canWrite: boolean }[]> {
+export async function getAgentWriteUsers(agentId: string): Promise<{ userId: string; username: string; canWrite: boolean; isOwner: boolean }[]> {
   const r = await (await db()).query(
-    `SELECT aa.user_id, u.username, aa.can_write
+    `SELECT aa.user_id, u.username, aa.can_write, 0 as is_owner
      FROM agent_access aa
      JOIN users u ON u.id = aa.user_id
      WHERE aa.agent_id = $1
-     ORDER BY u.username`,
+     UNION
+     SELECT u.id as user_id, u.username, 1 as can_write, 1 as is_owner
+     FROM agents a
+     JOIN users u ON u.username = a.created_by
+     WHERE a.id = $1
+       AND NOT EXISTS (SELECT 1 FROM agent_access aa2 WHERE aa2.agent_id = $1 AND aa2.user_id = u.id)
+     ORDER BY username`,
     [agentId]
   );
   return r.rows.map(row => ({
     userId: row.user_id as string,
     username: row.username as string,
     canWrite: row.can_write === 1 || row.can_write === true,
+    isOwner: row.is_owner === 1 || row.is_owner === true,
   }));
 }
 
