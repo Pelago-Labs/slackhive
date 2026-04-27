@@ -65,6 +65,9 @@ Boss:       Conversions are up 12% WoW. The win was checkout — 3× completion 
 
 ```bash
 npm install -g slackhive
+```
+
+```bash
 slackhive init
 ```
 
