@@ -707,7 +707,7 @@ export default function McpSettingsPage() {
             {jsonMode ? (
               <>
                 <FField label="Config JSON *" style={{ marginBottom: 6 }}
-                  hint={<>Paste a Cursor / Claude Desktop / VS Code config. Use <code style={{ fontFamily: 'var(--font-mono)' }}>{'${env:NAME}'}</code> for secrets — they&apos;re pulled from your SlackHive env vars at runtime.</>}>
+                  hint={<>Paste a Cursor / Claude Desktop / VS Code config. Use <code style={{ fontFamily: 'var(--font-mono)', background: 'rgba(99,102,241,0.12)', padding: '1px 4px', borderRadius: 3 }}>{'${env:NAME}'}</code> for secrets — pulled from your <a href="/settings/env-vars" style={{ color: 'var(--accent)', textDecoration: 'none' }}>env vars</a> at runtime.</>}>
                   <textarea value={jsonInput} onChange={e => setJsonInput(e.target.value)}
                     rows={Math.max(10, Math.min(24, (jsonInput.match(/\n/g)?.length ?? 0) + 2))}
                     required spellCheck={false} {...inputStyle('var(--font-mono)')} />
@@ -1199,6 +1199,17 @@ function EnvEntriesEditor({
           fontFamily: 'var(--font-sans)',
         }}>+ Add</button>
       </div>
+
+      <p style={{
+        fontSize: 12, color: 'var(--muted)', margin: '0 0 8px',
+        padding: '7px 10px', borderRadius: 6,
+        background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.2)',
+        lineHeight: 1.5,
+      }}>
+        Use <code style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, background: 'rgba(99,102,241,0.12)', padding: '1px 5px', borderRadius: 3 }}>{'${env:MY_SECRET}'}</code> in your config to reference a secret from your{' '}
+        <a href="/settings/env-vars" style={{ color: 'var(--accent)', textDecoration: 'none' }}>env vars</a>.
+        {' '}Raw values here are injected directly into the subprocess — store API keys in env vars instead.
+      </p>
 
       {entries.length === 0 ? (
         <p style={{ fontSize: 12, color: 'var(--subtle)', margin: 0, fontStyle: 'italic' }}>
