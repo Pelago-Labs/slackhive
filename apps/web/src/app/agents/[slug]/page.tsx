@@ -1757,7 +1757,7 @@ function KnowledgeTab({ agentId, agentSlug, canEdit }: { agentId: string; agentS
   const [addType, setAddType] = useState<'url' | 'file' | 'repo'>('url');
   const [addName, setAddName] = useState('');
   const [addUrl, setAddUrl] = useState('');
-  const [addBranch, setAddBranch] = useState('main');
+  const [addBranch, setAddBranch] = useState('master');
   const [addPat, setAddPat] = useState('');
   const [addContent, setAddContent] = useState('');
   const [syncing, setSyncing] = useState<string | null>(null);
@@ -1856,7 +1856,7 @@ function KnowledgeTab({ agentId, agentSlug, canEdit }: { agentId: string; agentS
     setSaving(false);
     setShowAdd(false);
     setEditingMetaId(null);
-    setAddName(''); setAddUrl(''); setAddContent(''); setAddBranch('main'); setAddPat('');
+    setAddName(''); setAddUrl(''); setAddContent(''); setAddBranch('master'); setAddPat('');
     load();
   };
 
@@ -1866,7 +1866,7 @@ function KnowledgeTab({ agentId, agentSlug, canEdit }: { agentId: string; agentS
     setAddName(src.name ?? '');
     setAddUrl(src.type === 'repo' ? (src.repoUrl ?? '') : (src.url ?? ''));
     setAddContent(src.content ?? '');
-    setAddBranch(src.branch ?? 'main');
+    setAddBranch(src.branch ?? 'master');
     setAddPat(src.patEnvRef ?? '');
     setShowAdd(true);
     // Populate the PAT dropdown — otherwise the "Auth" field has no env vars to choose from.
@@ -2084,7 +2084,7 @@ function KnowledgeTab({ agentId, agentSlug, canEdit }: { agentId: string; agentS
               <>
                 <input value={addUrl} onChange={e => setAddUrl(e.target.value)} placeholder="https://github.com/org/repo"
                   style={{ padding: '8px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface-2)', fontSize: 13, color: 'var(--text)', fontFamily: 'var(--font-mono)' }} />
-                <input value={addBranch} onChange={e => setAddBranch(e.target.value)} placeholder="Branch (default: main)"
+                <input value={addBranch} onChange={e => setAddBranch(e.target.value)} placeholder="Branch (default: master)"
                   style={{ padding: '8px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface-2)', fontSize: 13, color: 'var(--text)', fontFamily: 'var(--font-mono)' }} />
                 <select value={addPat} onChange={e => setAddPat(e.target.value)}
                   style={{ padding: '8px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface-2)', fontSize: 12, color: addPat ? 'var(--text)' : 'var(--subtle)', fontFamily: 'var(--font-sans)' }}>
@@ -2104,7 +2104,7 @@ function KnowledgeTab({ agentId, agentSlug, canEdit }: { agentId: string; agentS
             <button onClick={() => {
               setShowAdd(false);
               setEditingMetaId(null);
-              setAddName(''); setAddUrl(''); setAddContent(''); setAddBranch('main'); setAddPat('');
+              setAddName(''); setAddUrl(''); setAddContent(''); setAddBranch('master'); setAddPat('');
             }} style={{
               background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 7,
               padding: '7px 16px', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-sans)', color: 'var(--text)',
