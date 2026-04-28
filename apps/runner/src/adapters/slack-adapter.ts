@@ -57,6 +57,19 @@ const IMAGE_FILETYPES: Record<string, string> = {
   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp',
 };
 
+/**
+ * Regex to match Slack message archive URLs in text.
+ * Captures: [1] channelId, [2] raw timestamp (e.g. "p1777315257693249"),
+ *           [3] optional thread_ts query param.
+ *
+ * Slack wraps links in angle brackets: <https://foo.slack.com/archives/C.../p...|label>
+ * or bare: https://foo.slack.com/archives/C.../p...
+ */
+const SLACK_LINK_RE = /(?:<)?(https?:\/\/[^/]+\.slack\.com\/archives\/([A-Z0-9]+)\/p(\d+)(?:\?[^>|]*)?)(?:\|[^>]*)?>?/g;
+
+/** Max number of Slack links to resolve per message to avoid abuse. */
+const MAX_LINK_RESOLVES = 5;
+
 /** Friendly labels shown while MCP tools run. */
 const MCP_TOOL_LABELS: Record<string, string> = {
   'mcp__redshift-mcp__query': 'Querying Redshift',
@@ -131,7 +144,8 @@ export class SlackAdapter implements PlatformAdapter {
       const directFiles = this.mapFiles(ev.files) ?? [];
       const allFiles = [...directFiles, ...attFiles];
       const baseText = this.stripMention(ev.text ?? '');
-      const fullText = attText ? `${baseText}\n${attText}`.trim() : baseText;
+      let fullText = attText ? `${baseText}\n${attText}`.trim() : baseText;
+      fullText = await this.resolveSlackMessageLinks(fullText);
       await this.messageHandler({
         id: event.ts,
         platform: 'slack',
@@ -153,7 +167,8 @@ export class SlackAdapter implements PlatformAdapter {
       const directFiles = this.mapFiles(msg.files) ?? [];
       const allFiles = [...directFiles, ...attFiles];
       const baseText = this.stripMention(msg.text ?? '');
-      const fullText = attText ? `${baseText}\n${attText}`.trim() : baseText;
+      let fullText = attText ? `${baseText}\n${attText}`.trim() : baseText;
+      fullText = await this.resolveSlackMessageLinks(fullText);
       await this.messageHandler({
         id: msg.ts,
         platform: 'slack',
@@ -488,6 +503,56 @@ Good:
       size: f.size,
       url: f.url_private_download,
     }));
+  }
+
+  /**
+   * Parse Slack archive URLs from text and fetch the linked message content.
+   *
+   * When a user pastes a link like
+   *   https://workspace.slack.com/archives/C04RC7S3B34/p1777315257693249
+   * Slack does NOT include the linked message body as an attachment (unlike
+   * forwarded messages). This method fetches each linked message via the API
+   * and appends the content so the agent can read it.
+   */
+  async resolveSlackMessageLinks(text: string): Promise<string> {
+    const matches: { url: string; channelId: string; rawTs: string }[] = [];
+    let m: RegExpExecArray | null;
+    const re = new RegExp(SLACK_LINK_RE.source, SLACK_LINK_RE.flags);
+    while ((m = re.exec(text)) !== null && matches.length < MAX_LINK_RESOLVES) {
+      matches.push({ url: m[1], channelId: m[2], rawTs: m[3] });
+    }
+    if (matches.length === 0) return text;
+
+    const resolved: string[] = [];
+    for (const { url, channelId, rawTs } of matches) {
+      try {
+        // Convert Slack's p-timestamp to API format: "p1777315257693249" → "1777315257.693249"
+        const ts = rawTs.length > 6
+          ? rawTs.slice(0, rawTs.length - 6) + '.' + rawTs.slice(rawTs.length - 6)
+          : rawTs;
+
+        const result = await this.app.client.conversations.history({
+          channel: channelId,
+          latest: ts,
+          inclusive: true,
+          limit: 1,
+        });
+
+        const msg = result.messages?.[0];
+        if (msg && msg.ts === ts) {
+          let speaker = msg.user ?? 'unknown';
+          try {
+            speaker = await this.getUserDisplayName(msg.user ?? '');
+          } catch { /* fall back to user id */ }
+          resolved.push(`[Linked message from ${speaker} in <#${channelId}>]\n${msg.text ?? '(empty message)'}`);
+        }
+      } catch (err) {
+        this.log.warn('Failed to resolve Slack message link', { url, error: err });
+      }
+    }
+
+    if (resolved.length === 0) return text;
+    return `${text}\n\n${resolved.join('\n\n')}`;
   }
 
   // Extract files and text buried inside Slack attachment objects (forwarded/shared messages).
