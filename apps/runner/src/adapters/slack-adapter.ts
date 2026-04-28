@@ -484,12 +484,9 @@ Good:
    * The timestamp is encoded as the numeric ts with the dot removed and a leading `p`.
    */
   async resolveLinkedMessage(url: string): Promise<{ text: string; files: FileAttachment[] } | null> {
-    const match = /\/archives\/([A-Z0-9]+)\/p(\d+)/.exec(url);
-    if (!match) return null;
-    const channelId = match[1];
-    // Slack encodes 1234567890.123456 as p1234567890123456 (6 decimal digits)
-    const raw = match[2];
-    const ts = raw.length > 6 ? `${raw.slice(0, -6)}.${raw.slice(-6)}` : raw;
+    const parsed = parseSlackPermalink(url);
+    if (!parsed) return null;
+    const { channelId, ts } = parsed;
     try {
       const result = await this.app.client.conversations.history({
         channel: channelId,
@@ -549,6 +546,39 @@ Good:
     }
     return { files, text: textParts.join('\n') };
   }
+}
+
+// =============================================================================
+// Slack permalink parser (exported for tests)
+// =============================================================================
+
+/**
+ * Parse a Slack message permalink into its channel ID and API timestamp.
+ * Slack encodes `1234567890.123456` as `p1234567890123456` in URLs.
+ * Returns null if the URL is not a recognisable Slack archive link.
+ */
+export function parseSlackPermalink(url: string): { channelId: string; ts: string } | null {
+  const match = /\/archives\/([A-Z0-9]+)\/p(\d+)/.exec(url);
+  if (!match) return null;
+  const channelId = match[1];
+  const raw = match[2];
+  const ts = raw.length > 6 ? `${raw.slice(0, -6)}.${raw.slice(-6)}` : raw;
+  return { channelId, ts };
+}
+
+/**
+ * Extract up to `limit` Slack permalink URLs from mrkdwn text.
+ * Handles both angle-bracket form `<https://…|label>` and bare URLs.
+ */
+export function extractSlackPermalinkUrls(text: string, limit = 3): string[] {
+  const urlRe = /<(https:\/\/[^|>]+slack\.com\/archives\/[^|>]+)(?:\|[^>]*)?>|https?:\/\/\S+slack\.com\/archives\/\S+/g;
+  const urls: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = urlRe.exec(text)) !== null && urls.length < limit) {
+    const url = m[1] ?? m[0];
+    if (!urls.includes(url)) urls.push(url);
+  }
+  return urls;
 }
 
 // =============================================================================

@@ -11,6 +11,7 @@
  */
 
 import type { PlatformAdapter, IncomingMessage, FileAttachment } from '@slackhive/shared';
+import { extractSlackPermalinkUrls } from './adapters/slack-adapter';
 import type { Agent, Restriction, Platform } from '@slackhive/shared';
 import {
   upsertTask,
@@ -399,13 +400,7 @@ export class MessageHandler {
     // Slack encodes links as <https://…|label> or <https://…> in mrkdwn.
     const linkedChunks: string[] = [];
     if (this.adapter.resolveLinkedMessage) {
-      const urlRe = /<(https:\/\/[^|>]+slack\.com\/archives\/[^|>]+)(?:\|[^>]*)?>|https?:\/\/\S+slack\.com\/archives\/\S+/g;
-      const urls: string[] = [];
-      let m: RegExpExecArray | null;
-      while ((m = urlRe.exec(userText)) !== null && urls.length < 3) {
-        const url = m[1] ?? m[0];
-        if (!urls.includes(url)) urls.push(url);
-      }
+      const urls = extractSlackPermalinkUrls(userText);
       for (const url of urls) {
         try {
           const linked = await this.adapter.resolveLinkedMessage(url);
