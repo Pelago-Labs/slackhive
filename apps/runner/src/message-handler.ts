@@ -262,6 +262,7 @@ export class MessageHandler {
   ): Promise<{ activityId: string } | null> {
     if (!activityDashboardEnabled()) return null;
     const platform = (msg.platform || this.adapter.platform || 'slack') as Platform;
+    if (platform === 'test') return null;
     const threadTs = msg.threadId ?? msg.id;
     // Boss → specialist delegation comes in with the boss's bot_id set on
     // the raw event. Fall back to 'user' when no adapter signal is present.
