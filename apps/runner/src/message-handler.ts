@@ -400,32 +400,28 @@ export class MessageHandler {
     // Resolve Slack permalink URLs embedded in the message text (up to 3).
     // Slack encodes links as <https://…|label> or <https://…> in mrkdwn.
     const linkedChunks: string[] = [];
+    const resolvedFiles: FileAttachment[] = [];
     if (this.adapter.resolveLinkedMessage) {
       const urls = extractSlackPermalinkUrls(userText);
       for (const url of urls) {
         try {
           const linked = await this.adapter.resolveLinkedMessage(url);
           if (!linked) continue;
-          const parts: string[] = [];
-          if (linked.text) parts.push(linked.text);
-          // Also queue any files from the linked message for download below
-          if (linked.files.length > 0) {
-            if (!files) files = [...linked.files];
-            else files = [...files, ...linked.files];
-          }
-          if (parts.length > 0) linkedChunks.push(`[Linked message: ${url}]\n${parts.join('\n')}`);
+          if (linked.text) linkedChunks.push(`[Linked message: ${url}]\n${linked.text}`);
+          resolvedFiles.push(...linked.files);
         } catch (err) {
           this.log.warn('Failed to resolve linked message', { url, error: err });
         }
       }
     }
 
-    // Download files via adapter
+    // Download files via adapter — direct attachments + any from linked messages
+    const allFiles = [...(files ?? []), ...resolvedFiles];
     const textChunks: string[] = [];
     const binaryBlocks: ContentBlockParam[] = [];
 
-    if (files && files.length > 0) {
-      for (const file of files) {
+    if (allFiles.length > 0) {
+      for (const file of allFiles) {
         if (!file.url) continue;
         const kind = this.getFileKind(file);
         if (kind === 'unsupported') continue;

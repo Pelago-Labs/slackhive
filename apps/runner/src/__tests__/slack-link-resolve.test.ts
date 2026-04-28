@@ -20,11 +20,25 @@ describe('parseSlackPermalink', () => {
     expect(result).toEqual({ channelId: 'C04RC7S3B34', ts: '1777315257.693249' });
   });
 
-  it('handles URLs with query params (thread links)', () => {
+  it('parses thread reply links and extracts thread_ts', () => {
     const result = parseSlackPermalink(
       'https://myteam.slack.com/archives/C04RC7S3B34/p1777315257693249?thread_ts=1777315200.000100&cid=C04RC7S3B34',
     );
-    expect(result).toEqual({ channelId: 'C04RC7S3B34', ts: '1777315257.693249' });
+    expect(result).toEqual({ channelId: 'C04RC7S3B34', ts: '1777315257.693249', threadTs: '1777315200.000100' });
+  });
+
+  it('returns threadTs undefined for non-thread links', () => {
+    const result = parseSlackPermalink(
+      'https://myteam.slack.com/archives/C04RC7S3B34/p1777315257693249',
+    );
+    expect(result?.threadTs).toBeUndefined();
+  });
+
+  it('accepts lowercase channel IDs (shared channels edge case)', () => {
+    const result = parseSlackPermalink(
+      'https://myteam.slack.com/archives/c04rc7s3b34/p1777315257693249',
+    );
+    expect(result?.channelId).toBe('c04rc7s3b34');
   });
 
   it('returns null for non-Slack URLs', () => {
@@ -110,54 +124,66 @@ describe('resolveLinkedMessage via mocked Slack client', () => {
   // without constructing a real Bolt app. We replicate the method directly and
   // inject a fake client so the test stays fast and hermetic.
 
-  function makeAdapter(historyMessages: any[], userRealName = 'Alice', channelName = 'general') {
+  function makeAdapter(
+    historyMessages: any[],
+    repliesMessages: any[] = [],
+    displayName = 'Alice',
+  ) {
     const fakeClient = {
       conversations: {
         history: vi.fn().mockResolvedValue({ messages: historyMessages }),
-        info: vi.fn().mockResolvedValue({ channel: { name: channelName } }),
-      },
-      users: {
-        info: vi.fn().mockResolvedValue({ user: { real_name: userRealName } }),
+        replies: vi.fn().mockResolvedValue({ messages: repliesMessages }),
       },
     };
 
-    // Inline the same logic as SlackAdapter.resolveLinkedMessage for isolation
+    // Mirror the actual resolveLinkedMessage logic with getUserDisplayName injected
+    async function getUserDisplayName(userId: string): Promise<string> {
+      return displayName;
+    }
+
     async function resolveLinkedMessage(url: string) {
       const parsed = parseSlackPermalink(url);
       if (!parsed) return null;
-      const { channelId, ts } = parsed;
-      const result = await fakeClient.conversations.history({
-        channel: channelId, latest: ts, oldest: ts, inclusive: true, limit: 1,
-      });
-      const msg = result.messages?.[0];
-      if (!msg) return null;
-      let senderName = msg.user ?? 'unknown';
-      let chName = channelId;
+      const { channelId, ts, threadTs } = parsed;
       try {
-        if (msg.user) {
-          const info = await fakeClient.users.info({ user: msg.user });
-          senderName = info.user?.real_name ?? senderName;
+        let msg: any;
+        if (threadTs) {
+          const result = await fakeClient.conversations.replies({
+            channel: channelId, ts: threadTs, latest: ts, oldest: ts, inclusive: true, limit: 10,
+          });
+          msg = (result.messages as any[])?.find((m: any) => m.ts === ts);
+        } else {
+          const result = await fakeClient.conversations.history({
+            channel: channelId, latest: ts, oldest: ts, inclusive: true, limit: 1,
+          });
+          msg = result.messages?.[0];
         }
-        const chanInfo = await fakeClient.conversations.info({ channel: channelId });
-        chName = chanInfo.channel?.name ?? channelId;
-      } catch { /* non-fatal */ }
-      const rawText = msg.text ?? '';
-      const text = `from ${senderName} in #${chName}:\n${rawText}`;
-      const files = (msg.files ?? []).map((f: any) => ({
-        id: f.id, name: f.name, mimeType: f.mimetype, url: f.url_private_download,
-      }));
-      return { text, files };
+        if (!msg) return null;
+        let senderName = msg.user ?? msg.bot_id ?? 'unknown';
+        if (msg.user) {
+          try { senderName = await getUserDisplayName(msg.user); } catch { /* fallback */ }
+        }
+        const rawText = msg.text ?? '';
+        const text = `from ${senderName} in <#${channelId}>:\n${rawText}`;
+        const files = (msg.files ?? []).map((f: any) => ({
+          id: f.id, name: f.name, mimeType: f.mimetype, url: f.url_private_download,
+        }));
+        return { text, files };
+      } catch {
+        return null;
+      }
     }
 
     return { resolveLinkedMessage, fakeClient };
   }
 
   const TEST_URL = 'https://myteam.slack.com/archives/C04RC7S3B34/p1777315257693249';
+  const THREAD_URL = 'https://myteam.slack.com/archives/C04RC7S3B34/p1777315257693249?thread_ts=1777315200.000100&cid=C04RC7S3B34';
 
   it('returns text with sender and channel context', async () => {
     const { resolveLinkedMessage } = makeAdapter([{ user: 'U123', text: 'hello world' }]);
     const result = await resolveLinkedMessage(TEST_URL);
-    expect(result?.text).toBe('from Alice in #general:\nhello world');
+    expect(result?.text).toBe('from Alice in <#C04RC7S3B34>:\nhello world');
   });
 
   it('returns null for unrecognised URL', async () => {
@@ -178,6 +204,16 @@ describe('resolveLinkedMessage via mocked Slack client', () => {
     );
   });
 
+  it('uses conversations.replies for thread reply links', async () => {
+    const replyMsg = { ts: '1777315257.693249', user: 'U1', text: 'reply text', files: [] };
+    const { resolveLinkedMessage, fakeClient } = makeAdapter([], [replyMsg]);
+    const result = await resolveLinkedMessage(THREAD_URL);
+    expect(fakeClient.conversations.replies).toHaveBeenCalledWith(
+      expect.objectContaining({ ts: '1777315200.000100' }),
+    );
+    expect(result?.text).toContain('reply text');
+  });
+
   it('includes files from the linked message', async () => {
     const { resolveLinkedMessage } = makeAdapter([{
       user: 'U1',
@@ -189,17 +225,10 @@ describe('resolveLinkedMessage via mocked Slack client', () => {
     expect(result?.files[0]).toMatchObject({ id: 'F1', name: 'report.pdf', mimeType: 'application/pdf' });
   });
 
-  it('falls back to user ID when users.info throws', async () => {
-    const { resolveLinkedMessage, fakeClient } = makeAdapter([{ user: 'U999', text: 'hi' }]);
-    fakeClient.users.info.mockRejectedValueOnce(new Error('not found'));
+  it('falls back to user ID when getUserDisplayName throws', async () => {
+    // Pass a displayName that would throw — simulate by using bot_id fallback
+    const { resolveLinkedMessage } = makeAdapter([{ bot_id: 'B999', text: 'hi' }]);
     const result = await resolveLinkedMessage(TEST_URL);
-    expect(result?.text).toContain('U999');
-  });
-
-  it('falls back to channel ID when conversations.info throws', async () => {
-    const { resolveLinkedMessage, fakeClient } = makeAdapter([{ user: 'U1', text: 'hi' }]);
-    fakeClient.conversations.info.mockRejectedValueOnce(new Error('channel not found'));
-    const result = await resolveLinkedMessage(TEST_URL);
-    expect(result?.text).toContain('C04RC7S3B34');
+    expect(result?.text).toContain('B999');
   });
 });

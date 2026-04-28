@@ -476,42 +476,54 @@ Good:
     return 'unsupported';
   }
 
-  // ─── Private helpers ───────────────────────────────────────────────
+  // ─── Link resolution ──────────────────────────────────────────────
 
   /**
    * Resolve a Slack permalink into the referenced message's text and files.
-   * Slack permalink format: https://<workspace>.slack.com/archives/<channelId>/p<ts_no_dot>
-   * The timestamp is encoded as the numeric ts with the dot removed and a leading `p`.
+   *
+   * - Thread reply links (`?thread_ts=...`) are fetched via conversations.replies
+   *   so the exact reply is returned, not just the thread parent.
+   * - Sender name reuses getUserDisplayName (no extra users.info call).
+   * - Channel name is omitted to avoid a conversations.info round-trip; the
+   *   channel ID from the URL gives enough context.
    */
   async resolveLinkedMessage(url: string): Promise<{ text: string; files: FileAttachment[] } | null> {
     const parsed = parseSlackPermalink(url);
     if (!parsed) return null;
-    const { channelId, ts } = parsed;
+    const { channelId, ts, threadTs } = parsed;
     try {
-      const result = await this.app.client.conversations.history({
-        channel: channelId,
-        latest: ts,
-        oldest: ts,
-        inclusive: true,
-        limit: 1,
-      });
-      const msg = result.messages?.[0];
+      let msg: any | undefined;
+      if (threadTs) {
+        // Thread reply — fetch via conversations.replies and find the exact message
+        const result = await this.app.client.conversations.replies({
+          channel: channelId,
+          ts: threadTs,
+          latest: ts,
+          oldest: ts,
+          inclusive: true,
+          limit: 10,
+        });
+        msg = (result.messages as any[])?.find((m: any) => m.ts === ts);
+      } else {
+        const result = await this.app.client.conversations.history({
+          channel: channelId,
+          latest: ts,
+          oldest: ts,
+          inclusive: true,
+          limit: 1,
+        });
+        msg = result.messages?.[0];
+      }
       if (!msg) return null;
 
-      // Resolve sender name and channel name for richer context labels.
+      // Reuse existing getUserDisplayName — avoids an extra users.info round-trip.
       let senderName = msg.user ?? msg.bot_id ?? 'unknown';
-      let channelName = channelId;
-      try {
-        if (msg.user) {
-          const info = await this.app.client.users.info({ user: msg.user });
-          senderName = info.user?.real_name ?? info.user?.name ?? senderName;
-        }
-        const chanInfo = await this.app.client.conversations.info({ channel: channelId });
-        channelName = (chanInfo.channel as any)?.name ?? channelId;
-      } catch { /* non-fatal — fall back to IDs */ }
+      if (msg.user) {
+        try { senderName = await this.getUserDisplayName(msg.user); } catch { /* fall back to ID */ }
+      }
 
       const rawText = msg.text ?? '';
-      const text = `from ${senderName} in #${channelName}:\n${rawText}`;
+      const text = `from ${senderName} in <#${channelId}>:\n${rawText}`;
       const files = this.mapFiles(msg.files) ?? [];
       return { text, files };
     } catch (err) {
@@ -519,6 +531,8 @@ Good:
       return null;
     }
   }
+
+  // ─── Private helpers ───────────────────────────────────────────────
 
   private mapFiles(files?: any[]): FileAttachment[] | undefined {
     if (!files || files.length === 0) return undefined;
@@ -557,13 +571,16 @@ Good:
  * Slack encodes `1234567890.123456` as `p1234567890123456` in URLs.
  * Returns null if the URL is not a recognisable Slack archive link.
  */
-export function parseSlackPermalink(url: string): { channelId: string; ts: string } | null {
-  const match = /\/archives\/([A-Z0-9]+)\/p(\d+)/.exec(url);
+export function parseSlackPermalink(url: string): { channelId: string; ts: string; threadTs?: string } | null {
+  const match = /\/archives\/([A-Za-z0-9]+)\/p(\d+)/.exec(url);
   if (!match) return null;
   const channelId = match[1];
   const raw = match[2];
   const ts = raw.length > 6 ? `${raw.slice(0, -6)}.${raw.slice(-6)}` : raw;
-  return { channelId, ts };
+  // Thread reply links include ?thread_ts=<parent_ts> — parse it so we can
+  // fetch the exact reply via conversations.replies instead of the parent.
+  const threadTsParam = new URL(url, 'https://slack.com').searchParams.get('thread_ts') ?? undefined;
+  return { channelId, ts, threadTs: threadTsParam };
 }
 
 /**
