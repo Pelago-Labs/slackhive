@@ -395,6 +395,35 @@ export class MessageHandler {
       }
     }
 
+    // Resolve Slack permalink URLs embedded in the message text (up to 3).
+    // Slack encodes links as <https://…|label> or <https://…> in mrkdwn.
+    const linkedChunks: string[] = [];
+    if (this.adapter.resolveLinkedMessage) {
+      const urlRe = /<(https:\/\/[^|>]+slack\.com\/archives\/[^|>]+)(?:\|[^>]*)?>|https?:\/\/\S+slack\.com\/archives\/\S+/g;
+      const urls: string[] = [];
+      let m: RegExpExecArray | null;
+      while ((m = urlRe.exec(userText)) !== null && urls.length < 3) {
+        const url = m[1] ?? m[0];
+        if (!urls.includes(url)) urls.push(url);
+      }
+      for (const url of urls) {
+        try {
+          const linked = await this.adapter.resolveLinkedMessage(url);
+          if (!linked) continue;
+          const parts: string[] = [];
+          if (linked.text) parts.push(linked.text);
+          // Also queue any files from the linked message for download below
+          if (linked.files.length > 0) {
+            if (!files) files = [...linked.files];
+            else files = [...files, ...linked.files];
+          }
+          if (parts.length > 0) linkedChunks.push(`[Linked message: ${url}]\n${parts.join('\n')}`);
+        } catch (err) {
+          this.log.warn('Failed to resolve linked message', { url, error: err });
+        }
+      }
+    }
+
     // Download files via adapter
     const textChunks: string[] = [];
     const binaryBlocks: ContentBlockParam[] = [];
@@ -432,7 +461,8 @@ export class MessageHandler {
       }
     }
 
-    const textPrompt = `${senderHeader}${threadContext}${textChunks.length > 0 ? textChunks.join('\n\n') + '\n\n' : ''}${userText}`.trim();
+    const allTextChunks = [...linkedChunks, ...textChunks];
+    const textPrompt = `${senderHeader}${threadContext}${allTextChunks.length > 0 ? allTextChunks.join('\n\n') + '\n\n' : ''}${userText}`.trim();
 
     if (binaryBlocks.length > 0) {
       const blocks: ContentBlockParam[] = [];

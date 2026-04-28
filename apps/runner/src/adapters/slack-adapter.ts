@@ -478,6 +478,51 @@ Good:
 
   // ─── Private helpers ───────────────────────────────────────────────
 
+  /**
+   * Resolve a Slack permalink into the referenced message's text and files.
+   * Slack permalink format: https://<workspace>.slack.com/archives/<channelId>/p<ts_no_dot>
+   * The timestamp is encoded as the numeric ts with the dot removed and a leading `p`.
+   */
+  async resolveLinkedMessage(url: string): Promise<{ text: string; files: FileAttachment[] } | null> {
+    const match = /\/archives\/([A-Z0-9]+)\/p(\d+)/.exec(url);
+    if (!match) return null;
+    const channelId = match[1];
+    // Slack encodes 1234567890.123456 as p1234567890123456 (6 decimal digits)
+    const raw = match[2];
+    const ts = raw.length > 6 ? `${raw.slice(0, -6)}.${raw.slice(-6)}` : raw;
+    try {
+      const result = await this.app.client.conversations.history({
+        channel: channelId,
+        latest: ts,
+        oldest: ts,
+        inclusive: true,
+        limit: 1,
+      });
+      const msg = result.messages?.[0];
+      if (!msg) return null;
+
+      // Resolve sender name and channel name for richer context labels.
+      let senderName = msg.user ?? msg.bot_id ?? 'unknown';
+      let channelName = channelId;
+      try {
+        if (msg.user) {
+          const info = await this.app.client.users.info({ user: msg.user });
+          senderName = info.user?.real_name ?? info.user?.name ?? senderName;
+        }
+        const chanInfo = await this.app.client.conversations.info({ channel: channelId });
+        channelName = (chanInfo.channel as any)?.name ?? channelId;
+      } catch { /* non-fatal — fall back to IDs */ }
+
+      const rawText = msg.text ?? '';
+      const text = `from ${senderName} in #${channelName}:\n${rawText}`;
+      const files = this.mapFiles(msg.files) ?? [];
+      return { text, files };
+    } catch (err) {
+      this.log.warn('resolveLinkedMessage failed', { url, error: (err as Error).message });
+      return null;
+    }
+  }
+
   private mapFiles(files?: any[]): FileAttachment[] | undefined {
     if (!files || files.length === 0) return undefined;
     return files.map(f => ({
