@@ -406,7 +406,10 @@ export class MessageHandler {
       for (const url of urls) {
         try {
           const linked = await this.adapter.resolveLinkedMessage(url);
-          if (!linked) continue;
+          if (!linked) {
+            linkedChunks.push(`[Linked Slack message: ${url} — could not be retrieved. The bot may not be in that channel. Let the user know you cannot access it and ask them to paste the content directly.]`);
+            continue;
+          }
           if (linked.text) linkedChunks.push(`[Linked message: ${url}]\n${linked.text}`);
           resolvedFiles.push(...linked.files);
         } catch (err) {
