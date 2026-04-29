@@ -458,20 +458,28 @@ export class ClaudeHandler {
    * @param {AbortController} [abortController] - Optional abort controller injected into SDK options.
    * @returns {Record<string, unknown>} Options object for `query({ prompt, options })`.
    */
-  /** Updates the `> **Current date:**` header in a session's CLAUDE.md before each query. */
+  /** Ensures the `> **Current date:**` header in a session's CLAUDE.md is current before each query. */
   private refreshDateInSessionClaudeMd(sessionDir: string): void {
     const claudeMdPath = path.join(sessionDir, 'CLAUDE.md');
-    if (!fs.existsSync(claudeMdPath)) return;
-    const content = fs.readFileSync(claudeMdPath, 'utf8');
     const dateStr = clockNow().toLocaleDateString('en-SG', {
       timeZone: 'Asia/Singapore',
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
     });
-    const updated = content.replace(
-      /^> \*\*Current date:\*\* .+$/m,
-      `> **Current date:** ${dateStr}`,
-    );
-    if (updated !== content) fs.writeFileSync(claudeMdPath, updated, 'utf8');
+    const dateLine = `> **Current date:** ${dateStr}`;
+
+    if (!fs.existsSync(claudeMdPath)) {
+      fs.writeFileSync(claudeMdPath, dateLine + '\n', 'utf8');
+      return;
+    }
+
+    const content = fs.readFileSync(claudeMdPath, 'utf8');
+    const updated = content.replace(/^> \*\*Current date:\*\* .+$/m, dateLine);
+    if (updated !== content) {
+      fs.writeFileSync(claudeMdPath, updated, 'utf8');
+    } else if (!content.includes('**Current date:**')) {
+      // Date line absent (agent compiled before this feature) — prepend it
+      fs.writeFileSync(claudeMdPath, dateLine + '\n\n' + content, 'utf8');
+    }
   }
 
   private buildSdkOptions(

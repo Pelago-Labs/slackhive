@@ -12,6 +12,7 @@
 
 import cron from 'node-cron';
 import type { ScheduledJob, PlatformAdapter } from '@slackhive/shared';
+import { now as clockNow } from '@slackhive/shared';
 import { getAllEnabledJobs, insertJobRun, updateJobRun } from './db';
 import type { ClaudeHandler } from './claude-handler';
 import { logger } from './logger';
@@ -122,9 +123,16 @@ export class JobScheduler {
       // Fresh session key per run (no resume)
       const sessionKey = `job-${job.id}-${Date.now()}`;
 
+      // Prepend current date so the agent always knows "when" this job is running,
+      // even if the CLAUDE.md system prompt was compiled before a spoof date was set.
+      const currentDate = clockNow().toLocaleDateString('en-SG', {
+        timeZone: 'Asia/Singapore', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+      });
+      const promptWithDate = `Today's date: ${currentDate}\n\n${job.prompt}`;
+
       // Stream query to agent
       let output = '';
-      for await (const msg of agent.claudeHandler.streamQuery(job.prompt, sessionKey)) {
+      for await (const msg of agent.claudeHandler.streamQuery(promptWithDate, sessionKey)) {
         const m = msg as Record<string, unknown>;
         if (m.type === 'result' && m.subtype === 'success') {
           output = (m.result as string) ?? '';
