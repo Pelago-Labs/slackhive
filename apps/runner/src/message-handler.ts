@@ -20,6 +20,7 @@ import {
   beginToolCall,
   finishToolCall,
   recordActivityUsage,
+  now as clockNow,
 } from '@slackhive/shared';
 import type { ClaudeHandler } from './claude-handler';
 import { CorrectionHandler } from './correction-handler';
@@ -364,7 +365,10 @@ export class MessageHandler {
       senderName = await this.adapter.getUserDisplayName(userId);
     } catch { /* fall back to userId */ }
     const platformTag = platform ? ` · platform ${platform}` : '';
-    const senderHeader = `[Sender: ${senderName} (${userId}) · channel ${channelId}${threadId ? ` · thread ${threadId}` : ''}${platformTag}]\n\n`;
+    const currentDate = clockNow().toLocaleDateString('en-SG', {
+      timeZone: 'Asia/Singapore', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    });
+    const senderHeader = `[Today: ${currentDate} · Sender: ${senderName} (${userId}) · channel ${channelId}${threadId ? ` · thread ${threadId}` : ''}${platformTag}]\n\n`;
 
     // Fetch thread context via adapter
     let threadContext = '';
