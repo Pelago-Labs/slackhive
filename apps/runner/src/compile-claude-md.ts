@@ -26,7 +26,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { Agent, Memory, Skill } from '@slackhive/shared';
-import { getDb } from '@slackhive/shared';
+import { getDb, now as clockNow } from '@slackhive/shared';
 import { getAgentSkills, getAgentMemories } from './db';
 import { logger } from './logger';
 
@@ -489,6 +489,17 @@ function buildClaudeMd(
   formattingRules?: string,
 ): string {
   const sections: string[] = [];
+
+  // 0. Current date/time — injected first so the agent always knows "when" it is.
+  //    Respects SPOOF_DATE override (set via Settings → Date Spoofer).
+  const currentDate = clockNow().toLocaleDateString('en-SG', {
+    timeZone: 'Asia/Singapore',
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+  sections.push(`> **Current date:** ${currentDate}`);
 
   // 1. Identity — always built from agent.name/persona/description. Never a skill row.
   const lines = [`# ${agent.name}`];

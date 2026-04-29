@@ -24,7 +24,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import type { Agent, PlatformAdapter, ThreadMessage } from '@slackhive/shared';
-import { type AgentEvent, getEventBus, type EventBus, sweepStaleActivities } from '@slackhive/shared';
+import { type AgentEvent, getEventBus, type EventBus, sweepStaleActivities, setSpoofDate, getSpoofDate } from '@slackhive/shared';
 import { SlackAdapter } from './adapters/slack-adapter';
 import { WhatsAppAdapter } from './adapters/whatsapp-adapter';
 import { TestAdapter } from './adapters/test-adapter';
@@ -796,6 +796,43 @@ export class AgentRunner {
           }
         });
         return;
+      }
+
+      // Spoof-date — GET returns current spoof, PUT sets it, DELETE clears it.
+      if (req.url === '/spoof-date') {
+        if (req.method === 'GET') {
+          const d = getSpoofDate();
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ spoofDate: d ? d.toISOString() : null }));
+          return;
+        }
+        if (req.method === 'PUT') {
+          let body = '';
+          req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+          req.on('end', () => {
+            try {
+              const { date } = JSON.parse(body) as { date: string };
+              const d = new Date(date);
+              if (isNaN(d.getTime())) {
+                res.writeHead(400); res.end(JSON.stringify({ error: 'Invalid date' })); return;
+              }
+              setSpoofDate(d);
+              logger.info('Spoof date set', { date: d.toISOString() });
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ ok: true, spoofDate: d.toISOString() }));
+            } catch {
+              res.writeHead(400); res.end(JSON.stringify({ error: 'Bad request' }));
+            }
+          });
+          return;
+        }
+        if (req.method === 'DELETE') {
+          setSpoofDate(null);
+          logger.info('Spoof date cleared');
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, spoofDate: null }));
+          return;
+        }
       }
 
       // Web-chat: Vercel AI SDK data stream for SIA hackathon frontend.

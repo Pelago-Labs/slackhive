@@ -164,6 +164,10 @@ function GeneralTab() {
         />
       </Section>
 
+      <Section title="Date Spoofer">
+        <DateSpoofer />
+      </Section>
+
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
         <PrimaryBtn onClick={saveAll} loading={saving}>Save All</PrimaryBtn>
       </div>
@@ -630,6 +634,127 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
       borderBottom: active ? '2px solid var(--accent)' : '2px solid transparent',
       marginBottom: -1,
     }}>{children}</button>
+  );
+}
+
+// =============================================================================
+// Date Spoofer
+// =============================================================================
+
+function DateSpoofer() {
+  const [enabled, setEnabled] = useState(false);
+  // datetime-local input value: "YYYY-MM-DDTHH:mm"
+  const [dateValue, setDateValue] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState('');
+
+  // Load current spoof date on mount
+  useEffect(() => {
+    fetch('/api/system/spoof-date')
+      .then(r => r.json())
+      .then((data: { spoofDate: string | null }) => {
+        if (data.spoofDate) {
+          setEnabled(true);
+          // Convert ISO to "YYYY-MM-DDTHH:mm" for datetime-local input
+          setDateValue(data.spoofDate.slice(0, 16));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(''), 2500);
+  }
+
+  async function handleToggle(on: boolean) {
+    setEnabled(on);
+    if (!on) {
+      setSaving(true);
+      try {
+        await fetch('/api/system/spoof-date', { method: 'DELETE' });
+        setDateValue('');
+        showToast('Real time restored');
+      } finally { setSaving(false); }
+    }
+  }
+
+  async function handleApply() {
+    if (!dateValue) return;
+    setSaving(true);
+    try {
+      const res = await fetch('/api/system/spoof-date', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: dateValue }),
+      });
+      if (res.ok) showToast('Date override saved');
+      else showToast('Failed to save');
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div>
+      {toast && (
+        <div style={{
+          position: 'fixed', top: 20, right: 20, zIndex: 999,
+          background: 'var(--accent)', color: 'var(--accent-fg)',
+          padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500,
+          boxShadow: 'var(--shadow-md)',
+        }}>{toast}</div>
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        {/* Toggle */}
+        <button
+          onClick={() => handleToggle(!enabled)}
+          style={{
+            width: 40, height: 22, borderRadius: 11, border: 'none',
+            background: enabled ? 'var(--accent)' : 'var(--border)',
+            cursor: 'pointer', position: 'relative', flexShrink: 0,
+            transition: 'background 0.2s',
+          }}
+        >
+          <span style={{
+            position: 'absolute', top: 3,
+            left: enabled ? 21 : 3,
+            width: 16, height: 16, borderRadius: '50%',
+            background: '#fff', transition: 'left 0.2s',
+          }} />
+        </button>
+        <span style={{ fontSize: 13, color: 'var(--text)', fontWeight: 500 }}>
+          {enabled ? 'Spoofed date active' : 'Using real system time'}
+        </span>
+        {enabled && (
+          <span style={{
+            fontSize: 11, padding: '2px 8px', borderRadius: 20,
+            background: 'var(--accent)', color: 'var(--accent-fg)', fontWeight: 600,
+          }}>ACTIVE</span>
+        )}
+      </div>
+
+      {enabled && (
+        <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <input
+            type="datetime-local"
+            value={dateValue}
+            onChange={e => setDateValue(e.target.value)}
+            style={{
+              background: 'var(--surface)', border: '1px solid var(--border)',
+              borderRadius: 7, padding: '7px 10px', color: 'var(--text)',
+              fontSize: 13, fontFamily: 'var(--font-sans)', outline: 'none',
+              flexShrink: 0,
+            }}
+            onFocus={e => { e.currentTarget.style.borderColor = 'var(--accent)'; }}
+            onBlur={e => { e.currentTarget.style.borderColor = 'var(--border)'; }}
+          />
+          <PrimaryBtn onClick={handleApply} loading={saving}>Apply</PrimaryBtn>
+        </div>
+      )}
+
+      <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--subtle)' }}>
+        Overrides the date agents and the scheduler see. Useful for testing time-sensitive prompts and scheduled jobs.
+      </p>
+    </div>
   );
 }
 

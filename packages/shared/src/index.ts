@@ -35,3 +35,4 @@ export type {
 } from './db/activities-repo';
 export { MODELS, DEFAULT_AGENT_MODEL, DEFAULT_COACH_MODEL, COACH_MODEL_SETTING_KEY } from './models';
 export type { ModelOption } from './models';
+export { now, nowMs, nowIso, getSpoofDate, setSpoofDate } from './clock';
