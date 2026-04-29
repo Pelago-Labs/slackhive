@@ -755,6 +755,36 @@ export class AgentRunner {
         return;
       }
 
+      // Web-chat: Vercel AI SDK data stream for SIA hackathon frontend.
+      if (req.url === '/web-chat' && (req.method === 'POST' || req.method === 'OPTIONS')) {
+        if (req.method === 'OPTIONS') {
+          res.writeHead(204, {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type',
+          });
+          res.end();
+          return;
+        }
+        let body = '';
+        req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+        req.on('end', async () => {
+          try {
+            const { handleWebChatStream } = await import('./web-handler-server');
+            await handleWebChatStream(body, res, this);
+          } catch (err) {
+            logger.error('Web chat stream error', { error: (err as Error).message });
+            if (!res.headersSent) {
+              res.writeHead(500, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: (err as Error).message }));
+            } else {
+              res.end();
+            }
+          }
+        });
+        return;
+      }
+
       if (req.method !== 'POST') { res.writeHead(405); res.end(); return; }
 
       let body = '';
