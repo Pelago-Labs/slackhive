@@ -10,6 +10,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { KeyRound } from 'lucide-react';
+import { MODELS, DEFAULT_COACH_MODEL, COACH_MODEL_SETTING_KEY } from '@slackhive/shared';
 import { Portal } from '@/lib/portal';
 import { useAuth } from '@/lib/auth-context';
 
@@ -33,6 +34,7 @@ const DEFAULTS: Record<string, string> = {
   tagline: 'AI agent teams on Slack',
   logoUrl: '',
   dashboardTitle: 'Welcome to SlackHive',
+  [COACH_MODEL_SETTING_KEY]: DEFAULT_COACH_MODEL,
 };
 
 /**
@@ -77,6 +79,7 @@ function GeneralTab() {
   const [tagline, setTagline] = useState(DEFAULTS.tagline);
   const [logoUrl, setLogoUrl] = useState(DEFAULTS.logoUrl);
   const [dashboardTitle, setDashboardTitle] = useState(DEFAULTS.dashboardTitle);
+  const [coachModel, setCoachModel] = useState(DEFAULTS[COACH_MODEL_SETTING_KEY]);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
 
@@ -88,6 +91,7 @@ function GeneralTab() {
         if (s.tagline) setTagline(s.tagline);
         if (s.logoUrl !== undefined && s.logoUrl !== '') setLogoUrl(s.logoUrl);
         if (s.dashboardTitle) setDashboardTitle(s.dashboardTitle);
+        if (s[COACH_MODEL_SETTING_KEY]) setCoachModel(s[COACH_MODEL_SETTING_KEY]);
       })
       .catch(() => {});
   }, []);
@@ -112,6 +116,7 @@ function GeneralTab() {
         fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'tagline', value: tagline }) }),
         fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'logoUrl', value: logoUrl }) }),
         fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'dashboardTitle', value: dashboardTitle }) }),
+        fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: COACH_MODEL_SETTING_KEY, value: coachModel }) }),
       ]);
       setToast('All settings saved');
       setTimeout(() => setToast(''), 2000);
@@ -149,6 +154,16 @@ function GeneralTab() {
           value={dashboardTitle} onChange={setDashboardTitle} onBlur={() => save('dashboardTitle', dashboardTitle)} />
       </Section>
 
+      <Section title="AI">
+        <SelectField
+          label="Coach Model"
+          value={coachModel}
+          options={MODELS}
+          onChange={v => { setCoachModel(v); save(COACH_MODEL_SETTING_KEY, v); }}
+          hint="Model used by Coach to generate prompts and skills. Not the model your agents run on."
+        />
+      </Section>
+
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
         <PrimaryBtn onClick={saveAll} loading={saving}>Save All</PrimaryBtn>
       </div>
@@ -172,8 +187,10 @@ function UsersTab() {
   const [saving, setSaving] = useState(false);
   const [updatingRole, setUpdatingRole] = useState<string | null>(null);
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
-  // Map of userId → set of agentIds with write access
-  const [writeGrants, setWriteGrants] = useState<Record<string, Set<string>>>({});
+  // Map of userId → map of agentId → 'none' | 'view' | 'edit'
+  const [accessGrants, setAccessGrants] = useState<Record<string, Record<string, 'none' | 'view' | 'edit'>>>({});
+  // Map of userId → set of agentIds where user is the creator (owner)
+  const [ownerAgents, setOwnerAgents] = useState<Record<string, Set<string>>>({});
   const [loadingGrants, setLoadingGrants] = useState<string | null>(null);
   // Password reset modal state
   const [resetUser, setResetUser] = useState<User | null>(null);
@@ -260,33 +277,41 @@ function UsersTab() {
   const toggleExpand = async (userId: string) => {
     if (expandedUser === userId) { setExpandedUser(null); return; }
     setExpandedUser(userId);
-    if (writeGrants[userId]) return; // already loaded
+    if (accessGrants[userId]) return; // already loaded
     setLoadingGrants(userId);
-    // Load write grants for all agents for this user by checking each agent's access
-    // We use the admin access endpoint which returns writeUsers per agent
-    const grants = new Set<string>();
+    // Load all access grants for this user across all agents
+    const grants: Record<string, 'none' | 'view' | 'edit'> = {};
+    const owners = new Set<string>();
     await Promise.all(agents.map(async (a) => {
       const r = await fetch(`/api/agents/${a.id}/access`);
       const data = await r.json();
-      if (data.writeUsers?.some((w: { userId: string }) => w.userId === userId)) {
-        grants.add(a.id);
+      const match = data.writeUsers?.find((w: { userId: string; canWrite: boolean; isOwner: boolean }) => w.userId === userId);
+      if (match) {
+        grants[a.id] = match.canWrite ? 'edit' : 'view';
+        if (match.isOwner) owners.add(a.id);
       }
     }));
-    setWriteGrants(prev => ({ ...prev, [userId]: grants }));
+    setAccessGrants(prev => ({ ...prev, [userId]: grants }));
+    setOwnerAgents(prev => ({ ...prev, [userId]: owners }));
     setLoadingGrants(null);
   };
 
-  const toggleWrite = async (userId: string, agentId: string, currentlyGranted: boolean) => {
-    const method = currentlyGranted ? 'DELETE' : 'POST';
-    await fetch(`/api/agents/${agentId}/access`, {
-      method, headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId }),
-    });
-    setWriteGrants(prev => {
-      const next = new Set(prev[userId]);
-      if (currentlyGranted) next.delete(agentId); else next.add(agentId);
-      return { ...prev, [userId]: next };
-    });
+  const setAccess = async (userId: string, agentId: string, level: 'none' | 'view' | 'edit') => {
+    if (level === 'none') {
+      await fetch(`/api/agents/${agentId}/access`, {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      });
+    } else {
+      await fetch(`/api/agents/${agentId}/access`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, canWrite: level === 'edit' }),
+      });
+    }
+    setAccessGrants(prev => ({
+      ...prev,
+      [userId]: { ...prev[userId], [agentId]: level },
+    }));
   };
 
   return (
@@ -368,8 +393,8 @@ function UsersTab() {
                   <option value="editor">editor</option>
                   <option value="viewer">viewer</option>
                 </select>
-                {/* Agent write access — only meaningful for editors */}
-                {u.role === 'editor' && (
+                {/* Agent access — editors and viewers can be granted per-agent access */}
+                {(u.role === 'editor' || u.role === 'viewer') && (
                   <button
                     onClick={() => toggleExpand(u.id)}
                     style={{
@@ -380,13 +405,6 @@ function UsersTab() {
                       fontFamily: 'var(--font-sans)',
                     }}
                   >Agent Access</button>
-                )}
-                {u.role === 'viewer' && (
-                  <span title="Viewers are read-only — write access grants only apply to editors" style={{
-                    fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 6,
-                    border: '1px solid var(--border)', color: 'var(--subtle)',
-                    background: 'var(--surface-2)', opacity: 0.5,
-                  }}>Agent Access</span>
                 )}
                 {isSuperadmin && (
                   <button
@@ -420,33 +438,53 @@ function UsersTab() {
                   background: 'var(--surface-2)', border: '1px solid var(--border)',
                 }}>
                   <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>
-                    Write access — check agents this user can edit
+                    Agent access
                     <span style={{ fontWeight: 400, color: 'var(--subtle)', marginLeft: 6 }}>
-                      (own created agents always have write)
+                      {u.role === 'editor' ? '— editors also always access their own agents' : '— viewers see only what is granted'}
                     </span>
                   </p>
                   {loadingGrants === u.id ? (
                     <p style={{ fontSize: 12, color: 'var(--subtle)', margin: 0 }}>Loading…</p>
                   ) : (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       {agents.map(a => {
-                        const granted = writeGrants[u.id]?.has(a.id) ?? false;
+                        const isOwner = ownerAgents[u.id]?.has(a.id) ?? false;
+                        const level = accessGrants[u.id]?.[a.id] ?? 'none';
+                        const levels: ('none' | 'view' | 'edit')[] = u.role === 'viewer' ? ['none', 'view'] : ['none', 'view', 'edit'];
                         return (
-                          <label key={a.id} style={{
-                            display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer',
-                            fontSize: 12, color: granted ? 'var(--accent)' : 'var(--muted)',
-                            background: granted ? 'rgba(59,130,246,0.08)' : 'var(--surface)',
-                            border: `1px solid ${granted ? 'rgba(59,130,246,0.3)' : 'var(--border)'}`,
-                            borderRadius: 6, padding: '4px 10px', transition: 'all 0.12s',
-                          }}>
-                            <input
-                              type="checkbox"
-                              checked={granted}
-                              onChange={() => toggleWrite(u.id, a.id, granted)}
-                              style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
-                            />
-                            {a.name}
-                          </label>
+                          <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <span style={{ fontSize: 12, color: 'var(--text)', flex: 1 }}>{a.name}</span>
+                            {isOwner ? (
+                              <span style={{
+                                fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 5,
+                                border: '1px solid rgba(245,158,11,0.4)', color: '#d97706',
+                                background: 'rgba(245,158,11,0.1)',
+                              }}>Owner</span>
+                            ) : (
+                            <div style={{ display: 'flex', gap: 4 }}>
+                              {levels.map(lvl => (
+                                <button
+                                  key={lvl}
+                                  onClick={() => setAccess(u.id, a.id, lvl)}
+                                  style={{
+                                    fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 5,
+                                    border: '1px solid var(--border)', cursor: 'pointer',
+                                    fontFamily: 'var(--font-sans)',
+                                    background: level === lvl
+                                      ? lvl === 'edit' ? 'rgba(59,130,246,0.15)' : lvl === 'view' ? 'rgba(5,150,105,0.12)' : 'var(--surface)'
+                                      : 'var(--surface)',
+                                    color: level === lvl
+                                      ? lvl === 'edit' ? '#3b82f6' : lvl === 'view' ? '#059669' : 'var(--muted)'
+                                      : 'var(--subtle)',
+                                    borderColor: level === lvl
+                                      ? lvl === 'edit' ? 'rgba(59,130,246,0.4)' : lvl === 'view' ? 'rgba(5,150,105,0.4)' : 'var(--border)'
+                                      : 'var(--border)',
+                                  }}
+                                >{lvl === 'none' ? 'No access' : lvl === 'view' ? 'View' : 'Edit'}</button>
+                              ))}
+                            </div>
+                            )}
+                          </div>
                         );
                       })}
                       {agents.length === 0 && <span style={{ fontSize: 12, color: 'var(--subtle)' }}>No agents yet</span>}
@@ -629,6 +667,41 @@ function Field({ label, value, onChange, onBlur, hint, maxLength }: {
         }}
         onFocus={e => { if (!overLimit) e.currentTarget.style.borderColor = 'var(--accent)'; }}
       />
+      {hint && <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--subtle)' }}>{hint}</p>}
+    </div>
+  );
+}
+
+function SelectField({ label, value, options, onChange, hint }: {
+  label: string;
+  value: string;
+  options: readonly { value: string; label: string; sub?: string }[];
+  onChange: (v: string) => void;
+  hint?: string;
+}) {
+  return (
+    <div>
+      <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--muted)', marginBottom: 5 }}>{label}</label>
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        style={{
+          width: '100%', background: 'var(--surface)',
+          border: '1px solid var(--border)',
+          borderRadius: 7, padding: '8px 11px', color: 'var(--text)',
+          fontSize: 13, fontFamily: 'var(--font-sans)', outline: 'none',
+          transition: 'border-color 0.15s', boxSizing: 'border-box',
+          cursor: 'pointer',
+        }}
+        onFocus={e => { e.currentTarget.style.borderColor = 'var(--accent)'; }}
+        onBlur={e => { e.currentTarget.style.borderColor = 'var(--border)'; }}
+      >
+        {options.map(o => (
+          <option key={o.value} value={o.value}>
+            {o.label}{o.sub ? ` — ${o.sub}` : ''}
+          </option>
+        ))}
+      </select>
       {hint && <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--subtle)' }}>{hint}</p>}
     </div>
   );

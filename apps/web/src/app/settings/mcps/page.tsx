@@ -8,12 +8,14 @@
  * @module web/settings/mcps/page
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import type { McpServer, McpServerType } from '@slackhive/shared';
 import { MCP_TEMPLATES } from '@slackhive/shared';
 import { useAuth } from '@/lib/auth-context';
 import { Plug, Library, Search, X, Check, Loader2 } from 'lucide-react';
 import { Portal } from '@/lib/portal';
+import { parseMcpJson, serializeMcpJson } from '@/lib/mcp-json';
+import type { McpServerConfig } from '@slackhive/shared';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -57,11 +59,25 @@ const DEFAULT_FORM: McpFormState = {
   url: '', headerEntries: [] as HeaderEntry[],
 };
 
+/** Default JSON template — Cursor/Claude Desktop shape. Shown when opening "Add MCP Server". */
+const DEFAULT_JSON_TEMPLATE = `{
+  "mcpServers": {
+    "my-server": {
+      "command": "npx",
+      "args": ["-y", "@example/mcp-server"],
+      "env": {
+        "API_KEY": "\${env:MY_API_KEY}"
+      }
+    }
+  }
+}`;
+
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function McpSettingsPage() {
   const { canEdit } = useAuth();
   const [servers, setServers]       = useState<McpServer[]>([]);
+  const [serverSearch, setServerSearch] = useState('');
   const [loading, setLoading]       = useState(true);
   const [form, setForm]             = useState<McpFormState>(DEFAULT_FORM);
   const [saving, setSaving]         = useState(false);
@@ -82,6 +98,29 @@ export default function McpSettingsPage() {
   const [templateEnvValues, setTemplateEnvValues] = useState<Record<string, string>>({});
   const [selectedTemplate, setSelectedTemplate] = useState<any | null>(null);
   const [installedIds, setInstalledIds] = useState<Set<string>>(new Set());
+
+  // JSON-mode state (the default entry point — mirrors Cursor/Claude Desktop/VS Code UX)
+  const [jsonMode, setJsonMode] = useState(true);
+  const [jsonInput, setJsonInput] = useState('');
+  const [envInline, setEnvInline] = useState<{ key: string; value: string; saving: boolean } | null>(null);
+
+  const saveMissingEnvVar = async () => {
+    if (!envInline || !envInline.value) return;
+    setEnvInline({ ...envInline, saving: true });
+    try {
+      const r = await fetch('/api/env-vars', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: envInline.key, value: envInline.value }),
+      });
+      if (!r.ok) { const b = await r.json(); throw new Error(b.error ?? 'Failed'); }
+      const rows = await fetch('/api/env-vars').then(r => r.json()) as { key: string }[];
+      setEnvVarKeys(rows.map(r => r.key));
+      setEnvInline(null);
+    } catch (err) {
+      setEnvInline({ ...envInline, saving: false });
+      setError((err as Error).message);
+    }
+  };
 
   useEffect(() => { load(); }, []);
 
@@ -231,7 +270,7 @@ export default function McpSettingsPage() {
     }
     if (f.uiType === 'stdio') {
       const cfg: Record<string, unknown> = { command: f.command };
-      if (f.args.trim()) cfg.args = f.args.split(',').map(a => a.trim()).filter(Boolean);
+      if (f.args.trim()) cfg.args = parseArgsField(f.args);
       const env = entriesToEnv(f.envEntries);
       const envRefs = entriesToRefs(f.envEntries);
       if (Object.keys(env).length > 0) cfg.env = env;
@@ -256,6 +295,19 @@ export default function McpSettingsPage() {
     return cfg;
   };
 
+  // Args field accepts either a JSON array (`["-y","pkg,with,commas"]`) or a
+  // comma-separated string (legacy). JSON wins when it parses to a string[].
+  const parseArgsField = (raw: string): string[] => {
+    const trimmed = raw.trim();
+    if (trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed) && parsed.every(a => typeof a === 'string')) return parsed;
+      } catch { /* fall through to comma-split */ }
+    }
+    return raw.split(',').map(a => a.trim()).filter(Boolean);
+  };
+
   const entriesToEnv = (entries: EnvEntry[]) =>
     Object.fromEntries(entries.filter(e => e.mode === 'value' && e.key).map(e => [e.key, e.val]));
 
@@ -266,22 +318,97 @@ export default function McpSettingsPage() {
   const apiType = (uiType: UiTransportType): McpServerType =>
     uiType === 'typescript' ? 'stdio' : uiType;
 
+  // Infer UI transport type from a raw config row.
+  const inferUiType = (cfg: Record<string, unknown>): UiTransportType => {
+    if (typeof cfg.tsSource === 'string') return 'typescript';
+    if (typeof cfg.url === 'string') return cfg.type === 'http' ? 'http' : 'sse';
+    return 'stdio';
+  };
+
+  /**
+   * Decompose an McpServerConfig into the form fields the granular editor
+   * needs. Shared by handleEdit (loading a saved server) and toggleMode
+   * (switching from JSON view to form view).
+   *
+   * @param cfg      Raw config record (an McpServerConfig cast to Record).
+   * @param argStyle How to render args: 'comma' for the legacy form-mode
+   *                 input, 'json' for the JSON-array placeholder shown after
+   *                 a JSON→form toggle.
+   */
+  const configToFormState = (cfg: Record<string, unknown>, argStyle: 'comma' | 'json'): Pick<
+    McpFormState,
+    'uiType' | 'command' | 'args' | 'envEntries' | 'tsSource' | 'url' | 'headerEntries'
+  > => {
+    const uiType = inferUiType(cfg);
+    const envObj = (cfg.env as Record<string, string>) ?? {};
+    const envRefsObj = (cfg.envRefs as Record<string, string>) ?? {};
+    const envEntries: EnvEntry[] = [
+      ...Object.entries(envObj).map(([k, v]) => ({ key: k, mode: 'value' as const, val: v })),
+      ...Object.entries(envRefsObj).map(([k, v]) => ({ key: k, mode: 'ref' as const, val: v })),
+    ];
+    const headersObj = (cfg.headers as Record<string, string>) ?? {};
+    const headerEntries: HeaderEntry[] = Object.entries(headersObj).map(([name, rawVal]) => {
+      if (envRefsObj[name] !== undefined) {
+        return { name, mode: 'ref' as const, val: envRefsObj[name], prefix: rawVal };
+      }
+      return { name, mode: 'value' as const, val: rawVal, prefix: '' };
+    });
+    const args = Array.isArray(cfg.args)
+      ? (argStyle === 'json' ? JSON.stringify(cfg.args) : (cfg.args as string[]).join(', '))
+      : '';
+    return {
+      uiType,
+      command: (cfg.command as string) ?? '',
+      args,
+      envEntries,
+      tsSource: uiType === 'typescript' ? (cfg.tsSource as string) : DEFAULT_FORM.tsSource,
+      url: (cfg.url as string) ?? '',
+      headerEntries,
+    };
+  };
+
   // ─── Handlers ───────────────────────────────────────────────────────────────
+
+  // Live-parse the JSON textarea — drives the inline status line + Save enable
+  const jsonParse = useMemo(
+    () => (jsonMode ? parseMcpJson(jsonInput) : null),
+    [jsonMode, jsonInput],
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true); setError('');
     try {
-      const r = await fetch(editingId ? `/api/mcps/${editingId}` : '/api/mcps', {
-        method: editingId ? 'PATCH' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      let body: Record<string, unknown>;
+      if (jsonMode) {
+        if (!jsonParse || !jsonParse.ok) throw new Error(jsonParse && !jsonParse.ok ? jsonParse.error : 'Invalid JSON');
+        const { name: parsedName, config } = jsonParse;
+        // Bare shape (no mcpServers wrapper) has parsedName === null — fall back
+        // to the Name input shown inline in that case.
+        const finalName = parsedName ?? form.name.trim();
+        if (!finalName) throw new Error('Name is required — add it in the Name field below or wrap your JSON in `{ "mcpServers": { "<name>": { ... } } }`.');
+        const c = config as unknown as Record<string, unknown>;
+        const type: McpServerType = typeof c.url === 'string' ? (c.type === 'http' ? 'http' : 'sse') : 'stdio';
+        body = {
+          name: finalName,
+          type,
+          description: form.description || undefined,
+          enabled: form.enabled,
+          config,
+        };
+      } else {
+        body = {
           name: form.name,
           type: apiType(form.uiType),
           description: form.description || undefined,
           enabled: form.enabled,
           config: buildConfig(form),
-        }),
+        };
+      }
+      const r = await fetch(editingId ? `/api/mcps/${editingId}` : '/api/mcps', {
+        method: editingId ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
       });
       if (!r.ok) { const b = await r.json(); throw new Error(b.error ?? 'Failed'); }
       resetForm(); await load();
@@ -317,40 +444,60 @@ export default function McpSettingsPage() {
   const handleEdit = (server: McpServer) => {
     const cfg = server.config as unknown as Record<string, unknown>;
     const isTs = typeof cfg.tsSource === 'string';
-    const envObj = (cfg.env as Record<string, string>) ?? {};
-    const envRefsObj = (cfg.envRefs as Record<string, string>) ?? {};
-
-    const envEntries: EnvEntry[] = [
-      ...Object.entries(envObj).map(([k, v]) => ({ key: k, mode: 'value' as const, val: v })),
-      ...Object.entries(envRefsObj).map(([k, v]) => ({ key: k, mode: 'ref' as const, val: v })),
-    ];
-
-    const headersObj = (cfg.headers as Record<string, string>) ?? {};
-    const envRefsObj2 = (cfg.envRefs as Record<string, string>) ?? {};
-    const headerEntries: HeaderEntry[] = Object.entries(headersObj).map(([name, rawVal]) => {
-      if (envRefsObj2[name] !== undefined) {
-        return { name, mode: 'ref' as const, val: envRefsObj2[name], prefix: rawVal };
-      }
-      return { name, mode: 'value' as const, val: rawVal, prefix: '' };
-    });
-
+    // typescript has no sensible JSON representation — force form mode
+    setJsonMode(!isTs);
+    setJsonInput(isTs ? '' : serializeMcpJson(server.name, server.config as McpServerConfig));
     setForm({
       name: server.name,
-      uiType: isTs ? 'typescript' : server.type,
       description: server.description ?? '',
       enabled: server.enabled,
-      command: (cfg.command as string) ?? '',
-      args: Array.isArray(cfg.args) ? (cfg.args as string[]).join(', ') : '',
-      envEntries,
-      tsSource: isTs ? (cfg.tsSource as string) : DEFAULT_FORM.tsSource,
-      url: (cfg.url as string) ?? '',
-      headerEntries,
+      ...configToFormState(cfg, 'comma'),
     });
     setEditingId(server.id);
     setShowForm(true);
   };
 
-  const resetForm = () => { setForm(DEFAULT_FORM); setEditingId(null); setShowForm(false); setError(''); };
+  const resetForm = () => {
+    setForm(DEFAULT_FORM);
+    setEditingId(null);
+    setShowForm(false);
+    setError('');
+    setJsonMode(true);
+    setJsonInput(DEFAULT_JSON_TEMPLATE);
+  };
+
+  const openAddForm = () => {
+    setForm(DEFAULT_FORM);
+    setEditingId(null);
+    setError('');
+    setJsonMode(true);
+    setJsonInput(DEFAULT_JSON_TEMPLATE);
+    setShowForm(true);
+  };
+
+  /** Switch between form ↔ JSON. Re-seed the target view from the source view's state. */
+  const toggleMode = () => {
+    if (jsonMode) {
+      // JSON → form: parse current JSON and populate form fields
+      const parsed = parseMcpJson(jsonInput);
+      if (!parsed.ok) { setError(parsed.error); return; }
+      const cfg = parsed.config as unknown as Record<string, unknown>;
+      setForm(prev => ({
+        ...prev,
+        name: form.name || parsed.name || '',
+        ...configToFormState(cfg, 'json'),
+      }));
+      setJsonMode(false);
+      setError('');
+    } else {
+      // form → JSON: rebuild JSON text from the current form state
+      if (form.uiType === 'typescript') { setError('TypeScript transport has no JSON form — stay in form mode.'); return; }
+      const cfg = buildConfig(form) as McpServerConfig;
+      setJsonInput(serializeMcpJson(form.name || 'server', cfg));
+      setJsonMode(true);
+      setError('');
+    }
+  };
 
   const f = (key: keyof McpFormState, val: unknown) => setForm(prev => ({ ...prev, [key]: val }));
 
@@ -396,7 +543,7 @@ export default function McpSettingsPage() {
               <Library size={14} />
               Browse Library
             </button>
-            <button onClick={() => setShowForm(true)} style={{
+            <button onClick={openAddForm} style={{
               display: 'inline-flex', alignItems: 'center', gap: 6,
               background: 'var(--accent)', color: 'var(--accent-fg)',
               padding: '8px 16px', borderRadius: 8, border: 'none',
@@ -414,6 +561,20 @@ export default function McpSettingsPage() {
       </div>
 
       {/* Server list */}
+      {servers.length > 0 && (
+        <input
+          type="text"
+          placeholder="Search MCP servers…"
+          value={serverSearch}
+          onChange={e => setServerSearch(e.target.value)}
+          style={{
+            width: '100%', boxSizing: 'border-box', marginBottom: 12,
+            padding: '8px 12px', fontSize: 13, borderRadius: 8,
+            border: '1px solid var(--border)', background: 'var(--input-bg)',
+            color: 'var(--text)', outline: 'none',
+          }}
+        />
+      )}
       {loading ? (
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
@@ -438,7 +599,7 @@ export default function McpSettingsPage() {
               padding: '8px 20px', fontSize: 13, fontWeight: 500, cursor: 'pointer',
               fontFamily: 'var(--font-sans)',
             }}><Library size={14} /> Browse Library</button>
-            <button onClick={() => setShowForm(true)} style={{
+            <button onClick={openAddForm} style={{
               background: 'transparent', color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 8,
               padding: '8px 16px', fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-sans)',
             }}>Add Custom</button>
@@ -446,10 +607,10 @@ export default function McpSettingsPage() {
         </div>
       ) : (
         <div style={{ border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden', marginBottom: 20 }}>
-          {servers.map((server, i) => (
+          {servers.filter(s => !serverSearch || s.name.toLowerCase().includes(serverSearch.toLowerCase()) || (s.description ?? '').toLowerCase().includes(serverSearch.toLowerCase())).map((server, i, arr) => (
             <ServerRow
               key={server.id} server={server}
-              isLast={i === servers.length - 1}
+              isLast={i === arr.length - 1}
               onEdit={() => handleEdit(server)}
               onDelete={() => handleDelete(server.id)}
               onToggle={() => handleToggle(server)}
@@ -534,7 +695,143 @@ export default function McpSettingsPage() {
             }}>{error}</div>
           )}
 
+          {form.uiType !== 'typescript' && (
+            <div style={{
+              display: 'flex', gap: 0, borderBottom: '1px solid var(--border)',
+              marginBottom: 20,
+            }}>
+              {([
+                { id: 'json', label: 'JSON', active: jsonMode },
+                { id: 'form', label: 'Form', active: !jsonMode },
+              ] as const).map(tab => (
+                <button key={tab.id} type="button"
+                  onClick={() => { if (tab.active) return; toggleMode(); }}
+                  style={{
+                    padding: '8px 16px', fontSize: 13, fontWeight: 500,
+                    background: 'transparent', border: 'none',
+                    borderBottom: `2px solid ${tab.active ? 'var(--accent)' : 'transparent'}`,
+                    color: tab.active ? 'var(--text)' : 'var(--muted)',
+                    cursor: tab.active ? 'default' : 'pointer',
+                    fontFamily: 'var(--font-sans)', marginBottom: -1,
+                  }}>{tab.label}</button>
+              ))}
+            </div>
+          )}
+
           <form onSubmit={handleSubmit}>
+            {jsonMode ? (
+              <>
+                <FField label="Config JSON *" style={{ marginBottom: 6 }}
+                  hint={<>Paste a Cursor / Claude Desktop / VS Code config. Use <code style={{ fontFamily: 'var(--font-mono)', background: 'rgba(99,102,241,0.12)', padding: '1px 4px', borderRadius: 3 }}>{'${env:NAME}'}</code> for secrets — pulled from your <a href="/settings/env-vars" style={{ color: 'var(--accent)', textDecoration: 'none' }}>env vars</a> at runtime.</>}>
+                  <textarea value={jsonInput} onChange={e => setJsonInput(e.target.value)}
+                    rows={Math.max(10, Math.min(24, (jsonInput.match(/\n/g)?.length ?? 0) + 2))}
+                    required spellCheck={false} {...inputStyle('var(--font-mono)')} />
+                </FField>
+                <div style={{ fontSize: 12, marginBottom: 14, minHeight: 18 }}>
+                  {jsonParse && jsonParse.ok ? (
+                    <span style={{ color: 'var(--accent)' }}>
+                      ✓ Valid config{jsonParse.name ? ` for "${jsonParse.name}"` : ''}
+                      {jsonParse.warnings.length > 0 && (
+                        <span style={{ color: 'var(--muted)', marginLeft: 8 }}>· {jsonParse.warnings.join(' ')}</span>
+                      )}
+                    </span>
+                  ) : jsonParse && !jsonParse.ok ? (
+                    <span style={{ color: '#f87171' }}>
+                      ⚠ {jsonParse.error}{jsonParse.line ? ` (line ${jsonParse.line})` : ''}
+                    </span>
+                  ) : null}
+                </div>
+
+                {/* Env ref resolution: show which ${env:NAME} refs are wired up to the platform env-var store. */}
+                {jsonParse && jsonParse.ok && (() => {
+                  const refs = ((jsonParse.config as unknown as Record<string, unknown>).envRefs as Record<string, string> | undefined) ?? {};
+                  const refNames = Array.from(new Set(Object.values(refs)));
+                  if (refNames.length === 0) return null;
+                  const known = new Set(envVarKeys);
+                  const missing = refNames.filter(n => !known.has(n));
+                  return (
+                    <div style={{
+                      background: 'var(--surface-2)', border: '1px solid var(--border)',
+                      borderRadius: 8, padding: '10px 12px', marginBottom: 14,
+                    }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', letterSpacing: '0.03em', textTransform: 'uppercase', marginBottom: 6 }}>
+                        Env vars referenced
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {refNames.map(name => {
+                          const found = known.has(name);
+                          const clickable = !found;
+                          return (
+                            <span key={name}
+                              onClick={clickable ? () => setEnvInline({ key: name, value: '', saving: false }) : undefined}
+                              title={clickable ? 'Click to add value' : 'Found in env vars'}
+                              style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 5,
+                                padding: '3px 8px', borderRadius: 5, fontSize: 12,
+                                fontFamily: 'var(--font-mono)',
+                                background: found ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+                                color: found ? '#22c55e' : '#f87171',
+                                border: `1px solid ${found ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`,
+                                cursor: clickable ? 'pointer' : 'default',
+                              }}>
+                              {found ? <Check size={11} /> : <X size={11} />}
+                              {name}
+                            </span>
+                          );
+                        })}
+                      </div>
+                      {envInline && missing.includes(envInline.key) && (
+                        <div style={{ marginTop: 10, display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--muted)', flexShrink: 0 }}>
+                            {envInline.key} =
+                          </span>
+                          <input autoFocus type="password"
+                            value={envInline.value}
+                            onChange={e => setEnvInline({ ...envInline, value: e.target.value })}
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveMissingEnvVar(); } }}
+                            placeholder="secret value"
+                            {...inputStyle('var(--font-mono)')} />
+                          <button type="button" onClick={saveMissingEnvVar}
+                            disabled={envInline.saving || !envInline.value}
+                            style={{
+                              background: 'var(--accent)', color: 'var(--accent-fg)',
+                              border: 'none', borderRadius: 6, padding: '6px 12px',
+                              fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                              fontFamily: 'var(--font-sans)', flexShrink: 0,
+                              opacity: (envInline.saving || !envInline.value) ? 0.5 : 1,
+                            }}>{envInline.saving ? 'Saving…' : 'Save'}</button>
+                          <button type="button" onClick={() => setEnvInline(null)}
+                            style={{
+                              background: 'transparent', color: 'var(--muted)',
+                              border: '1px solid var(--border)', borderRadius: 6,
+                              padding: '6px 10px', fontSize: 12, cursor: 'pointer',
+                              fontFamily: 'var(--font-sans)', flexShrink: 0,
+                            }}>Cancel</button>
+                        </div>
+                      )}
+                      {missing.length > 0 && !envInline && (
+                        <div style={{ marginTop: 8, fontSize: 12, color: 'var(--muted)' }}>
+                          Click a red chip to set its value.
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+                {/* Bare-shape paste: no `mcpServers` wrapper → prompt for a name rather than erroring at save. */}
+                {jsonParse && jsonParse.ok && jsonParse.name === null && (
+                  <FField label="Name *" required style={{ marginBottom: 14 }}
+                    hint="Your JSON has no `mcpServers` wrapper — give the server a name here.">
+                    <input value={form.name} onChange={e => f('name', e.target.value)}
+                      placeholder="redshift-mcp" required {...inputStyle()} />
+                  </FField>
+                )}
+                <FField label="Description" style={{ marginBottom: 14 }}>
+                  <input value={form.description} onChange={e => f('description', e.target.value)}
+                    placeholder="What does this MCP server provide?" {...inputStyle()} />
+                </FField>
+              </>
+            ) : (
+              <>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
               <FField label="Name *" required>
                 <input value={form.name} onChange={e => f('name', e.target.value)} placeholder="redshift-mcp"
@@ -565,9 +862,9 @@ export default function McpSettingsPage() {
                   <input value={form.command} onChange={e => f('command', e.target.value)}
                     placeholder="node" required {...inputStyle('var(--font-mono)')} />
                 </FField>
-                <FField label="Arguments" hint="Comma-separated" style={{ marginBottom: 14 }}>
+                <FField label="Arguments" hint="JSON array or comma-separated. JSON preserves commas inside args." style={{ marginBottom: 14 }}>
                   <input value={form.args} onChange={e => f('args', e.target.value)}
-                    placeholder="/path/to/server.js, --port, 3000" {...inputStyle('var(--font-mono)')} />
+                    placeholder='["-y", "@pkg/name"] or -y, @pkg/name' {...inputStyle('var(--font-mono)')} />
                 </FField>
                 <EnvEntriesEditor entries={form.envEntries} envVarKeys={envVarKeys}
                   onAdd={addEnvEntry} onRemove={removeEnvEntry} onUpdate={updateEnvEntry} />
@@ -601,6 +898,9 @@ export default function McpSettingsPage() {
               </>
             )}
 
+              </>
+            )}
+
             <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer', marginBottom: 20 }}>
               <input type="checkbox" checked={form.enabled} onChange={e => f('enabled', e.target.checked)}
                 style={{ accentColor: 'var(--accent)', width: 14, height: 14 }} />
@@ -609,12 +909,17 @@ export default function McpSettingsPage() {
               </span>
             </label>
 
+            {(() => {
+              const jsonInvalid = jsonMode && !(jsonParse && jsonParse.ok);
+              const bareWithoutName = !!(jsonMode && jsonParse && jsonParse.ok && jsonParse.name === null && !form.name.trim());
+              const submitDisabled = saving || jsonInvalid || bareWithoutName;
+              return (
             <div style={{ display: 'flex', gap: 10 }}>
-              <button type="submit" disabled={saving} style={{
-                background: saving ? 'var(--border)' : 'var(--accent)',
+              <button type="submit" disabled={submitDisabled} style={{
+                background: submitDisabled ? 'var(--border)' : 'var(--accent)',
                 color: 'var(--accent-fg)', border: 'none', borderRadius: 7,
                 padding: '9px 22px', fontSize: 13, fontWeight: 500,
-                cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-sans)',
+                cursor: submitDisabled ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-sans)',
                 transition: 'opacity 0.15s',
               }}>{saving ? 'Saving…' : editingId ? 'Update Server' : 'Add Server'}</button>
               <button type="button" onClick={resetForm} style={{
@@ -623,6 +928,8 @@ export default function McpSettingsPage() {
                 padding: '9px 22px', fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-sans)',
               }}>Cancel</button>
             </div>
+              );
+            })()}
           </form>
         </div>
       )}
@@ -908,6 +1215,17 @@ function EnvEntriesEditor({
         }}>+ Add</button>
       </div>
 
+      <p style={{
+        fontSize: 12, color: 'var(--muted)', margin: '0 0 8px',
+        padding: '7px 10px', borderRadius: 6,
+        background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.2)',
+        lineHeight: 1.5,
+      }}>
+        Use <code style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, background: 'rgba(99,102,241,0.12)', padding: '1px 5px', borderRadius: 3 }}>{'${env:MY_SECRET}'}</code> in your config to reference a secret from your{' '}
+        <a href="/settings/env-vars" style={{ color: 'var(--accent)', textDecoration: 'none' }}>env vars</a>.
+        {' '}Raw values here are injected directly into the subprocess — store API keys in env vars instead.
+      </p>
+
       {entries.length === 0 ? (
         <p style={{ fontSize: 12, color: 'var(--subtle)', margin: 0, fontStyle: 'italic' }}>
           No env vars — click + Add to inject variables into the subprocess.
@@ -1141,10 +1459,14 @@ function ServerRow({
           </span>
         ) : (
           <span style={{
+            width: 28, height: 28, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+          <span style={{
             fontSize: 10.5, fontFamily: 'var(--font-mono)', fontWeight: 500,
             background: 'var(--border)', color: 'var(--muted)',
-            padding: '2px 8px', borderRadius: 5, flexShrink: 0, letterSpacing: '0.02em',
+            padding: '2px 6px', borderRadius: 5, letterSpacing: '0.02em',
           }}>{isTs ? 'ts' : server.type}</span>
+          </span>
         )}
 
         {/* Info */}
@@ -1169,6 +1491,9 @@ function ServerRow({
             margin: '2px 0 0', fontSize: 11.5, color: 'var(--subtle)',
             fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           }}>{preview}</p>
+          <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--subtle)' }}>
+            Added by <span style={{ fontWeight: 500 }}>{server.createdBy}</span>
+          </p>
         </div>
 
         {/* Actions */}
@@ -1300,7 +1625,7 @@ function OAuthConnectSection({ template }: { template: any }) {
 }
 
 function FField({ label, hint, children, style: s, required: req }: {
-  label: string; hint?: string; children: React.ReactNode;
+  label: string; hint?: React.ReactNode; children: React.ReactNode;
   style?: React.CSSProperties; required?: boolean;
 }) {
   return (

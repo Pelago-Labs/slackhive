@@ -27,8 +27,13 @@ vi.mock('@/lib/api-guard', () => ({
   guardAgentWrite: vi.fn(),
 }));
 
+vi.mock('@/lib/knowledge-extract', () => ({
+  extractFileText: vi.fn(),
+}));
+
 import { getAgentById, getSetting, setSetting, deleteSetting } from '@/lib/db';
 import { guardAgentWrite } from '@/lib/api-guard';
+import { extractFileText } from '@/lib/knowledge-extract';
 
 const COOKIE_NAME = 'auth_session';
 const session: SessionPayload = { username: 'admin', role: 'admin' };
@@ -40,11 +45,71 @@ beforeEach(() => {
   vi.mocked(setSetting).mockReset().mockResolvedValue(undefined);
   vi.mocked(deleteSetting).mockReset().mockResolvedValue(undefined);
   vi.mocked(guardAgentWrite).mockReset().mockResolvedValue(null as any);
+  vi.mocked(extractFileText).mockReset();
 });
 
 async function loadRoute() {
   return await import('@/app/api/agents/[id]/coach/route');
 }
+
+describe('POST /api/agents/[id]/coach', () => {
+  it('returns 400 when userMessage is missing (JSON body)', async () => {
+    const { POST } = await loadRoute();
+    const res = await POST(
+      new Request('http://localhost', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      }) as any,
+      { params: Promise.resolve({ id: 'a1' }) },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 415 when multipart file type is unsupported', async () => {
+    vi.mocked(extractFileText).mockResolvedValue(null);
+    const { POST } = await loadRoute();
+    const form = new FormData();
+    form.append('userMessage', 'look at this');
+    form.append('file', new File(['binary'], 'data.zip', { type: 'application/zip' }));
+    const res = await POST(
+      new Request('http://localhost', { method: 'POST', body: form }) as any,
+      { params: Promise.resolve({ id: 'a1' }) },
+    );
+    expect(res.status).toBe(415);
+  });
+
+  it('returns 400 when multipart userMessage is missing', async () => {
+    const { POST } = await loadRoute();
+    const form = new FormData();
+    // no userMessage field
+    const res = await POST(
+      new Request('http://localhost', { method: 'POST', body: form }) as any,
+      { params: Promise.resolve({ id: 'a1' }) },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('extracts file text and forwards attachmentName to runner', async () => {
+    vi.mocked(extractFileText).mockResolvedValue('file content here');
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValueOnce(
+      new Response(new ReadableStream(), { status: 200, headers: { 'content-type': 'text/event-stream' } }),
+    );
+    const { POST } = await loadRoute();
+    const form = new FormData();
+    form.append('userMessage', 'review this');
+    form.append('file', new File(['file content here'], 'spec.txt', { type: 'text/plain' }));
+    await POST(
+      new Request('http://localhost', { method: 'POST', body: form }) as any,
+      { params: Promise.resolve({ id: 'a1' }) },
+    );
+    expect(fetchSpy).toHaveBeenCalled();
+    const runnerBody = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string);
+    expect(runnerBody.attachment).toBe('file content here');
+    expect(runnerBody.attachmentName).toBe('spec.txt');
+    fetchSpy.mockRestore();
+  });
+});
 
 describe('GET /api/agents/[id]/coach', () => {
   it('returns empty messages when no session is stored', async () => {

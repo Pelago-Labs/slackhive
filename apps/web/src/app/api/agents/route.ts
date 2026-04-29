@@ -17,6 +17,7 @@ import {
   upsertPermissions,
   publishAgentEvent,
   applyLiveStatus,
+  listAccessibleAgentIds,
 } from '@/lib/db';
 import type { CreateAgentRequest } from '@slackhive/shared';
 import { SKILL_TEMPLATES } from '@/lib/skill-templates';
@@ -33,10 +34,14 @@ export const dynamic = 'force-dynamic';
  *
  * @returns {Promise<NextResponse>} JSON array of Agent objects.
  */
-export async function GET(): Promise<NextResponse> {
+export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
+    const session = getSessionFromRequest(req);
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const agents = await getAllAgents();
-    return NextResponse.json(agents.map(a => toAgentPublic(applyLiveStatus(a))));
+    const accessibleIds = await listAccessibleAgentIds(session.username, session.role);
+    const visible = accessibleIds === null ? agents : agents.filter(a => accessibleIds.includes(a.id));
+    return NextResponse.json(visible.map(a => toAgentPublic(applyLiveStatus(a))));
   } catch (err) {
     return apiError('agents', err);
   }

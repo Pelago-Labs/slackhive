@@ -20,6 +20,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAgentById, getSetting, setSetting, deleteSetting } from '@/lib/db';
 import { guardAgentWrite } from '@/lib/api-guard';
+import { extractFileText } from '@/lib/knowledge-extract';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -52,10 +53,37 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
   const agent = await getAgentById(id);
   if (!agent) return NextResponse.json({ error: 'Agent not found' }, { status: 404 });
 
-  const body = await req.json().catch(() => null) as
-    | { userMessage?: string; attachment?: string; autoApply?: boolean; detached?: boolean }
-    | null;
-  const userMessage = (body?.userMessage ?? '').trim();
+  const contentType = req.headers.get('content-type') ?? '';
+  let userMessage = '';
+  let attachment: string | undefined;
+  let attachmentName: string | undefined;
+  let autoApply = false;
+  let detached = false;
+
+  if (contentType.startsWith('multipart/form-data')) {
+    const form = await req.formData().catch(() => null);
+    if (!form) return NextResponse.json({ error: 'invalid form data' }, { status: 400 });
+    userMessage = ((form.get('userMessage') as string) ?? '').trim();
+    const file = form.get('file') as File | null;
+    if (file) {
+      const buf = Buffer.from(await file.arrayBuffer());
+      const extracted = await extractFileText(buf, file.name, file.type);
+      if (extracted === null) {
+        return NextResponse.json({ error: 'Unsupported file type — upload a text file or PDF' }, { status: 415 });
+      }
+      attachment = extracted.slice(0, 20_000);
+      attachmentName = file.name;
+    }
+  } else {
+    const body = await req.json().catch(() => null) as
+      | { userMessage?: string; attachment?: string; autoApply?: boolean; detached?: boolean }
+      | null;
+    userMessage = (body?.userMessage ?? '').trim();
+    attachment = body?.attachment;
+    autoApply = !!body?.autoApply;
+    detached = !!body?.detached;
+  }
+
   if (!userMessage) {
     return NextResponse.json({ error: 'userMessage required' }, { status: 400 });
   }
@@ -83,8 +111,9 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
     body: JSON.stringify({
       agentId: id,
       userMessage: augmentedMessage,
-      attachment: body?.attachment,
-      autoApply: !!body?.autoApply,
+      attachment,
+      attachmentName,
+      autoApply,
     }),
   }).catch((err: unknown) => {
     console.error('[api:agents/[id]/coach] runner unreachable', err);
@@ -102,7 +131,7 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
   // Detached mode: the client has already navigated away (wizard bootstrap).
   // Drain the runner's SSE body in the background so the turn completes and
   // persists its result to the session, then return 202 to the caller.
-  if (body?.detached) {
+  if (detached) {
     (async () => {
       try {
         const reader = upstream.body!.getReader();
@@ -241,7 +270,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
   const raw = await getSetting(sessionKey(id));
   if (!raw) return NextResponse.json({ error: 'no session' }, { status: 404 });
   const session = JSON.parse(raw);
-  let hit: { kind: string; action?: string; category?: string; filename?: string; memoryName?: string; memoryType?: string } | null = null;
+  let hit: { kind: string; action?: string; category?: string; filename?: string; memoryName?: string; memoryType?: string; name?: string } | null = null;
   for (const msg of session.messages ?? []) {
     if (!Array.isArray(msg.proposals)) continue;
     for (const p of msg.proposals) {
@@ -252,6 +281,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
           category: p.category, filename: p.filename,
           memoryName: p.memoryName,
           memoryType: p.memoryType,
+          name: p.name,
         };
       }
     }
@@ -272,8 +302,8 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
     ? 'CLAUDE.md update'
     : hit.kind === 'memory'
       ? `memory ${hit.action} ${hit.memoryName}${hit.memoryType ? ` (${hit.memoryType})` : ''}`
-      : hit.kind === 'wiki-extract'
-        ? 'wiki extract'
+      : hit.kind === 'file-source'
+        ? `file source ${hit.action} ${hit.name ?? ''}`.trim()
         : `skill ${hit.action} ${hit.category}/${hit.filename}`;
   const prevNotesRaw = await getSetting(notesKey(id));
   let notes: string[] = [];

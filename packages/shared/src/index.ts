@@ -12,6 +12,7 @@ export type {
 } from './platform';
 export { initDb, getDb, closeDb, setDb } from './db/adapter';
 export type { DbAdapter, DbResult, DbRow } from './db/adapter';
+export { createSqliteAdapter } from './db/sqlite-adapter';
 export { encrypt, decrypt } from './db/crypto';
 export { getEventBus, setEventBus, closeEventBus } from './event-bus';
 export type { EventBus } from './event-bus';
@@ -19,3 +20,18 @@ export { MCP_TEMPLATES, MCP_CATEGORIES, getTemplateById, getTemplatesByCategory,
 export type { McpTemplate, McpEnvKey, McpCategory } from './mcp-templates';
 export { PERSONA_CATALOG, getPersonaById, getPersonasByCategory, searchPersonas } from './personas';
 export type { PersonaTemplate, PersonaSkillSeed, PersonaCategory } from './personas';
+export { deepLinkForTask, deepLinkLabelForPlatform } from './deep-link';
+export {
+  upsertTask, beginActivity, finishActivity,
+  beginToolCall, finishToolCall,
+  listTasks, getTaskWithDetails, countInProgressByAgent,
+  sweepStaleActivities,
+  recordActivityUsage, getTokensByAgent, getTopUsers,
+} from './db/activities-repo';
+export type {
+  BeginActivityInput, BeginToolCallInput, TaskListColumn, TaskListResult,
+  TaskWithDetails,
+  ActivityUsageInput, AgentTokenUsage, UserActivitySummary,
+} from './db/activities-repo';
+export { MODELS, DEFAULT_AGENT_MODEL, DEFAULT_COACH_MODEL, COACH_MODEL_SETTING_KEY } from './models';
+export type { ModelOption } from './models';

@@ -10,11 +10,11 @@
  */
 
 import React, { useEffect, useState, useRef, use, useMemo } from 'react';
-import { Brain, Camera, Clock, History, Upload, Download, Wand2, Loader2, Link2, FileText, GitBranch, BookOpen, ChevronRight, ChevronDown, ArrowLeft, Folder, FolderOpen, Library, X, Search, Code2, Database, Layers, Briefcase, Sparkles, MessageSquare } from 'lucide-react';
+import { Brain, Camera, Clock, History, Upload, Download, Wand2, Loader2, Link2, FileText, GitBranch, BookOpen, ChevronRight, ChevronDown, ArrowLeft, Folder, FolderOpen, Library, X, Search, Code2, Database, Layers, Briefcase, Sparkles, MessageSquare, Activity as ActivityIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { Agent, Skill, McpServer, Memory, Permission, Restriction, AgentSnapshot } from '@slackhive/shared';
-import { PERSONA_CATALOG, searchPersonas } from '@slackhive/shared';
+import { PERSONA_CATALOG, searchPersonas, MODELS } from '@slackhive/shared';
 import type { PersonaTemplate, PersonaCategory } from '@slackhive/shared';
 import { Portal } from '@/lib/portal';
 import { useAuth } from '@/lib/auth-context';
@@ -59,18 +59,20 @@ const STATUS_COLOR = {
  */
 export default function AgentPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
-  const { role, canManageUsers } = useAuth();
+  const { role, canManageUsers, username } = useAuth();
   // Arriving from the new-agent wizard (?coach=open) lands on Overview as
   // usual, but arms the Coach to auto-open the first time the user opens the
   // Instructions tab. We don't pop the panel on Overview — users deserve to
   // see their new agent before we shove a chat in their face.
   // useSearchParams is hydration-safe (returns the same value on server + client).
   const coachArmedFromWizard = useSearchParams().get('coach') === 'open';
+  const router = useRouter();
   const [coachOpen, setCoachOpen] = useState(false);
   const [pendingCoachOpen, setPendingCoachOpen] = useState(coachArmedFromWizard);
   const [agent, setAgent] = useState<Agent | null>(null);
   const [allAgents, setAllAgents] = useState<Agent[]>([]);
   const [canEdit, setCanEdit] = useState(false);
+  const [viewOnly, setViewOnly] = useState(false);
   const [tab, setTab] = useState<Tab>('overview');
   /** Full-main-window mode swap. `test` replaces the agent header + tabs +
    *  tab content with <TestPanel>. The global SlackHive sidebar (rendered by
@@ -99,6 +101,8 @@ export default function AgentPage({ params }: { params: Promise<{ slug: string }
   const [actionMsg, setActionMsg] = useState('');
 
   useEffect(() => {
+    setCanEdit(false);
+    setViewOnly(false);
     fetch('/api/agents')
       .then(r => r.json())
       .then((agents: Agent[]) => {
@@ -120,8 +124,13 @@ export default function AgentPage({ params }: { params: Promise<{ slug: string }
           fetch(`/api/agents/${found.id}/access`)
             .then(r => r.json())
             .then(data => {
-              const writable = role === 'editor' && (data.canWrite ?? false);
+              const canRead = data.canRead ?? false;
+              if (!canRead) { router.push('/agents'); return; }
+              const writable = data.canWrite ?? false;
               setCanEdit(writable);
+              const readOnly = !writable;
+              setViewOnly(readOnly);
+              if (readOnly) setTab(t => (t === 'logs' || t === 'history') ? 'overview' : t);
               if (writable) {
                 // Editors with write access can also see tokens
                 fetch(`/api/agents/${found.id}`)
@@ -253,7 +262,7 @@ export default function AgentPage({ params }: { params: Promise<{ slug: string }
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 16 }}>
           {actionMsg && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{actionMsg}</span>}
 
-          <button
+          {!viewOnly && <button
             onClick={() => setMode('test')}
             title="Test this agent — chat with it without connecting to Slack"
             style={{
@@ -271,7 +280,28 @@ export default function AgentPage({ params }: { params: Promise<{ slug: string }
           >
             <MessageSquare size={13} />
             Test
-          </button>
+          </button>}
+
+          <Link
+            href={`/activity?agent=${encodeURIComponent(agent.id)}`}
+            title={`View activity for ${agent.name}`}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '6px 12px',
+              background: 'var(--surface-2)',
+              border: '1px solid var(--border)',
+              color: 'var(--text)',
+              borderRadius: 6,
+              fontSize: 12.5,
+              fontWeight: 500,
+              cursor: 'pointer',
+              letterSpacing: 0.2,
+              textDecoration: 'none',
+            }}
+          >
+            <ActivityIcon size={13} />
+            Activity
+          </Link>
 
           <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 2px' }} />
 
@@ -294,7 +324,7 @@ export default function AgentPage({ params }: { params: Promise<{ slug: string }
         background: 'var(--surface)',
         overflowX: 'auto', WebkitOverflowScrolling: 'touch',
       }}>
-        {TABS.map(t => (
+        {TABS.filter(t => !viewOnly || (t.id !== 'logs' && t.id !== 'history')).map(t => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
@@ -317,7 +347,7 @@ export default function AgentPage({ params }: { params: Promise<{ slug: string }
       <div style={{ padding: '28px 36px' }}>
         {tab === 'overview'      && <OverviewTab      agent={agent} onUpdate={setAgent} canEdit={canEdit} allAgents={allAgents} role={role} onOpenCoach={() => setCoachOpen(true)} />}
         {tab === 'instructions'  && <InstructionsTab  agent={agent} canEdit={canEdit} onAgentUpdate={setAgent} onOpenCoach={() => setCoachOpen(true)} />}
-        {tab === 'tools'         && <ToolsTab          agentId={agent.id} canEdit={canEdit} />}
+        {tab === 'tools'         && <ToolsTab          agentId={agent.id} canEdit={canEdit} canManageMcps={canManageUsers} currentUsername={username} />}
         {tab === 'knowledge'     && <KnowledgeTab      agentId={agent.id} agentSlug={agent.slug} canEdit={canEdit} />}
         {/* Memory is now inside Instructions tab */}
         {tab === 'logs'        && <LogsTab        agentId={agent.id} slug={agent.slug} />}
@@ -452,7 +482,7 @@ function OverviewTab({ agent, onUpdate, canEdit, allAgents, role, onOpenCoach }:
           <Field label="Name" value={form.name} onChange={v => setForm(f => ({ ...f, name: v }))} readOnly={!canEdit}
             hint="Internal agent name." />
           <Field label="Model" value={form.model} onChange={v => setForm(f => ({ ...f, model: v }))}
-            hint="claude-opus-4-6 · claude-sonnet-4-6 · claude-haiku-4-5-20251001" readOnly={!canEdit} />
+            hint={MODELS.map(m => m.value).join(' · ')} readOnly={!canEdit} />
         </Grid2>
         <Field label="Description" value={form.description}
           onChange={v => setForm(f => ({ ...f, description: v }))}
@@ -951,9 +981,9 @@ function InstructionsTab({ agent, canEdit, onAgentUpdate, onOpenCoach }: { agent
             {importError && <span style={{ fontSize: 11, color: 'var(--danger)', marginLeft: 8, fontWeight: 400, textTransform: 'none' }}>{importError}</span>}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <IconBtn title="Export instructions as JSON" onClick={handleExport} loading={exporting}>
+            {canEdit && <IconBtn title="Export instructions as JSON" onClick={handleExport} loading={exporting}>
               <Download size={14} />
-            </IconBtn>
+            </IconBtn>}
             {canEdit && (
               <IconBtn title="Import persona" onClick={() => setPersonaLibOpen(true)}>
                 <Upload size={14} />
@@ -1353,7 +1383,7 @@ function SkillsTab({ agentId, canEdit, agentName, agentPersona, agentDescription
 
 // ─── MCPs ─────────────────────────────────────────────────────────────────────
 
-function ToolsTab({ agentId, canEdit }: { agentId: string; canEdit: boolean }) {
+function ToolsTab({ agentId, canEdit, canManageMcps, currentUsername }: { agentId: string; canEdit: boolean; canManageMcps: boolean; currentUsername: string }) {
   return (
     <div className="fade-up">
       {/* Section 1: Connected Apps (MCPs) */}
@@ -1361,7 +1391,7 @@ function ToolsTab({ agentId, canEdit }: { agentId: string; canEdit: boolean }) {
         <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 14 }}>
           Connected Apps
         </div>
-        <McpsSection agentId={agentId} canEdit={canEdit} />
+        <McpsSection agentId={agentId} canEdit={canEdit} canManageMcps={canManageMcps} currentUsername={currentUsername} />
       </div>
 
       {/* Section 2: Capabilities */}
@@ -1375,7 +1405,7 @@ function ToolsTab({ agentId, canEdit }: { agentId: string; canEdit: boolean }) {
   );
 }
 
-function McpsSection({ agentId, canEdit }: { agentId: string; canEdit: boolean }) {
+function McpsSection({ agentId, canEdit, canManageMcps, currentUsername }: { agentId: string; canEdit: boolean; canManageMcps: boolean; currentUsername: string }) {
   const [all, setAll]         = useState<McpServer[]>([]);
   const [assigned, setAssigned] = useState<Set<string>>(new Set());
   const [saving, setSaving]   = useState(false);
@@ -1414,40 +1444,49 @@ function McpsSection({ agentId, canEdit }: { agentId: string; canEdit: boolean }
             No MCP servers yet.{' '}
             <Link href="/settings/mcps" style={{ color: 'var(--accent)', textDecoration: 'none' }}>Add some →</Link>
           </div>
-        ) : all.map((mcp, i) => (
-          <label
-            key={mcp.id}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 12,
-              padding: '13px 16px', cursor: mcp.enabled ? 'pointer' : 'not-allowed',
-              borderBottom: i < all.length - 1 ? '1px solid var(--border)' : 'none',
-              background: 'transparent', transition: 'background 0.12s',
-              opacity: mcp.enabled ? 1 : 0.45,
-            }}
-            onMouseEnter={e => { if (mcp.enabled) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.03)'; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-          >
-            <input
-              type="checkbox"
-              checked={assigned.has(mcp.id)}
-              onChange={() => toggle(mcp.id)}
-              disabled={!mcp.enabled || !canEdit}
-              style={{ accentColor: 'var(--accent)', width: 14, height: 14, flexShrink: 0 }}
-            />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{mcp.name}</span>
-                <span style={{
-                  fontSize: 10.5, fontFamily: 'var(--font-mono)',
-                  color: 'var(--muted)', background: 'var(--border)',
-                  padding: '1px 6px', borderRadius: 4,
-                }}>{mcp.type}</span>
-                {!mcp.enabled && <span style={{ fontSize: 11, color: 'var(--subtle)' }}>disabled</span>}
+        ) : all.map((mcp, i) => {
+          const canAssign = canManageMcps || mcp.createdBy === currentUsername;
+          const isDisabled = !mcp.enabled || !canEdit || !canAssign;
+          return (
+            <label
+              key={mcp.id}
+              style={{
+                display: 'flex', alignItems: 'flex-start', gap: 12,
+                padding: '13px 16px', cursor: isDisabled ? 'not-allowed' : 'pointer',
+                borderBottom: i < all.length - 1 ? '1px solid var(--border)' : 'none',
+                background: 'transparent', transition: 'background 0.12s',
+                opacity: mcp.enabled ? 1 : 0.45,
+              }}
+              onMouseEnter={e => { if (!isDisabled) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.03)'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+            >
+              <input
+                type="checkbox"
+                checked={assigned.has(mcp.id)}
+                onChange={() => toggle(mcp.id)}
+                disabled={isDisabled}
+                style={{ accentColor: 'var(--accent)', width: 14, height: 14, flexShrink: 0, marginTop: 2 }}
+              />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{mcp.name}</span>
+                  <span style={{
+                    fontSize: 10.5, fontFamily: 'var(--font-mono)',
+                    color: 'var(--muted)', background: 'var(--border)',
+                    padding: '1px 6px', borderRadius: 4,
+                  }}>{mcp.type}</span>
+                  {!mcp.enabled && <span style={{ fontSize: 11, color: 'var(--subtle)' }}>disabled</span>}
+                </div>
+                {mcp.description && <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)', marginTop: 1 }}>{mcp.description}</p>}
+                {!canAssign && (
+                  <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--subtle)' }}>
+                    Only the MCP owner or an admin can assign this
+                  </p>
+                )}
               </div>
-              {mcp.description && <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)', marginTop: 1 }}>{mcp.description}</p>}
-            </div>
-          </label>
-        ))}
+            </label>
+          );
+        })}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         {canEdit && <PrimaryBtn onClick={save} loading={saving}>Save Assignments</PrimaryBtn>}
@@ -1800,6 +1839,7 @@ function KnowledgeTab({ agentId, agentSlug, canEdit }: { agentId: string; agentS
   const [addBranch, setAddBranch] = useState('main');
   const [addPat, setAddPat] = useState('');
   const [addContent, setAddContent] = useState('');
+  const [addFile, setAddFile] = useState<File | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [envVarKeys, setEnvVarKeys] = useState<string[]>([]);
@@ -1873,30 +1913,51 @@ function KnowledgeTab({ agentId, agentSlug, canEdit }: { agentId: string; agentS
 
   const addSource = async () => {
     setSaving(true);
-    const body: any = { name: addName };
-    if (addType === 'url') body.url = addUrl;
-    if (addType === 'file') body.content = addContent;
-    if (addType === 'repo') {
-      body.repoUrl = addUrl;
-      body.branch = addBranch;
-      body.patEnvRef = addPat || null;
-    }
-    if (editingMetaId) {
-      // Edit existing source — PATCH with mutable fields only (type doesn't change)
-      await fetch(`/api/agents/${agentId}/knowledge/${editingMetaId}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-      });
-    } else {
-      // Create new source
-      body.type = addType;
-      await fetch(`/api/agents/${agentId}/knowledge`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-      });
+    setUploadError('');
+    try {
+      let res: Response;
+      // File sources with a picked File: multipart upload so the server can
+      // extract PDF/text content rather than trusting browser-side readAsText.
+      if (!editingMetaId && addType === 'file' && addFile) {
+        const fd = new FormData();
+        fd.append('name', addName);
+        fd.append('file', addFile);
+        res = await fetch(`/api/agents/${agentId}/knowledge`, { method: 'POST', body: fd });
+      } else {
+        const body: any = { name: addName };
+        if (addType === 'url') body.url = addUrl;
+        if (addType === 'file') body.content = addContent;
+        if (addType === 'repo') {
+          body.repoUrl = addUrl;
+          body.branch = addBranch;
+          body.patEnvRef = addPat || null;
+        }
+        if (editingMetaId) {
+          res = await fetch(`/api/agents/${agentId}/knowledge/${editingMetaId}`, {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+          });
+        } else {
+          body.type = addType;
+          res = await fetch(`/api/agents/${agentId}/knowledge`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+          });
+        }
+      }
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setUploadError(d.error ?? `Add failed (HTTP ${res.status})`);
+        setSaving(false);
+        return;
+      }
+    } catch (err) {
+      setUploadError(`Add failed — ${(err as Error).message}`);
+      setSaving(false);
+      return;
     }
     setSaving(false);
     setShowAdd(false);
     setEditingMetaId(null);
-    setAddName(''); setAddUrl(''); setAddContent(''); setAddBranch('main'); setAddPat('');
+    setAddName(''); setAddUrl(''); setAddContent(''); setAddBranch('main'); setAddPat(''); setAddFile(null);
     load();
   };
 
@@ -1908,6 +1969,7 @@ function KnowledgeTab({ agentId, agentSlug, canEdit }: { agentId: string; agentS
     setAddContent(src.content ?? '');
     setAddBranch(src.branch ?? 'main');
     setAddPat(src.patEnvRef ?? '');
+    setAddFile(null);
     setShowAdd(true);
     // Populate the PAT dropdown — otherwise the "Auth" field has no env vars to choose from.
     fetch('/api/env-vars').then(r => r.json()).then((vars: any[]) => setEnvVarKeys(vars.map(v => v.key))).catch(() => {});
@@ -2067,55 +2129,54 @@ function KnowledgeTab({ agentId, agentSlug, canEdit }: { agentId: string; agentS
             {addType === 'file' && (
               <>
                 <div style={{
-                  border: '2px dashed var(--border)', borderRadius: 8, padding: '20px 16px',
-                  textAlign: 'center', cursor: 'pointer', background: 'var(--surface-2)',
-                  transition: 'border-color 0.15s',
+                  border: `2px dashed ${addFile ? 'var(--accent)' : 'var(--border)'}`,
+                  borderRadius: 8, padding: '20px 16px',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                  cursor: 'pointer', background: addFile ? 'var(--surface)' : 'var(--surface-2)',
+                  transition: 'border-color 0.15s, background 0.15s',
                 }} onClick={() => document.getElementById('knowledge-file-input')?.click()}
                    onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--accent)'; }}
-                   onDragLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; }}
+                   onDragLeave={e => { e.currentTarget.style.borderColor = addFile ? 'var(--accent)' : 'var(--border)'; }}
                    onDrop={e => {
                      e.preventDefault();
-                     e.currentTarget.style.borderColor = 'var(--border)';
+                     e.currentTarget.style.borderColor = 'var(--accent)';
                      const file = e.dataTransfer.files[0];
                      if (file) {
-                       const reader = new FileReader();
-                       reader.onload = () => {
-                         setAddContent(reader.result as string);
-                         if (!addName) setAddName(file.name.replace(/\.[^.]+$/, ''));
-                       };
-                       reader.readAsText(file);
+                       setAddFile(file);
+                       setAddContent('');
+                       if (!addName) setAddName(file.name.replace(/\.[^.]+$/, ''));
                      }
                    }}>
-                  <Upload size={20} style={{ color: 'var(--muted)', marginBottom: 6 }} />
-                  <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)' }}>
-                    {addContent ? 'File loaded — click to replace' : 'Click to upload or drag and drop'}
+                  {addFile ? (
+                    <FileText size={20} style={{ color: 'var(--accent)' }} />
+                  ) : (
+                    <Upload size={20} style={{ color: 'var(--muted)' }} />
+                  )}
+                  <p style={{ margin: 0, fontSize: 12, fontWeight: addFile ? 600 : 400, color: addFile ? 'var(--text)' : 'var(--muted)' }}>
+                    {addFile ? addFile.name : 'Click to upload or drag and drop'}
                   </p>
-                  <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--subtle)' }}>
-                    .txt, .md, .csv, .json, .pdf (text only)
+                  <p style={{ margin: 0, fontSize: 11, color: 'var(--subtle)' }}>
+                    {addFile ? `${(addFile.size / 1024).toFixed(1)} KB — ready to upload. Click to replace.` : '.txt, .md, .csv, .json, .yaml, .xml, .html, .rst, .pdf'}
                   </p>
                   <input id="knowledge-file-input" type="file" accept=".txt,.md,.csv,.json,.pdf,.rst,.yaml,.yml,.xml,.html"
                     style={{ display: 'none' }} onChange={e => {
                       const file = e.target.files?.[0];
                       if (file) {
-                        const reader = new FileReader();
-                        reader.onload = () => {
-                          setAddContent(reader.result as string);
-                          if (!addName) setAddName(file.name.replace(/\.[^.]+$/, ''));
-                        };
-                        reader.readAsText(file);
+                        setAddFile(file);
+                        setAddContent('');
+                        if (!addName) setAddName(file.name.replace(/\.[^.]+$/, ''));
                       }
                     }} />
                 </div>
-                {addContent && (
-                  <div style={{ fontSize: 11, color: 'var(--subtle)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span>{addContent.split(/\s+/).length.toLocaleString()} words loaded</span>
-                    <button onClick={() => setAddContent('')} style={{
+                {addFile && (
+                  <div style={{ fontSize: 11, color: 'var(--subtle)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                    <button onClick={() => setAddFile(null)} style={{
                       background: 'none', border: 'none', color: 'var(--red)', fontSize: 11,
                       cursor: 'pointer', fontFamily: 'var(--font-sans)', opacity: 0.7,
                     }}>Clear</button>
                   </div>
                 )}
-                <textarea value={addContent} onChange={e => setAddContent(e.target.value)} placeholder="Or paste content here..."
+                <textarea value={addContent} onChange={e => { setAddContent(e.target.value); if (e.target.value) setAddFile(null); }} placeholder="Or paste content here..."
                   rows={addContent ? 8 : 4} style={{ padding: '8px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface-2)', fontSize: 12, color: 'var(--text)', fontFamily: 'var(--font-mono)', resize: 'vertical', lineHeight: 1.5 }} />
               </>
             )}
@@ -2137,14 +2198,21 @@ function KnowledgeTab({ agentId, agentSlug, canEdit }: { agentId: string; agentS
           </div>
 
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-            <button onClick={addSource} disabled={saving || !addName} style={{
+            <button onClick={addSource} disabled={saving || !addName || (addType === 'file' && !editingMetaId && !addFile && !addContent.trim())} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
               background: 'var(--accent)', color: 'var(--accent-fg)', border: 'none', borderRadius: 7,
-              padding: '7px 16px', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'var(--font-sans)',
-            }}>{saving ? (editingMetaId ? 'Saving...' : 'Adding...') : (editingMetaId ? 'Save Changes' : 'Add Source')}</button>
+              padding: '7px 16px', fontSize: 12, fontWeight: 500, cursor: saving ? 'wait' : 'pointer', fontFamily: 'var(--font-sans)',
+              opacity: saving ? 0.8 : 1,
+            }}>
+              {saving && <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />}
+              {saving
+                ? (editingMetaId ? 'Saving...' : (addType === 'file' && addFile ? 'Uploading & extracting...' : 'Adding...'))
+                : (editingMetaId ? 'Save Changes' : 'Add Source')}
+            </button>
             <button onClick={() => {
               setShowAdd(false);
               setEditingMetaId(null);
-              setAddName(''); setAddUrl(''); setAddContent(''); setAddBranch('main'); setAddPat('');
+              setAddName(''); setAddUrl(''); setAddContent(''); setAddBranch('main'); setAddPat(''); setAddFile(null);
             }} style={{
               background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 7,
               padding: '7px 16px', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-sans)', color: 'var(--text)',
@@ -2251,7 +2319,7 @@ function KnowledgeTab({ agentId, agentSlug, canEdit }: { agentId: string; agentS
                   Built {new Date(wikiData.lastBuilt).toLocaleDateString()} {new Date(wikiData.lastBuilt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
               )}
-              <button
+              {canEdit && <button
                 onClick={async () => {
                   setDownloading(true);
                   try {
@@ -2275,7 +2343,7 @@ function KnowledgeTab({ agentId, agentSlug, canEdit }: { agentId: string; agentS
                 }}
               >
                 {downloading ? <><Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> Downloading...</> : <><Download size={13} /> Download</>}
-              </button>
+              </button>}
               {canEdit && (
                 <>
                   <button

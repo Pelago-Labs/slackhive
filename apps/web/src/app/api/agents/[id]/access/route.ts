@@ -10,7 +10,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { guardAdmin } from '@/lib/api-guard';
-import { getAgentWriteUsers, grantAgentWrite, revokeAgentWrite, getAllUsers, userCanWriteAgent } from '@/lib/db';
+import { getAgentWriteUsers, grantAgentWrite, revokeAgentWrite, getAllUsers, userCanWriteAgent, userCanReadAgent } from '@/lib/db';
 import { getSessionFromRequest } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -36,9 +36,12 @@ export async function GET(
     return NextResponse.json({ writeUsers, allUsers: allUsers.map(u => ({ id: u.id, username: u.username, role: u.role })) });
   }
 
-  // For editors/viewers — just return their own write permission
-  const canWrite = await userCanWriteAgent(id, session.username, session.role);
-  return NextResponse.json({ canWrite });
+  // For editors/viewers — return both read and write permission
+  const [canRead, canWrite] = await Promise.all([
+    userCanReadAgent(id, session.username, session.role),
+    userCanWriteAgent(id, session.username, session.role),
+  ]);
+  return NextResponse.json({ canRead, canWrite });
 }
 
 /**

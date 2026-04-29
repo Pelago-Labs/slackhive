@@ -12,12 +12,13 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { KeyRound } from 'lucide-react';
 
-interface EnvVarRow { key: string; description?: string; updatedAt: string; }
+interface EnvVarRow { key: string; description?: string; createdBy: string; updatedAt: string; }
 
 export default function EnvVarsPage() {
-  const { canEdit } = useAuth();
+  const { canEdit, canManageUsers, username } = useAuth();
   const [vars, setVars]         = useState<EnvVarRow[]>([]);
   const [loading, setLoading]   = useState(true);
+  const [search, setSearch]     = useState('');
   const [showForm, setShowForm] = useState(false);
   const [form, setForm]         = useState({ key: '', value: '', description: '' });
   const [editKey, setEditKey]   = useState<string | null>(null);
@@ -63,6 +64,8 @@ export default function EnvVarsPage() {
     setForm({ key: v.key, value: '', description: v.description ?? '' });
     setShowForm(true);
   };
+
+  const canModify = (v: EnvVarRow) => canManageUsers || v.createdBy === username;
 
   const inputSt: React.CSSProperties = {
     width: '100%', background: 'var(--surface-2)', border: '1px solid var(--border)',
@@ -174,6 +177,22 @@ export default function EnvVarsPage() {
         </div>
       )}
 
+      {/* Search */}
+      {vars.length > 0 && (
+        <input
+          type="text"
+          placeholder="Search env vars…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{
+            width: '100%', boxSizing: 'border-box', marginBottom: 12,
+            padding: '8px 12px', fontSize: 13, borderRadius: 8,
+            border: '1px solid var(--border)', background: 'var(--surface-2)',
+            color: 'var(--text)', outline: 'none', fontFamily: 'var(--font-sans)',
+          }}
+        />
+      )}
+
       {/* List */}
       {loading ? (
         <div style={{ color: 'var(--muted)', fontSize: 13 }}>Loading…</div>
@@ -196,10 +215,10 @@ export default function EnvVarsPage() {
         </div>
       ) : (
         <div style={{ border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
-          {vars.map((v, i) => (
+          {vars.filter(v => !search || v.key.toLowerCase().includes(search.toLowerCase()) || (v.description ?? '').toLowerCase().includes(search.toLowerCase())).map((v, i, arr) => (
             <div key={v.key} style={{
               display: 'flex', alignItems: 'center', gap: 14, padding: '13px 16px',
-              borderBottom: i < vars.length - 1 ? '1px solid var(--border)' : 'none',
+              borderBottom: i < arr.length - 1 ? '1px solid var(--border)' : 'none',
               transition: 'background 0.12s',
             }}
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.02)'}
@@ -210,10 +229,11 @@ export default function EnvVarsPage() {
                 {v.description ?? 'No description'}
               </span>
               <span style={{ fontSize: 11, color: 'var(--subtle)', flexShrink: 0 }}>
-                {new Date(v.updatedAt).toLocaleDateString()}
+                Added by <span style={{ fontWeight: 500 }}>{v.createdBy}</span>
+                <span style={{ marginLeft: 6 }}>· {new Date(v.updatedAt).toLocaleDateString()}</span>
               </span>
-              {canEdit && <button onClick={() => startEdit(v)} style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-sans)', padding: '3px 8px', borderRadius: 5 }}>Edit</button>}
-              {canEdit && <button onClick={() => remove(v.key)} style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-sans)', padding: '3px 8px', borderRadius: 5 }}>Delete</button>}
+              {canModify(v) && <button onClick={() => startEdit(v)} style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-sans)', padding: '3px 8px', borderRadius: 5 }}>Edit</button>}
+              {canModify(v) && <button onClick={() => remove(v.key)} style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-sans)', padding: '3px 8px', borderRadius: 5 }}>Delete</button>}
             </div>
           ))}
         </div>

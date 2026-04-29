@@ -30,7 +30,7 @@ import type {
   SnapshotTrigger,
   Restriction,
 } from '@slackhive/shared';
-import { getDb, initDb, encrypt, decrypt } from '@slackhive/shared';
+import { getDb, initDb, encrypt, decrypt, DEFAULT_AGENT_MODEL } from '@slackhive/shared';
 import { getEncryptionKey } from './secrets';
 import type { DbAdapter } from '@slackhive/shared';
 
@@ -180,6 +180,7 @@ function rowToMcpServer(row: Record<string, unknown>): McpServer {
     config: row.config as McpServer['config'],
     description: row.description as string | undefined,
     enabled: row.enabled as boolean,
+    createdBy: (row.created_by as string | undefined) ?? 'admin',
     createdAt: row.created_at as Date,
   };
 }
@@ -312,7 +313,7 @@ export async function createAgent(req: CreateAgentRequest, createdBy = 'system')
      RETURNING *`,
     [
       id, req.slug, req.name, req.persona ?? null, req.description ?? null,
-      req.model ?? 'claude-opus-4-6', req.isBoss ?? false, req.reportsTo ?? [],
+      req.model ?? DEFAULT_AGENT_MODEL, req.isBoss ?? false, req.reportsTo ?? [],
       createdBy,
     ]
   );
@@ -526,12 +527,12 @@ export async function getAgentMcpServers(agentId: string): Promise<McpServer[]> 
  * @param {UpsertMcpServerRequest} req - MCP server data.
  * @returns {Promise<McpServer>} The created MCP server.
  */
-export async function createMcpServer(req: UpsertMcpServerRequest): Promise<McpServer> {
+export async function createMcpServer(req: UpsertMcpServerRequest, createdBy = 'admin'): Promise<McpServer> {
   const id = randomUUID();
   const r = await (await db()).query(
-    `INSERT INTO mcp_servers (id, name, type, config, description, enabled)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-    [id, req.name, req.type, JSON.stringify(req.config), req.description ?? null, req.enabled ?? true]
+    `INSERT INTO mcp_servers (id, name, type, config, description, enabled, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+    [id, req.name, req.type, JSON.stringify(req.config), req.description ?? null, req.enabled ?? true, createdBy]
   );
   return rowToMcpServer(r.rows[0]);
 }
@@ -937,44 +938,64 @@ export async function updateUserPassword(id: string, passwordHash: string): Prom
 // =============================================================================
 
 /**
- * Returns the list of user IDs that have explicit write access to an agent.
+ * Returns all users with access to an agent — both explicit grants and the creator.
+ * isOwner=true means access comes from created_by (not a grant row).
  */
-export async function getAgentWriteUsers(agentId: string): Promise<{ userId: string; username: string }[]> {
+export async function getAgentWriteUsers(agentId: string): Promise<{ userId: string; username: string; canWrite: boolean; isOwner: boolean }[]> {
   const r = await (await db()).query(
-    `SELECT aa.user_id, u.username
+    `SELECT aa.user_id, u.username, aa.can_write,
+            CASE WHEN a.created_by = u.username THEN 1 ELSE 0 END as is_owner
      FROM agent_access aa
      JOIN users u ON u.id = aa.user_id
+     JOIN agents a ON a.id = aa.agent_id
      WHERE aa.agent_id = $1
-     ORDER BY u.username`,
+     UNION
+     SELECT u.id as user_id, u.username, 1 as can_write, 1 as is_owner
+     FROM agents a
+     JOIN users u ON u.username = a.created_by
+     WHERE a.id = $1
+       AND NOT EXISTS (SELECT 1 FROM agent_access aa2 WHERE aa2.agent_id = $1 AND aa2.user_id = u.id)
+     ORDER BY username`,
     [agentId]
   );
-  return r.rows.map(row => ({ userId: row.user_id as string, username: row.username as string }));
+  return r.rows.map(row => ({
+    userId: row.user_id as string,
+    username: row.username as string,
+    canWrite: row.can_write === 1 || row.can_write === true,
+    isOwner: row.is_owner === 1 || row.is_owner === true,
+  }));
 }
 
 /**
- * Grants write access to a user for an agent.
+ * Grants access to a user for an agent. canWrite=true = edit, canWrite=false = view only.
+ * Upserts so calling again with a different canWrite updates the existing grant.
  */
-export async function grantAgentWrite(agentId: string, userId: string): Promise<void> {
+export async function grantAgentAccess(agentId: string, userId: string, canWrite: boolean): Promise<void> {
   await (await db()).query(
-    'INSERT INTO agent_access (agent_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',
-    [agentId, userId]
+    `INSERT INTO agent_access (agent_id, user_id, can_write) VALUES ($1, $2, $3)
+     ON CONFLICT (agent_id, user_id) DO UPDATE SET can_write = $3`,
+    [agentId, userId, canWrite ? 1 : 0]
   );
 }
 
+/** @deprecated use grantAgentAccess */
+export async function grantAgentWrite(agentId: string, userId: string): Promise<void> {
+  return grantAgentAccess(agentId, userId, true);
+}
+
 /**
- * Revokes write access from a user for an agent.
+ * Revokes all access (read and write) from a user for an agent.
  */
 export async function revokeAgentWrite(agentId: string, userId: string): Promise<void> {
   await (await db()).query('DELETE FROM agent_access WHERE agent_id = $1 AND user_id = $2', [agentId, userId]);
 }
 
 /**
- * Returns true if a user has write access to an agent.
- * Write access = admin/superadmin role, OR own created agent, OR explicit grant.
+ * Returns true if a user can read (see) an agent.
+ * Admins/superadmins always can. Others need to be the creator or have any access grant.
  */
-export async function userCanWriteAgent(agentId: string, username: string, role: string): Promise<boolean> {
+export async function userCanReadAgent(agentId: string, username: string, role: string): Promise<boolean> {
   if (role === 'admin' || role === 'superadmin') return true;
-  // Check if creator or explicitly granted
   const r = await (await db()).query(
     `SELECT 1 FROM agents WHERE id = $1 AND created_by = $2
      UNION
@@ -984,6 +1005,45 @@ export async function userCanWriteAgent(agentId: string, username: string, role:
     [agentId, username]
   );
   return r.rows.length > 0;
+}
+
+/**
+ * Returns true if a user has write access to an agent.
+ * Write access = admin/superadmin role, OR own created agent, OR explicit grant with can_write=1.
+ */
+export async function userCanWriteAgent(agentId: string, username: string, role: string): Promise<boolean> {
+  if (role === 'admin' || role === 'superadmin') return true;
+  const r = await (await db()).query(
+    `SELECT 1 FROM agents WHERE id = $1 AND created_by = $2
+     UNION
+     SELECT 1 FROM agent_access aa JOIN users u ON u.id = aa.user_id
+       WHERE aa.agent_id = $1 AND u.username = $2 AND aa.can_write = 1
+     LIMIT 1`,
+    [agentId, username]
+  );
+  return r.rows.length > 0;
+}
+
+/**
+ * Returns the full list of agent IDs the user can access. Admins and
+ * superadmins return `null` to signal "no restriction" — this lets callers
+ * distinguish "see all" from "sees nothing". Editors/viewers get the union
+ * of agents they created and agents granted via `agent_access`.
+ */
+export async function listAccessibleAgentIds(
+  username: string,
+  role: string,
+): Promise<string[] | null> {
+  if (role === 'admin' || role === 'superadmin') return null;
+  const r = await (await db()).query(
+    `SELECT id FROM agents WHERE created_by = $1
+     UNION
+     SELECT aa.agent_id FROM agent_access aa
+       JOIN users u ON u.id = aa.user_id
+      WHERE u.username = $1`,
+    [username],
+  );
+  return r.rows.map(row => row.id as string);
 }
 
 // =============================================================================
@@ -1301,13 +1361,20 @@ export async function getEnvVarValues(): Promise<Record<string, string>> {
  *
  * @returns {Promise<Array<{ key: string; description?: string; updatedAt: Date }>>}
  */
-export async function getAllEnvVars(): Promise<Array<{ key: string; description?: string; updatedAt: Date }>> {
-  const r = await (await db()).query('SELECT key, description, updated_at FROM env_vars ORDER BY key');
+export async function getAllEnvVars(): Promise<Array<{ key: string; description?: string; createdBy: string; updatedAt: Date }>> {
+  const r = await (await db()).query('SELECT key, description, created_by, updated_at FROM env_vars ORDER BY key');
   return r.rows.map(row => ({
     key: row.key as string,
     description: (row.description as string | null) ?? undefined,
+    createdBy: (row.created_by as string | undefined) ?? 'admin',
     updatedAt: row.updated_at as Date,
   }));
+}
+
+export async function getEnvVarCreatedBy(key: string): Promise<string | null> {
+  const r = await (await db()).query('SELECT created_by FROM env_vars WHERE key = $1', [key]);
+  if (!r.rows.length) return null;
+  return (r.rows[0].created_by as string | undefined) ?? 'admin';
 }
 
 /**
@@ -1320,17 +1387,17 @@ export async function getAllEnvVars(): Promise<Array<{ key: string; description?
  * @param {string} [description] - Optional human-readable description.
  * @returns {Promise<void>}
  */
-export async function setEnvVar(key: string, value: string, description?: string): Promise<void> {
+export async function setEnvVar(key: string, value: string, description?: string, createdBy = 'admin'): Promise<void> {
   const encKey = getEncryptionKey();
   const encrypted = encrypt(value, encKey);
   await (await db()).query(
-    `INSERT INTO env_vars (key, value, description)
-     VALUES ($1, $2, $3)
+    `INSERT INTO env_vars (key, value, description, created_by)
+     VALUES ($1, $2, $3, $4)
      ON CONFLICT (key) DO UPDATE SET
        value = $2,
        description = COALESCE($3, env_vars.description),
        updated_at = now()`,
-    [key, encrypted, description ?? null],
+    [key, encrypted, description ?? null, createdBy],
   );
 }
 
