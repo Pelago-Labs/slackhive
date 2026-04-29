@@ -15,20 +15,24 @@
 import type { Agent } from '@slackhive/shared';
 
 /**
- * Returns a copy of the agent with Slack secret fields removed and a
- * `hasSlackCreds` presence flag set. `slackBotUserId` is preserved — it is a
+ * Returns a copy of the agent with Slack and WhatsApp secret fields removed
+ * and boolean presence flags set. `slackBotUserId` is preserved — it is a
  * public Slack identifier used for `<@Uxxx>` mentions, not a secret.
  */
 export function toAgentPublic(agent: Agent): Agent {
   const hasSlackCreds = Boolean(
     agent.slackBotToken && agent.slackAppToken && agent.slackSigningSecret
   );
+  const hasWhatsappCreds = Boolean(
+    agent.whatsappPhoneNumberId && agent.whatsappAccessToken
+  );
   const {
     slackBotToken: _botToken,
     slackAppToken: _appToken,
     slackSigningSecret: _signingSecret,
+    whatsappAccessToken: _waToken,
     ...rest
   } = agent;
-  void _botToken; void _appToken; void _signingSecret;
-  return { ...rest, hasSlackCreds };
+  void _botToken; void _appToken; void _signingSecret; void _waToken;
+  return { ...rest, hasSlackCreds, hasWhatsappCreds };
 }
