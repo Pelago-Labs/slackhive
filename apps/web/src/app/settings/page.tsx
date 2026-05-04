@@ -202,6 +202,15 @@ function UsersTab() {
   const [resetting, setResetting] = useState(false);
   const [resetSuccess, setResetSuccess] = useState(false);
 
+  // Slack import
+  const [importToken, setImportToken] = useState('');
+  const [importSaving, setImportSaving] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importModal, setImportModal] = useState(false);
+  const [slackMembers, setSlackMembers] = useState<Array<{ id: string; name: string; email: string }>>([]);
+  const [importError, setImportError] = useState('');
+  const [onboarding, setOnboarding] = useState(false);
+
   const load = () => {
     setLoading(true);
     Promise.all([
@@ -210,6 +219,48 @@ function UsersTab() {
     ]).then(([u, a]) => { setUsers(u); setAgents(a); }).catch(() => {}).finally(() => setLoading(false));
   };
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    fetch('/api/settings').then(r => r.json()).then((s: Record<string, string>) => {
+      if (s.slack_import_bot_token) setImportToken(s.slack_import_bot_token);
+    }).catch(() => {});
+  }, []);
+
+  const saveImportToken = async () => {
+    if (!importToken.trim()) return;
+    setImportSaving(true);
+    await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'slack_import_bot_token', value: importToken }) });
+    setImportSaving(false);
+  };
+
+  const openImport = async () => {
+    setImportError('');
+    setImportLoading(true);
+    setImportModal(true);
+    try {
+      const r = await fetch('/api/admin/slack-workspace-users');
+      const data = await r.json();
+      if (!r.ok) { setImportError(data.error || 'Failed to fetch Slack users'); setSlackMembers([]); return; }
+      setSlackMembers(data.notOnboarded);
+    } catch { setImportError('Network error'); } finally { setImportLoading(false); }
+  };
+
+  const onboardAll = async () => {
+    if (!slackMembers.length) return;
+    setOnboarding(true);
+    try {
+      await fetch('/api/admin/slack-workspace-users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ users: slackMembers }) });
+      setImportModal(false);
+      setSlackMembers([]);
+      load();
+    } finally { setOnboarding(false); }
+  };
+
+  const onboardOne = async (u: { id: string; name: string; email: string }) => {
+    await fetch('/api/admin/slack-workspace-users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ users: [u] }) });
+    setSlackMembers(prev => prev.filter(m => m.id !== u.id));
+    load();
+  };
 
   const create = async () => {
     if (!newUser.username || !newUser.password) { setError('Username and password required'); return; }
@@ -323,18 +374,51 @@ function UsersTab() {
         <p style={{ margin: 0, fontSize: 13, color: 'var(--muted)' }}>
           Manage platform access. Superadmin is configured via environment variables.
         </p>
-        <button onClick={() => setShowForm(true)} style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          background: 'var(--accent)', color: 'var(--accent-fg)',
-          padding: '8px 16px', borderRadius: 8,
-          fontSize: 13, fontWeight: 500, border: 'none', cursor: 'pointer',
-          fontFamily: 'var(--font-sans)', flexShrink: 0,
-        }}>
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-            <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-          </svg>
-          Add User
-        </button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+          <button onClick={openImport} style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            background: 'var(--surface-2)', color: 'var(--text)',
+            padding: '8px 14px', borderRadius: 8,
+            fontSize: 13, fontWeight: 500, border: '1px solid var(--border)', cursor: 'pointer',
+            fontFamily: 'var(--font-sans)',
+          }}>
+            <svg width="13" height="13" viewBox="0 0 20 20" fill="none"><path d="M10 2a8 8 0 100 16A8 8 0 0010 2zm0 0v0M5 10h10M10 5l5 5-5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            Import from Slack
+          </button>
+          <button onClick={() => setShowForm(true)} style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            background: 'var(--accent)', color: 'var(--accent-fg)',
+            padding: '8px 16px', borderRadius: 8,
+            fontSize: 13, fontWeight: 500, border: 'none', cursor: 'pointer',
+            fontFamily: 'var(--font-sans)',
+          }}>
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+              <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+            </svg>
+            Add User
+          </button>
+        </div>
+      </div>
+
+      {/* Slack import bot token */}
+      <div style={{ marginBottom: 20, padding: '14px 16px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface-2)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ flex: 1 }}>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--muted)', marginBottom: 4 }}>
+              Slack Bot Token for import
+              <span style={{ fontWeight: 400, marginLeft: 6, color: 'var(--subtle)' }}>— needs <code>users:read</code> scope. Find it in your Slack app → OAuth &amp; Permissions → Bot User OAuth Token.</span>
+            </label>
+            <input
+              type="password"
+              value={importToken}
+              onChange={e => setImportToken(e.target.value)}
+              onBlur={saveImportToken}
+              placeholder="xoxb-..."
+              style={{ width: '100%', padding: '8px 12px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'var(--font-mono, monospace)', background: 'var(--surface)' }}
+            />
+          </div>
+          {importSaving && <span style={{ fontSize: 11, color: 'var(--subtle)' }}>Saving…</span>}
+        </div>
       </div>
 
       {/* User list */}
@@ -553,6 +637,77 @@ function UsersTab() {
                 {saving ? 'Creating...' : 'Create User'}
               </button>
             </div>
+          </div>
+        </div>
+        </Portal>
+      )}
+
+      {/* Import from Slack modal */}
+      {importModal && (
+        <Portal>
+        <div onClick={() => { if (!onboarding) setImportModal(false); }} style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999,
+          backdropFilter: 'blur(2px)',
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: 'var(--surface)', borderRadius: 14, border: '1px solid var(--border)',
+            padding: 28, width: 460, boxShadow: 'var(--shadow-lg)',
+            display: 'flex', flexDirection: 'column', gap: 16,
+            maxHeight: '80vh',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: 'var(--text)' }}>Import from Slack</h3>
+              <button onClick={() => setImportModal(false)} disabled={onboarding}
+                style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer' }}>&times;</button>
+            </div>
+
+            {importLoading && <p style={{ margin: 0, fontSize: 13, color: 'var(--muted)' }}>Fetching workspace members…</p>}
+            {importError && <div style={{ fontSize: 12, color: '#dc2626', background: 'rgba(220,38,38,0.06)', padding: '8px 12px', borderRadius: 6 }}>{importError}</div>}
+
+            {!importLoading && !importError && (
+              <>
+                <p style={{ margin: 0, fontSize: 13, color: 'var(--muted)' }}>
+                  {slackMembers.length === 0
+                    ? 'All workspace members are already onboarded.'
+                    : `${slackMembers.length} member${slackMembers.length !== 1 ? 's' : ''} not yet in SlackHive. They will be created as viewers.`}
+                </p>
+                {slackMembers.length > 0 && (
+                  <div style={{ overflowY: 'auto', maxHeight: 300, border: '1px solid var(--border)', borderRadius: 8 }}>
+                    {slackMembers.map((m, i) => (
+                      <div key={m.id} style={{
+                        display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
+                        borderBottom: i < slackMembers.length - 1 ? '1px solid var(--border)' : 'none',
+                      }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{m.name}</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>{m.email}</div>
+                        </div>
+                        <button onClick={() => onboardOne(m)} style={{
+                          fontSize: 11, fontWeight: 500, padding: '4px 12px', borderRadius: 6,
+                          border: '1px solid var(--border)', background: 'var(--surface-2)',
+                          cursor: 'pointer', fontFamily: 'var(--font-sans)', color: 'var(--text)',
+                        }}>Onboard</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button onClick={() => setImportModal(false)} disabled={onboarding}
+                    style={{ padding: '8px 16px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-sans)' }}>Close</button>
+                  {slackMembers.length > 0 && (
+                    <button onClick={onboardAll} disabled={onboarding} style={{
+                      padding: '8px 18px', borderRadius: 7, border: 'none',
+                      background: 'var(--accent)', color: 'var(--accent-fg)',
+                      fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'var(--font-sans)',
+                      opacity: onboarding ? 0.6 : 1,
+                    }}>
+                      {onboarding ? 'Onboarding…' : `Onboard All (${slackMembers.length})`}
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </div>
         </Portal>
