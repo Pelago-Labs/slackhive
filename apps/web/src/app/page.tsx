@@ -465,12 +465,6 @@ function AgentCard({ agent, highlight, compact, multiReport }: {
                 }}>×2 bosses</span>
               )}
             </div>
-            <div style={{
-              fontSize: 11.5, color: 'var(--muted)',
-              fontFamily: 'var(--font-mono)',
-            }}>
-              @{agent.slug}
-            </div>
           </div>
         </div>
 

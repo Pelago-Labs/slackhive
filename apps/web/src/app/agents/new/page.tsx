@@ -331,12 +331,9 @@ function Step1Identity({ state, update, bosses }: {
   return (
     <div>
       <StepHeader step={1} title="Name your agent" desc="Give it a name and decide if it leads a team or works as a specialist." />
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+      <div style={{ marginBottom: 14 }}>
         <Field label="Agent Name *" value={state.name} placeholder="e.g. GILFOYLE"
           onChange={v => update({ name: v, slug: autoSlug(v) })} />
-        <Field label="Slug *" value={state.slug} placeholder="e.g. gilfoyle"
-          hint="Lowercase, hyphens only"
-          onChange={v => update({ slug: v.toLowerCase().replace(/[^a-z0-9-]/g, '') })} />
       </div>
       {/* Model selector */}
       <div style={{ marginBottom: 14 }}>
@@ -1270,8 +1267,7 @@ function Step5Review({ state, update, catalog, agents }: { state: WizardState; u
       }}>
         {[
           { label: 'Name',          value: state.name,                             mono: false },
-          { label: 'Slug',          value: `@${state.slug}`,                       mono: true  },
-          { label: 'Model',         value: state.model,                            mono: true  },
+{ label: 'Model',         value: state.model,                            mono: true  },
           { label: 'Role',          value: state.isBoss ? 'Boss (orchestrator)' : 'Specialist', mono: false },
           { label: 'Reports to',    value: reportsToValue,                         mono: false },
           { label: 'Description',   value: state.description || '—',               mono: false },

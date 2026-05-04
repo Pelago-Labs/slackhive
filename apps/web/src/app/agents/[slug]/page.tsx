@@ -240,7 +240,7 @@ export default function AgentPage({ params }: { params: Promise<{ slug: string }
                 </div>
               </div>
               <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, color: 'var(--muted)', marginTop: 1 }}>
-                @{agent.slug} · {agent.model.replace('claude-', '').split('-20')[0]}
+                {agent.model.replace('claude-', '').split('-20')[0]}
               </div>
               {agent.lastError && agent.status !== 'running' && (
                 <div style={{
@@ -572,7 +572,6 @@ function OverviewTab({ agent, onUpdate, canEdit, allAgents, role, onOpenCoach }:
                       </div>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{boss.name}</div>
-                        <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>@{boss.slug}</div>
                       </div>
                       {checked && (
                         <span style={{
