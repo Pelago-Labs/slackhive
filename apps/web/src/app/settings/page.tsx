@@ -22,6 +22,7 @@ interface User {
   role: string;
   createdAt: string;
   fromSlack?: boolean;
+  agentCount?: number;
 }
 
 interface AgentBasic {
@@ -395,224 +396,322 @@ function UsersTab() {
     }));
   };
 
+  const accessUser = expandedUser ? users.find(u => u.id === expandedUser) : null;
+
+  const [userSearch, setUserSearch] = React.useState('');
+  const filteredUsers = users.filter(u =>
+    u.username.toLowerCase().includes(userSearch.toLowerCase())
+  );
+
   return (
     <>
+      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--muted)' }}>
-          Manage platform access. Superadmin is configured via environment variables.
-        </p>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 2 }}>Team members</div>
+          <div style={{ fontSize: 13, color: 'var(--muted)' }}>{users.length + 1} member{users.length !== 0 ? 's' : ''}</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={openImport} style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
-            background: 'var(--surface-2)', color: 'var(--text)',
-            padding: '8px 14px', borderRadius: 8,
+            background: 'var(--surface)', color: 'var(--text)',
+            padding: '9px 16px', borderRadius: 10,
             fontSize: 13, fontWeight: 500, border: '1px solid var(--border)', cursor: 'pointer',
-            fontFamily: 'var(--font-sans)',
+            fontFamily: 'var(--font-sans)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
           }}>
-            <svg width="13" height="13" viewBox="0 0 20 20" fill="none"><path d="M10 2a8 8 0 100 16A8 8 0 0010 2zm0 0v0M5 10h10M10 5l5 5-5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
             Import from Slack
           </button>
           <button onClick={() => setShowForm(true)} style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
             background: 'var(--accent)', color: 'var(--accent-fg)',
-            padding: '8px 16px', borderRadius: 8,
+            padding: '9px 16px', borderRadius: 10,
             fontSize: 13, fontWeight: 500, border: 'none', cursor: 'pointer',
-            fontFamily: 'var(--font-sans)',
+            fontFamily: 'var(--font-sans)', boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
           }}>
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-              <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+              <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
             </svg>
-            Add User
+            Add member
           </button>
         </div>
       </div>
 
-      {/* User list */}
+      {/* Search */}
+      <div style={{ marginBottom: 14, position: 'relative' }}>
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--muted)', pointerEvents: 'none' }}>
+          <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" strokeWidth="1.5"/>
+          <path d="M10 10l3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+        </svg>
+        <input
+          value={userSearch}
+          onChange={e => setUserSearch(e.target.value)}
+          placeholder="Search members..."
+          style={{
+            width: '100%', padding: '8px 12px 8px 30px', fontSize: 13,
+            border: '1px solid var(--border)', borderRadius: 10,
+            background: 'var(--surface)', color: 'var(--text)',
+            fontFamily: 'var(--font-sans)', outline: 'none', boxSizing: 'border-box',
+          }}
+        />
+      </div>
+
+      {/* Table */}
       {loading ? (
-        <p style={{ color: 'var(--muted)', fontSize: 13 }}>Loading...</p>
-      ) : (
-        <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
-          {/* Superadmin row */}
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px',
-            borderBottom: users.length > 0 ? '1px solid var(--border)' : 'none',
-            background: 'var(--surface-2)',
-          }}>
-            <div style={{
-              width: 28, height: 28, borderRadius: 8, background: 'var(--accent)', flexShrink: 0,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 10, fontWeight: 600, color: 'var(--accent-fg)',
-            }}>S</div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>admin</div>
-              <div style={{ fontSize: 11, color: 'var(--muted)' }}>Environment variable</div>
-            </div>
-            <span style={{
-              fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase',
-              color: '#d97706', background: 'rgba(217,119,6,0.1)',
-              padding: '2px 8px', borderRadius: 4,
-            }}>superadmin</span>
-          </div>
-
-          {users.map((u, i) => (
-            <div key={u.id} style={{ borderBottom: i < users.length - 1 ? '1px solid var(--border)' : 'none' }}>
-              {/* User row */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px' }}>
-                <div style={{
-                  width: 28, height: 28, borderRadius: 8, flexShrink: 0,
-                  background: u.role === 'admin' ? '#171717' : u.role === 'editor' ? '#059669' : 'var(--surface-2)',
-                  border: u.role === 'admin' ? 'none' : '1px solid var(--border)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 10, fontWeight: 600, color: u.role === 'admin' ? '#fff' : 'var(--text)',
-                }}>{u.username.charAt(0).toUpperCase()}</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.username}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                    {u.fromSlack ? 'Slack · ' : ''}{new Date(u.createdAt).toLocaleDateString()}
-                  </div>
-                </div>
-                <select
-                  value={u.role}
-                  disabled={updatingRole === u.id}
-                  onChange={e => changeRole(u.id, e.target.value)}
-                  style={{
-                    fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 5,
-                    border: '1px solid var(--border)', cursor: 'pointer',
-                    background: u.role === 'admin' ? 'rgba(37,99,235,0.1)' : u.role === 'editor' ? 'rgba(5,150,105,0.1)' : 'var(--surface-2)',
-                    color: u.role === 'admin' ? '#2563eb' : u.role === 'editor' ? '#059669' : 'var(--muted)',
-                    fontFamily: 'var(--font-sans)', outline: 'none',
-                    opacity: updatingRole === u.id ? 0.5 : 1,
-                  }}
-                >
-                  <option value="admin">admin</option>
-                  <option value="editor">editor</option>
-                  <option value="viewer">viewer</option>
-                </select>
-                {/* Agent access — editors and viewers can be granted per-agent access */}
-                {(u.role === 'editor' || u.role === 'viewer') && (
-                  <button
-                    onClick={() => toggleExpand(u.id)}
-                    style={{
-                      background: expandedUser === u.id ? 'rgba(59,130,246,0.1)' : 'var(--surface-2)',
-                      border: '1px solid var(--border)', borderRadius: 6,
-                      color: expandedUser === u.id ? 'var(--accent)' : 'var(--muted)',
-                      fontSize: 11, fontWeight: 500, cursor: 'pointer', padding: '3px 10px',
-                      fontFamily: 'var(--font-sans)',
-                    }}
-                  >Agent Access</button>
-                )}
-                {isSuperadmin && (
-                  <button
-                    onClick={() => openReset(u)}
-                    title="Reset password"
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                      width: 28, height: 26, padding: 0,
-                      background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 6,
-                      color: 'var(--muted)', cursor: 'pointer', opacity: 0.7,
-                      transition: 'opacity 0.12s',
-                    }}
-                    onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-                    onMouseLeave={e => (e.currentTarget.style.opacity = '0.7')}
-                  ><KeyRound size={13} /></button>
-                )}
-                <button onClick={() => remove(u.id, u.username)} style={{
-                  background: 'none', border: 'none', color: '#dc2626',
-                  fontSize: 12, cursor: 'pointer', opacity: 0.6,
-                  fontFamily: 'var(--font-sans)', transition: 'opacity 0.12s',
-                }}
-                  onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-                  onMouseLeave={e => (e.currentTarget.style.opacity = '0.6')}
-                >Delete</button>
-              </div>
-
-              {/* Expanded agent access panel */}
-              {expandedUser === u.id && (
-                <div style={{
-                  margin: '0 16px 12px', padding: '14px 16px', borderRadius: 8,
-                  background: 'var(--surface-2)', border: '1px solid var(--border)',
-                }}>
-                  <p style={{ margin: '0 0 6px', fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>
-                    Agent access
-                    <span style={{ fontWeight: 400, color: 'var(--subtle)', marginLeft: 6 }}>
-                      {u.role === 'editor' ? '— editors also always access their own agents' : '— viewers see only what is granted'}
-                    </span>
-                  </p>
-                  <p style={{ margin: '0 0 10px', fontSize: 11, color: 'var(--subtle)' }}>
-                    <strong style={{ color: 'var(--muted)' }}>No access</strong> — hidden everywhere &nbsp;·&nbsp;
-                    <strong style={{ color: '#d97706' }}>Trigger</strong> — Slack only, not in SlackHive &nbsp;·&nbsp;
-                    <strong style={{ color: '#059669' }}>View</strong> — SlackHive + Slack &nbsp;·&nbsp;
-                    <strong style={{ color: '#3b82f6' }}>Edit</strong> — full access
-                  </p>
-                  {loadingGrants === u.id ? (
-                    <p style={{ fontSize: 12, color: 'var(--subtle)', margin: 0 }}>Loading…</p>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      {agents.map(a => {
-                        const isOwner = ownerAgents[u.id]?.has(a.id) ?? false;
-                        const level = accessGrants[u.id]?.[a.id] ?? 'none';
-                        const levels: ('none' | 'trigger' | 'view' | 'edit')[] = u.role === 'viewer' ? ['none', 'trigger', 'view'] : ['none', 'trigger', 'view', 'edit'];
-                        const levelColor = level === 'edit' ? '#3b82f6' : level === 'view' ? '#059669' : level === 'trigger' ? '#d97706' : 'var(--subtle)';
-                        return (
-                          <div key={a.id} style={{
-                            display: 'flex', alignItems: 'center', gap: 10,
-                            padding: '8px 12px', borderRadius: 7,
-                            background: 'var(--surface)', border: '1px solid var(--border)',
-                          }}>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</div>
-                              <div style={{ fontSize: 10, color: levelColor, fontWeight: 500, marginTop: 1 }}>
-                                {isOwner ? 'Owner' : level === 'none' ? 'No access' : level === 'trigger' ? 'Trigger only' : level === 'view' ? 'View + Slack' : 'Full edit'}
-                              </div>
-                            </div>
-                            {isOwner ? (
-                              <span style={{
-                                fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4, flexShrink: 0,
-                                border: '1px solid rgba(245,158,11,0.4)', color: '#d97706',
-                                background: 'rgba(245,158,11,0.1)',
-                              }}>Owner</span>
-                            ) : (
-                            <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
-                              {levels.map(lvl => (
-                                <button
-                                  key={lvl}
-                                  onClick={() => setAccess(u.id, a.id, lvl)}
-                                  style={{
-                                    fontSize: 10, fontWeight: 600, padding: '3px 8px', borderRadius: 5,
-                                    border: '1px solid', cursor: 'pointer',
-                                    fontFamily: 'var(--font-sans)',
-                                    background: level === lvl
-                                      ? lvl === 'edit' ? 'rgba(59,130,246,0.15)' : lvl === 'view' ? 'rgba(5,150,105,0.12)' : lvl === 'trigger' ? 'rgba(217,119,6,0.1)' : 'var(--surface-2)'
-                                      : 'transparent',
-                                    color: level === lvl
-                                      ? lvl === 'edit' ? '#3b82f6' : lvl === 'view' ? '#059669' : lvl === 'trigger' ? '#d97706' : 'var(--muted)'
-                                      : 'var(--subtle)',
-                                    borderColor: level === lvl
-                                      ? lvl === 'edit' ? 'rgba(59,130,246,0.4)' : lvl === 'view' ? 'rgba(5,150,105,0.4)' : lvl === 'trigger' ? 'rgba(217,119,6,0.4)' : 'var(--border)'
-                                      : 'transparent',
-                                  }}
-                                  title={lvl === 'none' ? 'No access — hidden everywhere' : lvl === 'trigger' ? 'Slack only — not visible in SlackHive' : lvl === 'view' ? 'View conversations + use in Slack' : 'Full access — edit settings, view, use in Slack'}
-                                >{lvl === 'none' ? 'None' : lvl === 'trigger' ? 'Trigger' : lvl === 'view' ? 'View' : 'Edit'}</button>
-                              ))}
-                            </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                      {agents.length === 0 && <span style={{ fontSize: 12, color: 'var(--subtle)' }}>No agents yet</span>}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          {[1,2,3].map(i => (
+            <div key={i} style={{ height: 52, borderRadius: 8, background: 'var(--surface-2)', opacity: 0.5 }} />
           ))}
-
-          {users.length === 0 && (
-            <div style={{ padding: '20px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-              No additional users. Only the superadmin account exists.
-            </div>
-          )}
         </div>
+      ) : (
+        <div style={{ border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: 'var(--surface-2)' }}>
+                <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: 'var(--muted)', letterSpacing: '0.05em', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>Member</th>
+                <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: 'var(--muted)', letterSpacing: '0.05em', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>Source</th>
+                <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: 'var(--muted)', letterSpacing: '0.05em', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>Role</th>
+                <th style={{ padding: '10px 16px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: 'var(--muted)', letterSpacing: '0.05em', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>Agents</th>
+                <th style={{ padding: '10px 16px', textAlign: 'right', fontSize: 11, fontWeight: 600, color: 'var(--muted)', letterSpacing: '0.05em', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {/* Superadmin row */}
+              <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}>
+                <td style={{ padding: '12px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{
+                      width: 32, height: 32, borderRadius: 8, background: 'var(--accent)', flexShrink: 0,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 12, fontWeight: 700, color: 'var(--accent-fg)',
+                    }}>A</div>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>admin</span>
+                  </div>
+                </td>
+                <td style={{ padding: '12px 16px' }}>
+                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>Environment variable</span>
+                </td>
+                <td style={{ padding: '12px 16px' }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#d97706', background: 'rgba(217,119,6,0.1)', padding: '3px 8px', borderRadius: 6 }}>Owner</span>
+                </td>
+                <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>—</span>
+                </td>
+                <td style={{ padding: '12px 16px' }} />
+              </tr>
+
+              {filteredUsers.map((u, idx) => {
+                const initials = u.username.slice(0, 2).toUpperCase();
+                const avatarBg = u.role === 'admin' ? '#18181b' : u.role === 'editor' ? '#0f766e' : '#6366f1';
+                const roleColor = u.role === 'admin' ? { color: '#2563eb', bg: 'rgba(37,99,235,0.08)' } : u.role === 'editor' ? { color: '#0f766e', bg: 'rgba(15,118,110,0.08)' } : { color: 'var(--muted)', bg: 'var(--surface-2)' };
+                const isLast = idx === filteredUsers.length - 1;
+                return (
+                  <tr key={u.id} style={{ borderBottom: isLast ? 'none' : '1px solid var(--border)', background: 'var(--surface)' }}>
+                    <td style={{ padding: '12px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{
+                          width: 32, height: 32, borderRadius: 8, background: avatarBg, flexShrink: 0,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 12, fontWeight: 700, color: '#fff',
+                        }}>{initials}</div>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{u.username}</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>{new Date(u.createdAt).toLocaleDateString()}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td style={{ padding: '12px 16px' }}>
+                      {u.fromSlack ? (
+                        <span style={{ fontSize: 12, color: '#0f766e', fontWeight: 500 }}>via Slack</span>
+                      ) : (
+                        <span style={{ fontSize: 12, color: 'var(--muted)' }}>Manual</span>
+                      )}
+                    </td>
+                    <td style={{ padding: '12px 16px' }}>
+                      <select
+                        value={u.role}
+                        disabled={updatingRole === u.id}
+                        onChange={e => changeRole(u.id, e.target.value)}
+                        style={{
+                          fontSize: 12, fontWeight: 600, padding: '5px 8px', borderRadius: 7,
+                          border: '1px solid var(--border)', cursor: 'pointer',
+                          background: roleColor.bg, color: roleColor.color,
+                          fontFamily: 'var(--font-sans)', outline: 'none',
+                          opacity: updatingRole === u.id ? 0.5 : 1,
+                        }}
+                      >
+                        <option value="admin">Admin</option>
+                        <option value="editor">Editor</option>
+                        <option value="viewer">Viewer</option>
+                      </select>
+                    </td>
+                    <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                      {(u.agentCount ?? 0) > 0 ? (
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                          minWidth: 22, height: 22, borderRadius: 11,
+                          background: 'rgba(59,130,246,0.1)', color: '#3b82f6',
+                          fontSize: 11, fontWeight: 700, padding: '0 6px',
+                        }}>{u.agentCount}</span>
+                      ) : (
+                        <span style={{ fontSize: 12, color: 'var(--muted)' }}>—</span>
+                      )}
+                    </td>
+                    <td style={{ padding: '12px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
+                        {(u.role === 'editor' || u.role === 'viewer') && (
+                          <button onClick={() => toggleExpand(u.id)} title="Agent Access" style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 5,
+                            fontSize: 12, fontWeight: 500, padding: '6px 10px', borderRadius: 7,
+                            border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'var(--font-sans)',
+                            background: expandedUser === u.id ? 'rgba(59,130,246,0.08)' : 'var(--surface-2)',
+                            color: expandedUser === u.id ? '#3b82f6' : 'var(--muted)',
+                            whiteSpace: 'nowrap',
+                          }}>
+                            <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><rect x="9" y="1" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><rect x="1" y="9" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><rect x="9" y="9" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.5"/></svg>
+                            Agent Access
+                          </button>
+                        )}
+                        {isSuperadmin && !u.fromSlack && (
+                          <button onClick={() => openReset(u)} title="Reset password" style={{
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            width: 30, height: 30, borderRadius: 7, flexShrink: 0,
+                            background: 'var(--surface-2)', border: '1px solid var(--border)',
+                            color: 'var(--muted)', cursor: 'pointer',
+                          }}><KeyRound size={13} /></button>
+                        )}
+                        <button onClick={() => remove(u.id, u.username)} title="Remove member" style={{
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                          width: 30, height: 30, borderRadius: 7, flexShrink: 0,
+                          background: 'var(--surface-2)', border: '1px solid var(--border)',
+                          color: '#dc2626', cursor: 'pointer', opacity: 0.7,
+                        }}>
+                          <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M5 4V2h6v2M6 7v5M10 7v5M3 4l1 9h8l1-9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {filteredUsers.length === 0 && (
+                <tr>
+                  <td colSpan={4} style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+                    {userSearch ? 'No members match your search.' : 'No members yet. Add one or import from Slack.'}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Agent access side panel */}
+      {accessUser && (
+        <Portal>
+          <div onClick={() => setExpandedUser(null)} style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 9990,
+            backdropFilter: 'blur(1px)',
+          }} />
+          <div style={{
+            position: 'fixed', top: 0, right: 0, bottom: 0, width: 400,
+            background: 'var(--surface)', borderLeft: '1px solid var(--border)',
+            zIndex: 9991, display: 'flex', flexDirection: 'column',
+            boxShadow: '-8px 0 32px rgba(0,0,0,0.12)',
+          }}>
+            {/* Panel header */}
+            <div style={{ padding: '24px 24px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
+                <div style={{
+                  width: 40, height: 40, borderRadius: 12,
+                  background: accessUser.role === 'admin' ? '#18181b' : accessUser.role === 'editor' ? '#0f766e' : '#6366f1',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 15, fontWeight: 700, color: '#fff', flexShrink: 0,
+                }}>{accessUser.username.slice(0, 2).toUpperCase()}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{accessUser.username}</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 1, textTransform: 'capitalize' }}>{accessUser.role}</div>
+                </div>
+                <button onClick={() => setExpandedUser(null)} style={{
+                  background: 'none', border: 'none', color: 'var(--muted)',
+                  fontSize: 20, cursor: 'pointer', lineHeight: 1, padding: 4,
+                }}>&times;</button>
+              </div>
+              {/* Legend */}
+              <div style={{ display: 'flex', gap: 12, marginTop: 12, flexWrap: 'wrap' }}>
+                {[
+                  { label: 'None', color: 'var(--muted)', desc: 'No access' },
+                  { label: 'Trigger', color: '#d97706', desc: 'Slack only' },
+                  { label: 'View', color: '#0f766e', desc: '+ SlackHive' },
+                  { label: 'Edit', color: '#3b82f6', desc: 'Full access' },
+                ].map(({ label, color, desc }) => (
+                  <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
+                    <span style={{ fontSize: 11, fontWeight: 600, color }}>{label}</span>
+                    <span style={{ fontSize: 11, color: 'var(--subtle)' }}>{desc}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Agent list */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {loadingGrants === accessUser.id ? (
+                <div style={{ fontSize: 13, color: 'var(--muted)', textAlign: 'center', marginTop: 40 }}>Loading…</div>
+              ) : agents.length === 0 ? (
+                <div style={{ fontSize: 13, color: 'var(--muted)', textAlign: 'center', marginTop: 40 }}>No agents yet.</div>
+              ) : agents.map(a => {
+                const isOwner = ownerAgents[accessUser.id]?.has(a.id) ?? false;
+                const level = accessGrants[accessUser.id]?.[a.id] ?? 'none';
+                const levels: ('none' | 'trigger' | 'view' | 'edit')[] = accessUser.role === 'viewer' ? ['none', 'trigger', 'view'] : ['none', 'trigger', 'view', 'edit'];
+                const dotColor = level === 'edit' ? '#3b82f6' : level === 'view' ? '#0f766e' : level === 'trigger' ? '#d97706' : 'var(--border)';
+
+                return (
+                  <div key={a.id} style={{
+                    borderRadius: 12, border: '1px solid var(--border)', background: 'var(--surface-2)',
+                    padding: '14px 16px',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: isOwner ? 0 : 12 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</div>
+                        <div style={{ fontSize: 11, color: dotColor, fontWeight: 500, marginTop: 1 }}>
+                          {isOwner ? 'Owner' : level === 'none' ? 'No access' : level === 'trigger' ? 'Trigger only' : level === 'view' ? 'View + Slack' : 'Full edit'}
+                        </div>
+                      </div>
+                      {isOwner && (
+                        <span style={{
+                          fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 6,
+                          color: '#d97706', background: 'rgba(217,119,6,0.1)',
+                        }}>Owner</span>
+                      )}
+                    </div>
+                    {!isOwner && (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        {levels.map(lvl => {
+                          const active = level === lvl;
+                          const c = lvl === 'edit' ? '#3b82f6' : lvl === 'view' ? '#0f766e' : lvl === 'trigger' ? '#d97706' : 'var(--muted)';
+                          return (
+                            <button key={lvl} onClick={() => setAccess(accessUser.id, a.id, lvl)} style={{
+                              flex: 1, padding: '7px 4px', borderRadius: 8, fontSize: 11, fontWeight: 600,
+                              border: `1px solid ${active ? c : 'var(--border)'}`,
+                              background: active ? `${c}18` : 'var(--surface)',
+                              color: active ? c : 'var(--subtle)',
+                              cursor: 'pointer', fontFamily: 'var(--font-sans)',
+                              transition: 'all 0.12s',
+                            }}>
+                              {lvl === 'none' ? 'None' : lvl === 'trigger' ? 'Trigger' : lvl === 'view' ? 'View' : 'Edit'}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </Portal>
       )}
 
       {/* Create modal */}

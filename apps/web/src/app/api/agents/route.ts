@@ -18,6 +18,7 @@ import {
   publishAgentEvent,
   applyLiveStatus,
   listAccessibleAgentIds,
+  listWritableAgentIds,
 } from '@/lib/db';
 import type { CreateAgentRequest } from '@slackhive/shared';
 import { SKILL_TEMPLATES } from '@/lib/skill-templates';
@@ -39,8 +40,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const session = getSessionFromRequest(req);
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const agents = await getAllAgents();
-    const accessibleIds = await listAccessibleAgentIds(session.username, session.role);
-    const visible = accessibleIds === null ? agents : agents.filter(a => accessibleIds.includes(a.id));
+    const writableOnly = req.nextUrl.searchParams.get('writable') === 'true';
+    const accessibleIds = writableOnly
+      ? await listWritableAgentIds(session.username, session.role)
+      : await listAccessibleAgentIds(session.username, session.role);
+    const visible = accessibleIds === null ? agents : agents.filter(a => accessibleIds!.includes(a.id));
     return NextResponse.json(visible.map(a => toAgentPublic(applyLiveStatus(a))));
   } catch (err) {
     return apiError('agents', err);

@@ -878,14 +878,22 @@ export async function getUserByUsername(username: string): Promise<{ id: string;
  *
  * @returns {Promise<Array<{ id: string; username: string; role: string; createdAt: string }>>}
  */
-export async function getAllUsers(): Promise<Array<{ id: string; username: string; role: string; createdAt: string; fromSlack: boolean }>> {
-  const r = await (await db()).query('SELECT id, username, role, created_at, slack_user_id FROM users ORDER BY created_at');
+export async function getAllUsers(): Promise<Array<{ id: string; username: string; role: string; createdAt: string; fromSlack: boolean; agentCount: number }>> {
+  const r = await (await db()).query(`
+    SELECT u.id, u.username, u.role, u.created_at, u.slack_user_id,
+           COUNT(aa.agent_id) AS agent_count
+    FROM users u
+    LEFT JOIN agent_access aa ON aa.user_id = u.id
+    GROUP BY u.id
+    ORDER BY u.created_at
+  `);
   return r.rows.map(row => ({
     id: row.id as string,
     username: row.username as string,
     role: row.role as string,
     createdAt: row.created_at as string,
     fromSlack: !!(row.slack_user_id),
+    agentCount: Number(row.agent_count ?? 0),
   }));
 }
 
@@ -1100,6 +1108,22 @@ export async function userCanTriggerAgent(agentId: string, slackUserId: string):
  * Returns agent IDs visible in SlackHive (view/edit only, not trigger).
  * Admins return null (no restriction).
  */
+export async function listWritableAgentIds(
+  username: string,
+  role: string,
+): Promise<string[] | null> {
+  if (role === 'admin' || role === 'superadmin') return null;
+  const r = await (await db()).query(
+    `SELECT id FROM agents WHERE created_by = $1
+     UNION
+     SELECT aa.agent_id FROM agent_access aa
+       JOIN users u ON u.id = aa.user_id
+      WHERE u.username = $1 AND aa.access_level = 'edit'`,
+    [username],
+  );
+  return r.rows.map(row => row.id as string);
+}
+
 export async function listAccessibleAgentIds(
   username: string,
   role: string,
