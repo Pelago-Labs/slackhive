@@ -379,6 +379,7 @@ export default function McpSettingsPage() {
     e.preventDefault();
     setSaving(true); setError('');
     try {
+      if (!form.description.trim()) throw new Error('Description is required — please fill it in before saving.');
       let body: Record<string, unknown>;
       if (jsonMode) {
         if (!jsonParse || !jsonParse.ok) throw new Error(jsonParse && !jsonParse.ok ? jsonParse.error : 'Invalid JSON');
@@ -825,9 +826,9 @@ export default function McpSettingsPage() {
                       placeholder="redshift-mcp" required {...inputStyle()} />
                   </FField>
                 )}
-                <FField label="Description" style={{ marginBottom: 14 }}>
+                <FField label="Description *" required style={{ marginBottom: 14 }}>
                   <input value={form.description} onChange={e => f('description', e.target.value)}
-                    placeholder="What does this MCP server provide?" {...inputStyle()} />
+                    placeholder="What does this MCP server provide?" required {...inputStyle()} />
                 </FField>
               </>
             ) : (
