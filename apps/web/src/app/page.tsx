@@ -531,7 +531,7 @@ function AgentCard({ agent, highlight, compact, multiReport }: {
           {agent.slackBotUserId ? (
             <>
               <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#059669' }} />
-              Connected
+              {agent.slackBotHandle ? `@${agent.slackBotHandle}` : 'Connected'}
             </>
           ) : 'Not connected'}
         </span>

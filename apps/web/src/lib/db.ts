@@ -139,7 +139,7 @@ async function enrichAgentWithPlatform(agent: Agent | null): Promise<Agent | nul
   if (!agent) return null;
   const d = await db();
   const r = await d.query(
-    'SELECT credentials, bot_user_id FROM platform_integrations WHERE agent_id = $1 AND platform = $2 AND enabled = 1',
+    'SELECT credentials, bot_user_id, bot_handle FROM platform_integrations WHERE agent_id = $1 AND platform = $2 AND enabled = 1',
     [agent.id, 'slack']
   );
   if (r.rows.length > 0) {
@@ -156,6 +156,7 @@ async function enrichAgentWithPlatform(agent: Agent | null): Promise<Agent | nul
       agent.slackAppToken = creds.appToken;
       agent.slackSigningSecret = creds.signingSecret;
       agent.slackBotUserId = r.rows[0].bot_user_id as string | undefined;
+      agent.slackBotHandle = r.rows[0].bot_handle as string | undefined;
     }
   }
   return agent;
@@ -232,10 +233,10 @@ export async function getAllAgents(): Promise<Agent[]> {
   const agents = r.rows.map(rowToAgent);
 
   // Bulk load platform credentials for all agents
-  const pi = await d.query('SELECT agent_id, credentials, bot_user_id FROM platform_integrations WHERE platform = $1 AND enabled = 1', ['slack']);
-  const credsByAgent = new Map<string, { credentials: string; botUserId?: string }>();
+  const pi = await d.query('SELECT agent_id, credentials, bot_user_id, bot_handle FROM platform_integrations WHERE platform = $1 AND enabled = 1', ['slack']);
+  const credsByAgent = new Map<string, { credentials: string; botUserId?: string; botHandle?: string }>();
   for (const row of pi.rows) {
-    credsByAgent.set(row.agent_id as string, { credentials: row.credentials as string, botUserId: row.bot_user_id as string | undefined });
+    credsByAgent.set(row.agent_id as string, { credentials: row.credentials as string, botUserId: row.bot_user_id as string | undefined, botHandle: row.bot_handle as string | undefined });
   }
 
   const key = getEncryptionKey();
@@ -253,6 +254,7 @@ export async function getAllAgents(): Promise<Agent[]> {
         agent.slackAppToken = creds.appToken;
         agent.slackSigningSecret = creds.signingSecret;
         agent.slackBotUserId = entry.botUserId;
+        agent.slackBotHandle = entry.botHandle;
       }
     }
   }
@@ -373,6 +375,18 @@ export async function updateAgent(id: string, req: UpdateAgentRequest): Promise<
     const d = await db();
     const encrypted = encrypt(JSON.stringify(req.platformCredentials), getEncryptionKey());
 
+    // Fetch bot handle from Slack if bot token provided
+    let botHandle: string | null = null;
+    if (req.platformCredentials.botToken) {
+      try {
+        const authRes = await fetch('https://slack.com/api/auth.test', {
+          headers: { Authorization: `Bearer ${req.platformCredentials.botToken}` },
+        });
+        const auth = await authRes.json() as { ok: boolean; user?: string };
+        if (auth.ok && auth.user) botHandle = auth.user;
+      } catch { /* ignore — handle stored as null */ }
+    }
+
     // Check if integration row exists
     const existing = await d.query(
       `SELECT id FROM platform_integrations WHERE agent_id = $1 AND platform = 'slack'`,
@@ -381,14 +395,14 @@ export async function updateAgent(id: string, req: UpdateAgentRequest): Promise<
 
     if (existing.rows.length > 0) {
       await d.query(
-        `UPDATE platform_integrations SET credentials = $1 WHERE agent_id = $2 AND platform = 'slack'`,
-        [encrypted, id]
+        `UPDATE platform_integrations SET credentials = $1, bot_handle = COALESCE($3, bot_handle) WHERE agent_id = $2 AND platform = 'slack'`,
+        [encrypted, id, botHandle]
       );
     } else {
       await d.query(
-        `INSERT INTO platform_integrations (id, agent_id, platform, credentials)
-         VALUES ($1, $2, $3, $4)`,
-        [randomUUID(), id, 'slack', encrypted]
+        `INSERT INTO platform_integrations (id, agent_id, platform, credentials, bot_handle)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [randomUUID(), id, 'slack', encrypted, botHandle]
       );
     }
   }

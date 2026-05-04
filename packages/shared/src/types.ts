@@ -109,6 +109,7 @@ export interface Agent {
   slackAppToken?: string;
   slackSigningSecret?: string;
   slackBotUserId?: string;
+  slackBotHandle?: string;
   /**
    * Derived presence flag for list endpoints that strip the raw credentials.
    * True when an active slack platform_integrations row exists for this agent.

@@ -371,6 +371,7 @@ CREATE TABLE IF NOT EXISTS platform_integrations (
   platform    TEXT NOT NULL CHECK (platform IN ('slack','discord','telegram','whatsapp','teams')),
   credentials TEXT NOT NULL,
   bot_user_id TEXT,
+  bot_handle  TEXT,
   enabled     INTEGER DEFAULT 1,
   created_at  TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(agent_id, platform)
@@ -537,6 +538,11 @@ export function createSqliteAdapter(dbPath?: string): DbAdapter {
   const jobCols = (db.pragma('table_info(scheduled_jobs)') as { name: string }[]).map(c => c.name);
   if (!jobCols.includes('created_by')) {
     db.exec("ALTER TABLE scheduled_jobs ADD COLUMN created_by TEXT NOT NULL DEFAULT 'system'");
+  }
+
+  const piCols = (db.pragma('table_info(platform_integrations)') as { name: string }[]).map(c => c.name);
+  if (!piCols.includes('bot_handle')) {
+    db.exec('ALTER TABLE platform_integrations ADD COLUMN bot_handle TEXT');
   }
 
   const accessCols = (db.pragma('table_info(agent_access)') as { name: string }[]).map(c => c.name);

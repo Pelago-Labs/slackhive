@@ -240,7 +240,7 @@ export default function AgentPage({ params }: { params: Promise<{ slug: string }
                 </div>
               </div>
               <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, color: 'var(--muted)', marginTop: 1 }}>
-                {agent.model.replace('claude-', '').split('-20')[0]}
+                {agent.slackBotHandle ? `@${agent.slackBotHandle} · ` : ''}{agent.model.replace('claude-', '').split('-20')[0]}
               </div>
               {agent.lastError && agent.status !== 'running' && (
                 <div style={{
