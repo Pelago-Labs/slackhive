@@ -21,6 +21,7 @@ interface User {
   username: string;
   role: string;
   createdAt: string;
+  fromSlack?: boolean;
 }
 
 interface AgentBasic {
@@ -464,9 +465,20 @@ function UsersTab() {
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   fontSize: 10, fontWeight: 600, color: u.role === 'admin' ? '#fff' : 'var(--text)',
                 }}>{u.username.charAt(0).toUpperCase()}</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{u.username}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>Created {new Date(u.createdAt).toLocaleDateString()}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.username}</span>
+                    {u.fromSlack && (
+                      <span style={{
+                        fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4, flexShrink: 0,
+                        background: 'rgba(74,21,75,0.12)', color: '#7c3aed',
+                        border: '1px solid rgba(124,58,237,0.2)',
+                      }}>Slack</span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                    {u.fromSlack ? 'Imported from Slack' : 'Created'} · {new Date(u.createdAt).toLocaleDateString()}
+                  </div>
                 </div>
                 <select
                   value={u.role}
@@ -544,42 +556,52 @@ function UsersTab() {
                   {loadingGrants === u.id ? (
                     <p style={{ fontSize: 12, color: 'var(--subtle)', margin: 0 }}>Loading…</p>
                   ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                       {agents.map(a => {
                         const isOwner = ownerAgents[u.id]?.has(a.id) ?? false;
                         const level = accessGrants[u.id]?.[a.id] ?? 'none';
                         const levels: ('none' | 'trigger' | 'view' | 'edit')[] = u.role === 'viewer' ? ['none', 'trigger', 'view'] : ['none', 'trigger', 'view', 'edit'];
+                        const levelColor = level === 'edit' ? '#3b82f6' : level === 'view' ? '#059669' : level === 'trigger' ? '#d97706' : 'var(--subtle)';
                         return (
-                          <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <span style={{ fontSize: 12, color: 'var(--text)', flex: 1 }}>{a.name}</span>
+                          <div key={a.id} style={{
+                            display: 'flex', alignItems: 'center', gap: 10,
+                            padding: '8px 12px', borderRadius: 7,
+                            background: 'var(--surface)', border: '1px solid var(--border)',
+                          }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</div>
+                              <div style={{ fontSize: 10, color: levelColor, fontWeight: 500, marginTop: 1 }}>
+                                {isOwner ? 'Owner' : level === 'none' ? 'No access' : level === 'trigger' ? 'Trigger only' : level === 'view' ? 'View + Slack' : 'Full edit'}
+                              </div>
+                            </div>
                             {isOwner ? (
                               <span style={{
-                                fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 5,
+                                fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4, flexShrink: 0,
                                 border: '1px solid rgba(245,158,11,0.4)', color: '#d97706',
                                 background: 'rgba(245,158,11,0.1)',
                               }}>Owner</span>
                             ) : (
-                            <div style={{ display: 'flex', gap: 4 }}>
+                            <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
                               {levels.map(lvl => (
                                 <button
                                   key={lvl}
                                   onClick={() => setAccess(u.id, a.id, lvl)}
                                   style={{
-                                    fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 5,
-                                    border: '1px solid var(--border)', cursor: 'pointer',
+                                    fontSize: 10, fontWeight: 600, padding: '3px 8px', borderRadius: 5,
+                                    border: '1px solid', cursor: 'pointer',
                                     fontFamily: 'var(--font-sans)',
                                     background: level === lvl
-                                      ? lvl === 'edit' ? 'rgba(59,130,246,0.15)' : lvl === 'view' ? 'rgba(5,150,105,0.12)' : lvl === 'trigger' ? 'rgba(217,119,6,0.1)' : 'var(--surface)'
-                                      : 'var(--surface)',
+                                      ? lvl === 'edit' ? 'rgba(59,130,246,0.15)' : lvl === 'view' ? 'rgba(5,150,105,0.12)' : lvl === 'trigger' ? 'rgba(217,119,6,0.1)' : 'var(--surface-2)'
+                                      : 'transparent',
                                     color: level === lvl
                                       ? lvl === 'edit' ? '#3b82f6' : lvl === 'view' ? '#059669' : lvl === 'trigger' ? '#d97706' : 'var(--muted)'
                                       : 'var(--subtle)',
                                     borderColor: level === lvl
                                       ? lvl === 'edit' ? 'rgba(59,130,246,0.4)' : lvl === 'view' ? 'rgba(5,150,105,0.4)' : lvl === 'trigger' ? 'rgba(217,119,6,0.4)' : 'var(--border)'
-                                      : 'var(--border)',
+                                      : 'transparent',
                                   }}
-                                  title={lvl === 'none' ? 'Cannot see agent in SlackHive or interact in Slack' : lvl === 'trigger' ? 'Can message the agent in Slack only — not visible in SlackHive' : lvl === 'view' ? 'Can see conversations in SlackHive and message in Slack' : 'Full access — edit agent settings, view conversations, and message in Slack'}
-                                >{lvl === 'none' ? 'No access' : lvl === 'trigger' ? 'Trigger' : lvl === 'view' ? 'View' : 'Edit'}</button>
+                                  title={lvl === 'none' ? 'No access — hidden everywhere' : lvl === 'trigger' ? 'Slack only — not visible in SlackHive' : lvl === 'view' ? 'View conversations + use in Slack' : 'Full access — edit settings, view, use in Slack'}
+                                >{lvl === 'none' ? 'None' : lvl === 'trigger' ? 'Trigger' : lvl === 'view' ? 'View' : 'Edit'}</button>
                               ))}
                             </div>
                             )}

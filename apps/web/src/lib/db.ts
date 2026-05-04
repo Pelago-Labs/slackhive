@@ -878,9 +878,15 @@ export async function getUserByUsername(username: string): Promise<{ id: string;
  *
  * @returns {Promise<Array<{ id: string; username: string; role: string; createdAt: string }>>}
  */
-export async function getAllUsers(): Promise<Array<{ id: string; username: string; role: string; createdAt: string }>> {
-  const r = await (await db()).query('SELECT id, username, role, created_at FROM users ORDER BY created_at');
-  return r.rows.map(row => ({ id: row.id as string, username: row.username as string, role: row.role as string, createdAt: row.created_at as string }));
+export async function getAllUsers(): Promise<Array<{ id: string; username: string; role: string; createdAt: string; fromSlack: boolean }>> {
+  const r = await (await db()).query('SELECT id, username, role, created_at, slack_user_id FROM users ORDER BY created_at');
+  return r.rows.map(row => ({
+    id: row.id as string,
+    username: row.username as string,
+    role: row.role as string,
+    createdAt: row.created_at as string,
+    fromSlack: !!(row.slack_user_id),
+  }));
 }
 
 /**
