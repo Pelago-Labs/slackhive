@@ -390,6 +390,7 @@ export class ClaudeHandler {
         command: tsxPath,
         args: [scriptPath],
         env: {
+          ...(process.env as Record<string, string>), // inherit PATH, HOME, git credential helpers
           NODE_PATH: nodePath,
           AGENT_SLUG: this.agent.slug,
           ...(sessionWorkDir ? { SESSION_WORK_DIR: sessionWorkDir } : {}),
