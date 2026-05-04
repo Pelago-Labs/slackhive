@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiError } from '@/lib/api-error';
-import { getAgentById } from '@/lib/db';
+import { getAgentById, saveBotHandle } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,6 +22,10 @@ export async function GET(
     });
     const auth = await authRes.json();
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: 400 });
+
+    if (auth.user && !agent.slackBotHandle) {
+      await saveBotHandle(id, auth.user);
+    }
 
     const userRes = await fetch(`https://slack.com/api/users.info?user=${auth.user_id}`, {
       headers: { Authorization: `Bearer ${agent.slackBotToken}` },

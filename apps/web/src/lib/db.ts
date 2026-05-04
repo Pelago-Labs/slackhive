@@ -927,6 +927,15 @@ export async function getUserBySlackId(slackUserId: string): Promise<{ id: strin
  * Creates or returns an existing user authenticated via Slack OAuth.
  * New users are created with role=viewer.
  */
+
+export async function saveBotHandle(agentId: string, handle: string): Promise<void> {
+  const d = await db();
+  await d.query(
+    `UPDATE platform_integrations SET bot_handle = $1 WHERE agent_id = $2 AND platform = 'slack'`,
+    [handle, agentId]
+  );
+}
+
 export async function upsertSlackUser(slackUserId: string, email: string, name: string): Promise<{ id: string; username: string; role: string }> {
   const existing = await getUserBySlackId(slackUserId);
   if (existing) return existing;
