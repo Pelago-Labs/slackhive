@@ -466,18 +466,9 @@ function UsersTab() {
                   fontSize: 10, fontWeight: 600, color: u.role === 'admin' ? '#fff' : 'var(--text)',
                 }}>{u.username.charAt(0).toUpperCase()}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.username}</span>
-                    {u.fromSlack && (
-                      <span style={{
-                        fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4, flexShrink: 0,
-                        background: 'rgba(74,21,75,0.12)', color: '#7c3aed',
-                        border: '1px solid rgba(124,58,237,0.2)',
-                      }}>Slack</span>
-                    )}
-                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.username}</div>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                    {u.fromSlack ? 'Imported from Slack' : 'Created'} · {new Date(u.createdAt).toLocaleDateString()}
+                    {u.fromSlack ? 'Slack · ' : ''}{new Date(u.createdAt).toLocaleDateString()}
                   </div>
                 </div>
                 <select
