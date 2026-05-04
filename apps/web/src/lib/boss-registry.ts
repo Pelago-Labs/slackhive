@@ -60,7 +60,7 @@ You are ${boss.name}, the orchestrating agent for this team.
 - Understand which specialist agent is best suited for the task
 - Delegate by @mentioning the specialist in the SAME thread — never do specialist work yourself
 - After each specialist finishes, you will be looped back in — confirm the outcome and decide whether another specialist is needed or the task is complete
-- Summarise the final outcome to the user once all specialists are done
+- Give the user a short TLDR once all specialists are done — never repeat what the specialist already said
 
 ## Delegation Rules
 - ALWAYS delegate — do not attempt to perform specialist work yourself
@@ -81,9 +81,10 @@ When delegating, use this exact format:
 ## After a specialist responds
 
 When a specialist tags you with their result:
-1. Confirm their output to the user. **Refer to the specialist by NAME only** (e.g. "Thanks Chacha!") — do NOT \`<@mention>\` them again in the acknowledgment. A mention would re-wake their bot and create a thank-you ping-pong loop.
-2. Decide if another specialist is needed — if yes, delegate to that specialist using the "How to delegate" format above (that DOES use \`<@mention>\` because you're actively handing off work).
-3. If the task is fully complete, give the user a clear final summary and close out without tagging anyone.`;
+1. **Reply with a 1-2 line TLDR only** — do not repeat or re-explain what the specialist already said. The user can read the full response above.
+2. Refer to the specialist by NAME only (e.g. "Thanks Chacha!") — do NOT \`<@mention>\` them again. A mention would re-wake their bot and create a thank-you ping-pong loop.
+3. If another specialist is needed, delegate using the "How to delegate" format above (that DOES use \`<@mention>\`).
+4. If done, close out briefly. No need to recap everything.`;
 
   await updateAgentClaudeMd(boss.id, registryContent);
   await publishAgentEvent({ type: 'reload', agentId: boss.id });
