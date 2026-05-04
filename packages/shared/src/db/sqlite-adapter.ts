@@ -292,9 +292,11 @@ CREATE TABLE IF NOT EXISTS settings (
 CREATE TABLE IF NOT EXISTS users (
   id            TEXT PRIMARY KEY,
   username      TEXT UNIQUE NOT NULL,
-  password_hash TEXT NOT NULL,
+  password_hash TEXT,
   role          TEXT NOT NULL DEFAULT 'viewer'
                      CHECK (role IN ('admin', 'editor', 'viewer')),
+  slack_user_id TEXT UNIQUE,
+  slack_email   TEXT,
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -521,6 +523,15 @@ export function createSqliteAdapter(dbPath?: string): DbAdapter {
   }
   if (!agentCols.includes('last_heartbeat')) {
     db.exec('ALTER TABLE agents ADD COLUMN last_heartbeat TEXT');
+  }
+
+  const userCols = (db.pragma('table_info(users)') as { name: string }[]).map(c => c.name);
+  if (!userCols.includes('slack_user_id')) {
+    db.exec('ALTER TABLE users ADD COLUMN slack_user_id TEXT');
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_slack_user_id ON users(slack_user_id) WHERE slack_user_id IS NOT NULL');
+  }
+  if (!userCols.includes('slack_email')) {
+    db.exec('ALTER TABLE users ADD COLUMN slack_email TEXT');
   }
 
   const jobCols = (db.pragma('table_info(scheduled_jobs)') as { name: string }[]).map(c => c.name);

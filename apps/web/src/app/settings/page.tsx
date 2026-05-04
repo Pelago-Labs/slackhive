@@ -14,7 +14,7 @@ import { MODELS, DEFAULT_COACH_MODEL, COACH_MODEL_SETTING_KEY } from '@slackhive
 import { Portal } from '@/lib/portal';
 import { useAuth } from '@/lib/auth-context';
 
-type Tab = 'general' | 'users';
+type Tab = 'general' | 'users' | 'auth';
 
 interface User {
   id: string;
@@ -43,7 +43,8 @@ const DEFAULTS: Record<string, string> = {
  * @returns {JSX.Element}
  */
 export default function SettingsPage() {
-  const { canEdit, canManageUsers } = useAuth();
+  const { canEdit, canManageUsers, role } = useAuth();
+  const isSuperadmin = role === 'superadmin';
   const [tab, setTab] = useState<Tab>('general');
 
   return (
@@ -62,10 +63,12 @@ export default function SettingsPage() {
       <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border)', marginBottom: 24 }}>
         <TabBtn active={tab === 'general'} onClick={() => setTab('general')}>General</TabBtn>
         {canManageUsers && <TabBtn active={tab === 'users'} onClick={() => setTab('users')}>Users</TabBtn>}
+        {isSuperadmin && <TabBtn active={tab === 'auth'} onClick={() => setTab('auth')}>Authentication</TabBtn>}
       </div>
 
       {tab === 'general' && <GeneralTab />}
       {tab === 'users' && canManageUsers && <UsersTab />}
+      {tab === 'auth' && isSuperadmin && <AuthTab />}
     </div>
   );
 }
@@ -610,6 +613,116 @@ function UsersTab() {
         </Portal>
       )}
     </>
+  );
+}
+
+// =============================================================================
+// Authentication tab (superadmin only)
+// =============================================================================
+
+const SLACK_CLIENT_ID_KEY = 'slack_client_id';
+const SLACK_CLIENT_SECRET_KEY = 'slack_client_secret';
+
+function AuthTab() {
+  const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState('');
+  const [redirectUri, setRedirectUri] = useState('');
+  useEffect(() => { setRedirectUri(`${window.location.origin}/api/auth/slack/callback`); }, []);
+
+  useEffect(() => {
+    fetch('/api/settings')
+      .then(r => r.json())
+      .then((s: Record<string, string>) => {
+        if (s[SLACK_CLIENT_ID_KEY]) setClientId(s[SLACK_CLIENT_ID_KEY]);
+        if (s[SLACK_CLIENT_SECRET_KEY]) setClientSecret(s[SLACK_CLIENT_SECRET_KEY]);
+      })
+      .catch(() => {});
+  }, []);
+
+  async function save() {
+    setSaving(true);
+    try {
+      await Promise.all([
+        fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: SLACK_CLIENT_ID_KEY, value: clientId }) }),
+        fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: SLACK_CLIENT_SECRET_KEY, value: clientSecret }) }),
+      ]);
+      setToast('Saved');
+      setTimeout(() => setToast(''), 2000);
+    } finally { setSaving(false); }
+  }
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%', padding: '9px 12px', borderRadius: 8,
+    border: '1px solid var(--border)', background: 'var(--surface)',
+    fontSize: 13, color: 'var(--text)', outline: 'none',
+    fontFamily: 'var(--font-sans)', boxSizing: 'border-box',
+  };
+  const labelStyle: React.CSSProperties = {
+    display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--muted)', marginBottom: 6,
+  };
+
+  return (
+    <div style={{ maxWidth: 560 }}>
+      <h2 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px' }}>Sign in with Slack</h2>
+      <p style={{ fontSize: 13, color: 'var(--muted)', margin: '0 0 24px' }}>
+        Allow users to log in using their Slack account. Get these from{' '}
+        <a href="https://api.slack.com/apps" target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>api.slack.com/apps</a>
+        {' '}→ your app → Basic Information. Add user token scopes: <code>openid</code>, <code>profile</code>, <code>email</code>.
+      </p>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div>
+          <label style={labelStyle}>Redirect URI <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(add this in Slack → OAuth & Permissions)</span></label>
+          <input
+            style={{ ...inputStyle, color: 'var(--muted)', cursor: 'text' }}
+            value={redirectUri}
+            readOnly
+            onFocus={e => e.currentTarget.select()}
+          />
+        </div>
+        <div>
+          <label style={labelStyle}>Client ID</label>
+          <input
+            style={inputStyle}
+            value={clientId}
+            onChange={e => setClientId(e.target.value)}
+            placeholder="123456789012.123456789012"
+          />
+        </div>
+        <div>
+          <label style={labelStyle}>Client Secret</label>
+          <input
+            style={inputStyle}
+            type="password"
+            value={clientSecret}
+            onChange={e => setClientSecret(e.target.value)}
+            placeholder="••••••••••••••••••••••••••••••••"
+          />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button
+            onClick={save}
+            disabled={saving || !clientId || !clientSecret}
+            style={{
+              padding: '8px 18px', borderRadius: 8, border: 'none',
+              background: 'var(--accent)', color: 'var(--accent-fg)',
+              fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer',
+              fontFamily: 'var(--font-sans)',
+            }}
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+          {toast && <span style={{ fontSize: 13, color: 'var(--success, #16a34a)' }}>{toast}</span>}
+        </div>
+        {clientId && (
+          <p style={{ fontSize: 12, color: 'var(--muted)', margin: 0 }}>
+            ✓ Sign in with Slack is enabled. Users will see the button on the login page.
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
 

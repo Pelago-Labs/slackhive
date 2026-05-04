@@ -897,6 +897,37 @@ export async function deleteUser(id: string): Promise<void> {
 }
 
 /**
+ * Looks up a user by their Slack user ID (sub claim from OpenID Connect).
+ */
+export async function getUserBySlackId(slackUserId: string): Promise<{ id: string; username: string; role: string } | null> {
+  const r = await (await db()).query(
+    'SELECT id, username, role FROM users WHERE slack_user_id = $1',
+    [slackUserId]
+  );
+  if (!r.rows.length) return null;
+  const row = r.rows[0];
+  return { id: row.id as string, username: row.username as string, role: row.role as string };
+}
+
+/**
+ * Creates or returns an existing user authenticated via Slack OAuth.
+ * New users are created with role=viewer.
+ */
+export async function upsertSlackUser(slackUserId: string, email: string, name: string): Promise<{ id: string; username: string; role: string }> {
+  const existing = await getUserBySlackId(slackUserId);
+  if (existing) return existing;
+
+  const id = randomUUID();
+  const username = email;
+  const r = await (await db()).query(
+    'INSERT INTO users (id, username, password_hash, role, slack_user_id, slack_email) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, username, role',
+    [id, username, null, 'viewer', slackUserId, email]
+  );
+  const row = r.rows[0];
+  return { id: row.id as string, username: row.username as string, role: row.role as string };
+}
+
+/**
  * Updates a user's role.
  *
  * @param {string} id - User UUID.
