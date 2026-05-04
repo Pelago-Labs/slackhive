@@ -204,12 +204,13 @@ function UsersTab() {
 
   // Slack import
   const [importToken, setImportToken] = useState('');
-  const [importSaving, setImportSaving] = useState(false);
   const [importLoading, setImportLoading] = useState(false);
   const [importModal, setImportModal] = useState(false);
   const [slackMembers, setSlackMembers] = useState<Array<{ id: string; name: string; email: string }>>([]);
   const [importError, setImportError] = useState('');
   const [onboarding, setOnboarding] = useState(false);
+  const [tokenInput, setTokenInput] = useState('');
+  const [askToken, setAskToken] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -226,15 +227,9 @@ function UsersTab() {
     }).catch(() => {});
   }, []);
 
-  const saveImportToken = async () => {
-    if (!importToken.trim()) return;
-    setImportSaving(true);
-    await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'slack_import_bot_token', value: importToken }) });
-    setImportSaving(false);
-  };
-
-  const openImport = async () => {
+  const doFetchMembers = async () => {
     setImportError('');
+    setAskToken(false);
     setImportLoading(true);
     setImportModal(true);
     try {
@@ -243,6 +238,24 @@ function UsersTab() {
       if (!r.ok) { setImportError(data.error || 'Failed to fetch Slack users'); setSlackMembers([]); return; }
       setSlackMembers(data.notOnboarded);
     } catch { setImportError('Network error'); } finally { setImportLoading(false); }
+  };
+
+  const openImport = async () => {
+    if (importToken) {
+      await doFetchMembers();
+    } else {
+      setTokenInput('');
+      setImportError('');
+      setAskToken(true);
+      setImportModal(true);
+    }
+  };
+
+  const submitToken = async () => {
+    if (!tokenInput.trim()) return;
+    await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'slack_import_bot_token', value: tokenInput.trim() }) });
+    setImportToken(tokenInput.trim());
+    await doFetchMembers();
   };
 
   const onboardAll = async () => {
@@ -397,27 +410,6 @@ function UsersTab() {
             </svg>
             Add User
           </button>
-        </div>
-      </div>
-
-      {/* Slack import bot token */}
-      <div style={{ marginBottom: 20, padding: '14px 16px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface-2)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--muted)', marginBottom: 4 }}>
-              Slack Bot Token for import
-              <span style={{ fontWeight: 400, marginLeft: 6, color: 'var(--subtle)' }}>— needs <code>users:read</code> scope. Find it in your Slack app → OAuth &amp; Permissions → Bot User OAuth Token.</span>
-            </label>
-            <input
-              type="password"
-              value={importToken}
-              onChange={e => setImportToken(e.target.value)}
-              onBlur={saveImportToken}
-              placeholder="xoxb-..."
-              style={{ width: '100%', padding: '8px 12px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'var(--font-mono, monospace)', background: 'var(--surface)' }}
-            />
-          </div>
-          {importSaving && <span style={{ fontSize: 11, color: 'var(--subtle)' }}>Saving…</span>}
         </div>
       </div>
 
@@ -662,10 +654,38 @@ function UsersTab() {
                 style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer' }}>&times;</button>
             </div>
 
+            {askToken && (
+              <>
+                <p style={{ margin: 0, fontSize: 13, color: 'var(--muted)' }}>
+                  Enter a Slack bot token with <code>users:read</code> and <code>users:read.email</code> scopes.<br />
+                  Find it in your Slack app → <strong>OAuth &amp; Permissions → Bot User OAuth Token</strong>.
+                </p>
+                <input
+                  autoFocus
+                  type="password"
+                  value={tokenInput}
+                  onChange={e => setTokenInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') submitToken(); }}
+                  placeholder="xoxb-..."
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'var(--font-mono, monospace)', background: 'var(--surface)' }}
+                />
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button onClick={() => setImportModal(false)}
+                    style={{ padding: '8px 16px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-sans)' }}>Cancel</button>
+                  <button onClick={submitToken} disabled={!tokenInput.trim()} style={{
+                    padding: '8px 18px', borderRadius: 7, border: 'none',
+                    background: 'var(--accent)', color: 'var(--accent-fg)',
+                    fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'var(--font-sans)',
+                    opacity: tokenInput.trim() ? 1 : 0.5,
+                  }}>Continue</button>
+                </div>
+              </>
+            )}
+
             {importLoading && <p style={{ margin: 0, fontSize: 13, color: 'var(--muted)' }}>Fetching workspace members…</p>}
             {importError && <div style={{ fontSize: 12, color: '#dc2626', background: 'rgba(220,38,38,0.06)', padding: '8px 12px', borderRadius: 6 }}>{importError}</div>}
 
-            {!importLoading && !importError && (
+            {!askToken && !importLoading && !importError && (
               <>
                 <p style={{ margin: 0, fontSize: 13, color: 'var(--muted)' }}>
                   {slackMembers.length === 0
