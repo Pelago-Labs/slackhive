@@ -363,7 +363,7 @@ export class ClaudeHandler {
    * @param {McpServerConfig} config - Raw config from the DB.
    * @returns {McpServerConfig} Resolved config safe to pass to the SDK.
    */
-  private resolveServerConfig(serverName: string, config: McpServerConfig, serverType: McpServerType): McpServerConfig {
+  private resolveServerConfig(serverName: string, config: McpServerConfig, serverType: McpServerType, sessionWorkDir?: string): McpServerConfig {
     const c = config as McpStdioConfig & Record<string, unknown>;
 
     if (c.tsSource) {
@@ -389,7 +389,12 @@ export class ClaudeHandler {
       return {
         command: tsxPath,
         args: [scriptPath],
-        env: { NODE_PATH: nodePath, ...resolvedEnv },
+        env: {
+          NODE_PATH: nodePath,
+          AGENT_SLUG: this.agent.slug,
+          ...(sessionWorkDir ? { SESSION_WORK_DIR: sessionWorkDir } : {}),
+          ...resolvedEnv,
+        },
       } as McpServerConfig;
     }
 
@@ -528,7 +533,7 @@ export class ClaudeHandler {
 
     if (this.mcpServers.length > 0) {
       options.mcpServers = Object.fromEntries(
-        this.mcpServers.map((server) => [server.name, this.resolveServerConfig(server.name, server.config, server.type)])
+        this.mcpServers.map((server) => [server.name, this.resolveServerConfig(server.name, server.config, server.type, sessionWorkDir)])
       );
       this.log.debug('MCP servers configured', { servers: this.mcpServers.map((s) => s.name) });
     }
