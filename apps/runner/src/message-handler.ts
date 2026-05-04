@@ -85,7 +85,7 @@ export class MessageHandler {
     // Test platform bypasses this check (test users are synthetic)
     if (msg.platform !== 'test' && !(await this.userCanTrigger(userId))) {
       this.log.info('Denying message — user has no access to this agent', { userId });
-      await this.adapter.postMessage(channelId, "You don't have access to this agent.").catch(() => {});
+      await this.adapter.postMessage(channelId, "You don't have access to this agent.", threadId).catch(() => {});
       return;
     }
 
