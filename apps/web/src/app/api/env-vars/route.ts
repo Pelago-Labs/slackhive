@@ -10,7 +10,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiError } from '@/lib/api-error';
 import { getAllEnvVars, setEnvVar, getEnvVarCreatedBy } from '@/lib/db';
-import { guardAdmin, guardUserAdmin } from '@/lib/api-guard';
+import { guardAdmin } from '@/lib/api-guard';
 import { getSessionFromRequest } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -38,7 +38,7 @@ export async function GET(): Promise<NextResponse> {
  * @returns {Promise<NextResponse>} 201 on success.
  */
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const denied = guardUserAdmin(request);
+  const denied = guardAdmin(request);
   if (denied) return denied;
   try {
     const { key, value, description } = (await request.json()) as {
