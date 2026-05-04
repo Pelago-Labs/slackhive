@@ -190,8 +190,8 @@ function UsersTab() {
   const [saving, setSaving] = useState(false);
   const [updatingRole, setUpdatingRole] = useState<string | null>(null);
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
-  // Map of userId → map of agentId → 'none' | 'view' | 'edit'
-  const [accessGrants, setAccessGrants] = useState<Record<string, Record<string, 'none' | 'view' | 'edit'>>>({});
+  // Map of userId → map of agentId → 'none' | 'trigger' | 'view' | 'edit'
+  const [accessGrants, setAccessGrants] = useState<Record<string, Record<string, 'none' | 'trigger' | 'view' | 'edit'>>>({});
   // Map of userId → set of agentIds where user is the creator (owner)
   const [ownerAgents, setOwnerAgents] = useState<Record<string, Set<string>>>({});
   const [loadingGrants, setLoadingGrants] = useState<string | null>(null);
@@ -206,7 +206,8 @@ function UsersTab() {
   const [importToken, setImportToken] = useState('');
   const [importLoading, setImportLoading] = useState(false);
   const [importModal, setImportModal] = useState(false);
-  const [slackMembers, setSlackMembers] = useState<Array<{ id: string; name: string; email: string }>>([]);
+  const [slackMembers, setSlackMembers] = useState<Array<{ id: string; name: string; email: string; onboarded: boolean }>>([]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [importError, setImportError] = useState('');
   const [onboarding, setOnboarding] = useState(false);
   const [tokenInput, setTokenInput] = useState('');
@@ -236,7 +237,9 @@ function UsersTab() {
       const r = await fetch('/api/admin/slack-workspace-users');
       const data = await r.json();
       if (!r.ok) { setImportError(data.error || 'Failed to fetch Slack users'); setSlackMembers([]); return; }
-      setSlackMembers(data.notOnboarded);
+      const members = data.members ?? [];
+      setSlackMembers(members);
+      setSelected(new Set(members.filter((m: { onboarded: boolean; id: string }) => !m.onboarded).map((m: { id: string }) => m.id)));
     } catch { setImportError('Network error'); } finally { setImportLoading(false); }
   };
 
@@ -258,22 +261,31 @@ function UsersTab() {
     await doFetchMembers();
   };
 
-  const onboardAll = async () => {
-    if (!slackMembers.length) return;
+  const onboardSelected = async () => {
+    const toOnboard = slackMembers.filter(m => selected.has(m.id));
+    if (!toOnboard.length) return;
     setOnboarding(true);
     try {
-      await fetch('/api/admin/slack-workspace-users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ users: slackMembers }) });
-      setImportModal(false);
-      setSlackMembers([]);
+      await fetch('/api/admin/slack-workspace-users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ users: toOnboard }) });
+      setSlackMembers(prev => prev.map(m => selected.has(m.id) ? { ...m, onboarded: true } : m));
+      setSelected(new Set());
       load();
     } finally { setOnboarding(false); }
   };
 
-  const onboardOne = async (u: { id: string; name: string; email: string }) => {
-    await fetch('/api/admin/slack-workspace-users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ users: [u] }) });
-    setSlackMembers(prev => prev.filter(m => m.id !== u.id));
-    load();
-  };
+  const toggleSelect = (id: string) => setSelected(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
+  const [importSearch, setImportSearch] = useState('');
+  const filteredMembers = slackMembers.filter(m =>
+    !importSearch || m.name.toLowerCase().includes(importSearch.toLowerCase()) || m.email.toLowerCase().includes(importSearch.toLowerCase())
+  );
+  const notOnboarded = slackMembers.filter(m => !m.onboarded);
+  const allSelected = notOnboarded.length > 0 && notOnboarded.every(m => selected.has(m.id));
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(notOnboarded.map(m => m.id)));
 
   const create = async () => {
     if (!newUser.username || !newUser.password) { setError('Username and password required'); return; }
@@ -347,14 +359,15 @@ function UsersTab() {
     if (accessGrants[userId]) return; // already loaded
     setLoadingGrants(userId);
     // Load all access grants for this user across all agents
-    const grants: Record<string, 'none' | 'view' | 'edit'> = {};
+    const grants: Record<string, 'none' | 'trigger' | 'view' | 'edit'> = {};
     const owners = new Set<string>();
     await Promise.all(agents.map(async (a) => {
       const r = await fetch(`/api/agents/${a.id}/access`);
       const data = await r.json();
-      const match = data.writeUsers?.find((w: { userId: string; canWrite: boolean; isOwner: boolean }) => w.userId === userId);
+      const match = data.writeUsers?.find((w: { userId: string; accessLevel?: string; canWrite?: boolean; isOwner: boolean }) => w.userId === userId);
       if (match) {
-        grants[a.id] = match.canWrite ? 'edit' : 'view';
+        const lvl = (match.accessLevel as 'trigger' | 'view' | 'edit' | undefined) ?? (match.canWrite ? 'edit' : 'view');
+        grants[a.id] = lvl;
         if (match.isOwner) owners.add(a.id);
       }
     }));
@@ -363,7 +376,7 @@ function UsersTab() {
     setLoadingGrants(null);
   };
 
-  const setAccess = async (userId: string, agentId: string, level: 'none' | 'view' | 'edit') => {
+  const setAccess = async (userId: string, agentId: string, level: 'none' | 'trigger' | 'view' | 'edit') => {
     if (level === 'none') {
       await fetch(`/api/agents/${agentId}/access`, {
         method: 'DELETE', headers: { 'Content-Type': 'application/json' },
@@ -372,7 +385,7 @@ function UsersTab() {
     } else {
       await fetch(`/api/agents/${agentId}/access`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, canWrite: level === 'edit' }),
+        body: JSON.stringify({ userId, accessLevel: level }),
       });
     }
     setAccessGrants(prev => ({
@@ -516,11 +529,17 @@ function UsersTab() {
                   margin: '0 16px 12px', padding: '14px 16px', borderRadius: 8,
                   background: 'var(--surface-2)', border: '1px solid var(--border)',
                 }}>
-                  <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>
+                  <p style={{ margin: '0 0 6px', fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>
                     Agent access
                     <span style={{ fontWeight: 400, color: 'var(--subtle)', marginLeft: 6 }}>
                       {u.role === 'editor' ? '— editors also always access their own agents' : '— viewers see only what is granted'}
                     </span>
+                  </p>
+                  <p style={{ margin: '0 0 10px', fontSize: 11, color: 'var(--subtle)' }}>
+                    <strong style={{ color: 'var(--muted)' }}>No access</strong> — hidden everywhere &nbsp;·&nbsp;
+                    <strong style={{ color: '#d97706' }}>Trigger</strong> — Slack only, not in SlackHive &nbsp;·&nbsp;
+                    <strong style={{ color: '#059669' }}>View</strong> — SlackHive + Slack &nbsp;·&nbsp;
+                    <strong style={{ color: '#3b82f6' }}>Edit</strong> — full access
                   </p>
                   {loadingGrants === u.id ? (
                     <p style={{ fontSize: 12, color: 'var(--subtle)', margin: 0 }}>Loading…</p>
@@ -529,7 +548,7 @@ function UsersTab() {
                       {agents.map(a => {
                         const isOwner = ownerAgents[u.id]?.has(a.id) ?? false;
                         const level = accessGrants[u.id]?.[a.id] ?? 'none';
-                        const levels: ('none' | 'view' | 'edit')[] = u.role === 'viewer' ? ['none', 'view'] : ['none', 'view', 'edit'];
+                        const levels: ('none' | 'trigger' | 'view' | 'edit')[] = u.role === 'viewer' ? ['none', 'trigger', 'view'] : ['none', 'trigger', 'view', 'edit'];
                         return (
                           <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                             <span style={{ fontSize: 12, color: 'var(--text)', flex: 1 }}>{a.name}</span>
@@ -550,16 +569,17 @@ function UsersTab() {
                                     border: '1px solid var(--border)', cursor: 'pointer',
                                     fontFamily: 'var(--font-sans)',
                                     background: level === lvl
-                                      ? lvl === 'edit' ? 'rgba(59,130,246,0.15)' : lvl === 'view' ? 'rgba(5,150,105,0.12)' : 'var(--surface)'
+                                      ? lvl === 'edit' ? 'rgba(59,130,246,0.15)' : lvl === 'view' ? 'rgba(5,150,105,0.12)' : lvl === 'trigger' ? 'rgba(217,119,6,0.1)' : 'var(--surface)'
                                       : 'var(--surface)',
                                     color: level === lvl
-                                      ? lvl === 'edit' ? '#3b82f6' : lvl === 'view' ? '#059669' : 'var(--muted)'
+                                      ? lvl === 'edit' ? '#3b82f6' : lvl === 'view' ? '#059669' : lvl === 'trigger' ? '#d97706' : 'var(--muted)'
                                       : 'var(--subtle)',
                                     borderColor: level === lvl
-                                      ? lvl === 'edit' ? 'rgba(59,130,246,0.4)' : lvl === 'view' ? 'rgba(5,150,105,0.4)' : 'var(--border)'
+                                      ? lvl === 'edit' ? 'rgba(59,130,246,0.4)' : lvl === 'view' ? 'rgba(5,150,105,0.4)' : lvl === 'trigger' ? 'rgba(217,119,6,0.4)' : 'var(--border)'
                                       : 'var(--border)',
                                   }}
-                                >{lvl === 'none' ? 'No access' : lvl === 'view' ? 'View' : 'Edit'}</button>
+                                  title={lvl === 'none' ? 'Cannot see agent in SlackHive or interact in Slack' : lvl === 'trigger' ? 'Can message the agent in Slack only — not visible in SlackHive' : lvl === 'view' ? 'Can see conversations in SlackHive and message in Slack' : 'Full access — edit agent settings, view conversations, and message in Slack'}
+                                >{lvl === 'none' ? 'No access' : lvl === 'trigger' ? 'Trigger' : lvl === 'view' ? 'View' : 'Edit'}</button>
                               ))}
                             </div>
                             )}
@@ -687,42 +707,66 @@ function UsersTab() {
 
             {!askToken && !importLoading && !importError && (
               <>
-                <p style={{ margin: 0, fontSize: 13, color: 'var(--muted)' }}>
-                  {slackMembers.length === 0
-                    ? 'All workspace members are already onboarded.'
-                    : `${slackMembers.length} member${slackMembers.length !== 1 ? 's' : ''} not yet in SlackHive. They will be created as viewers.`}
-                </p>
                 {slackMembers.length > 0 && (
-                  <div style={{ overflowY: 'auto', maxHeight: 300, border: '1px solid var(--border)', borderRadius: 8 }}>
-                    {slackMembers.map((m, i) => (
+                  <input
+                    type="text"
+                    placeholder="Search by name or email…"
+                    value={importSearch}
+                    onChange={e => setImportSearch(e.target.value)}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'var(--font-sans)', background: 'var(--surface)' }}
+                  />
+                )}
+                {slackMembers.length > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 2px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer', fontSize: 12, color: 'var(--muted)', userSelect: 'none' }}>
+                      <input type="checkbox" checked={allSelected} onChange={toggleAll} style={{ cursor: 'pointer' }} />
+                      Select all not onboarded ({notOnboarded.length})
+                    </label>
+                    <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--subtle)' }}>{slackMembers.length} total · {slackMembers.filter(m => m.onboarded).length} onboarded</span>
+                  </div>
+                )}
+                {slackMembers.length === 0 && <p style={{ margin: 0, fontSize: 13, color: 'var(--muted)' }}>No members found in workspace.</p>}
+                {filteredMembers.length > 0 && (
+                  <div style={{ overflowY: 'auto', maxHeight: 340, border: '1px solid var(--border)', borderRadius: 8 }}>
+                    {filteredMembers.map((m, i) => (
                       <div key={m.id} style={{
-                        display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
-                        borderBottom: i < slackMembers.length - 1 ? '1px solid var(--border)' : 'none',
+                        display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px',
+                        borderBottom: i < filteredMembers.length - 1 ? '1px solid var(--border)' : 'none',
+                        background: m.onboarded ? 'var(--surface-2)' : 'var(--surface)',
+                        opacity: m.onboarded ? 0.6 : 1,
                       }}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{m.name}</div>
-                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>{m.email}</div>
+                        <input
+                          type="checkbox"
+                          checked={selected.has(m.id)}
+                          disabled={m.onboarded}
+                          onChange={() => toggleSelect(m.id)}
+                          style={{ cursor: m.onboarded ? 'default' : 'pointer', flexShrink: 0 }}
+                        />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.name}</div>
+                          {m.email && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{m.email}</div>}
                         </div>
-                        <button onClick={() => onboardOne(m)} style={{
-                          fontSize: 11, fontWeight: 500, padding: '4px 12px', borderRadius: 6,
-                          border: '1px solid var(--border)', background: 'var(--surface-2)',
-                          cursor: 'pointer', fontFamily: 'var(--font-sans)', color: 'var(--text)',
-                        }}>Onboard</button>
+                        {m.onboarded
+                          ? <span style={{ fontSize: 10, fontWeight: 600, color: '#059669', background: 'rgba(5,150,105,0.1)', padding: '2px 8px', borderRadius: 4, flexShrink: 0 }}>Onboarded</span>
+                          : null}
                       </div>
                     ))}
                   </div>
                 )}
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
+                  <button onClick={() => { setTokenInput(''); setAskToken(true); setSlackMembers([]); setImportError(''); }} style={{
+                    background: 'none', border: 'none', fontSize: 12, color: 'var(--muted)', cursor: 'pointer', marginRight: 'auto', fontFamily: 'var(--font-sans)', textDecoration: 'underline',
+                  }}>Change token</button>
                   <button onClick={() => setImportModal(false)} disabled={onboarding}
                     style={{ padding: '8px 16px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface)', fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-sans)' }}>Close</button>
-                  {slackMembers.length > 0 && (
-                    <button onClick={onboardAll} disabled={onboarding} style={{
+                  {selected.size > 0 && (
+                    <button onClick={onboardSelected} disabled={onboarding} style={{
                       padding: '8px 18px', borderRadius: 7, border: 'none',
                       background: 'var(--accent)', color: 'var(--accent-fg)',
                       fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'var(--font-sans)',
                       opacity: onboarding ? 0.6 : 1,
                     }}>
-                      {onboarding ? 'Onboarding…' : `Onboard All (${slackMembers.length})`}
+                      {onboarding ? 'Onboarding…' : `Onboard Selected (${selected.size})`}
                     </button>
                   )}
                 </div>

@@ -1,25 +1,11 @@
-/**
- * @fileoverview Agent write-access management API.
- *
- * GET    /api/agents/[id]/access — List users with explicit write access
- * POST   /api/agents/[id]/access — Grant write access to a user
- * DELETE /api/agents/[id]/access — Revoke write access from a user
- *
- * @module web/api/agents/[id]/access
- */
-
 import { NextRequest, NextResponse } from 'next/server';
 import { guardAdmin } from '@/lib/api-guard';
-import { getAgentWriteUsers, grantAgentWrite, revokeAgentWrite, getAllUsers, userCanWriteAgent, userCanReadAgent } from '@/lib/db';
+import { getAgentWriteUsers, grantAgentAccess, revokeAgentWrite, getAllUsers, userCanWriteAgent, userCanReadAgent } from '@/lib/db';
+import type { AgentAccessLevel } from '@/lib/db';
 import { getSessionFromRequest } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
-/**
- * GET /api/agents/[id]/access
- * - For admins: returns write-grant list + all users for the assignment UI.
- * - For editors/viewers: returns { canWrite: bool } for the current session user.
- */
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -36,7 +22,6 @@ export async function GET(
     return NextResponse.json({ writeUsers, allUsers: allUsers.map(u => ({ id: u.id, username: u.username, role: u.role })) });
   }
 
-  // For editors/viewers — return both read and write permission
   const [canRead, canWrite] = await Promise.all([
     userCanReadAgent(id, session.username, session.role),
     userCanWriteAgent(id, session.username, session.role),
@@ -44,11 +29,6 @@ export async function GET(
   return NextResponse.json({ canRead, canWrite });
 }
 
-/**
- * POST /api/agents/[id]/access
- * Grants write access to a user (admin only).
- * Body: { userId: string }
- */
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -56,17 +36,15 @@ export async function POST(
   const denied = guardAdmin(req);
   if (denied) return denied;
   const { id } = await params;
-  const { userId } = await req.json().catch(() => ({}));
+  const { userId, accessLevel, canWrite } = await req.json().catch(() => ({}));
   if (!userId) return NextResponse.json({ error: 'userId required' }, { status: 400 });
-  await grantAgentWrite(id, userId);
+
+  // Support both new accessLevel param and legacy canWrite boolean
+  const level: AgentAccessLevel = accessLevel ?? (canWrite ? 'edit' : 'view');
+  await grantAgentAccess(id, userId, level);
   return new NextResponse(null, { status: 204 });
 }
 
-/**
- * DELETE /api/agents/[id]/access
- * Revokes write access from a user (admin only).
- * Body: { userId: string }
- */
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }

@@ -23,7 +23,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const state = randomUUID();
   await setSetting(`slack_oauth_state:${state}`, '1');
 
-  const redirectUri = `${req.nextUrl.origin}/api/auth/slack/callback`;
+  const proto = req.headers.get('x-forwarded-proto') ?? req.nextUrl.protocol.replace(':', '');
+  const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? req.nextUrl.host;
+  const redirectUri = `${proto}://${host}/api/auth/slack/callback`;
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,

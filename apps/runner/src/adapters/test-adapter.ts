@@ -56,6 +56,8 @@ const TEST_THREAD       = 'T-TEST-THREAD';
 export class TestAdapter implements PlatformAdapter {
   readonly platform = 'test';
 
+  private threadId = TEST_THREAD;
+
   private messageHandler?: (msg: IncomingMessage) => Promise<void>;
 
   /** Accumulated turns in this test session — used by `getThreadMessages`

@@ -19,8 +19,11 @@ async function fetchSlackUsers(token: string): Promise<Array<{ id: string; name:
     if (!data.ok) throw new Error(data.error ?? 'users.list failed');
 
     for (const m of data.members ?? []) {
-      if (m.is_bot || m.deleted || m.id === 'USLACKBOT' || !m.profile?.email) continue;
-      members.push({ id: m.id, name: m.real_name || m.name, email: m.profile.email });
+      if (m.is_bot || m.deleted || m.id === 'USLACKBOT') continue;
+      const email = m.profile?.email ?? '';
+      const name = m.profile?.real_name || m.real_name || m.name || '';
+      if (!name) continue;
+      members.push({ id: m.id, name, email });
     }
 
     cursor = data.response_metadata?.next_cursor || undefined;
@@ -29,24 +32,27 @@ async function fetchSlackUsers(token: string): Promise<Array<{ id: string; name:
   return members;
 }
 
-/** GET — list Slack workspace users not yet in SlackHive */
+/** GET — list all Slack workspace users with onboarded status */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     requireRole(req as unknown as Request, 'admin');
 
     const token = await getSetting('slack_import_bot_token');
-    if (!token) return NextResponse.json({ error: 'No import bot token configured. Add one in Settings → Users.' }, { status: 400 });
+    if (!token) return NextResponse.json({ error: 'No import bot token configured.' }, { status: 400 });
 
     const slackUsers = await fetchSlackUsers(token);
 
     const d = await getDb();
-    const existing = await d.query('SELECT slack_email FROM users WHERE slack_email IS NOT NULL');
-    const existingEmails = new Set(existing.rows.map(r => r.slack_email as string));
+    const existing = await d.query('SELECT slack_user_id, slack_email, username FROM users');
+    const existingSlackIds = new Set(existing.rows.map(r => r.slack_user_id as string).filter(Boolean));
+    const existingEmails = new Set(existing.rows.map(r => (r.slack_email || r.username) as string).filter(Boolean));
 
-    return NextResponse.json({
-      notOnboarded: slackUsers.filter(u => !existingEmails.has(u.email)),
-      alreadyOnboarded: slackUsers.filter(u => existingEmails.has(u.email)),
-    });
+    const members = slackUsers.map(u => ({
+      ...u,
+      onboarded: existingSlackIds.has(u.id) || (u.email ? existingEmails.has(u.email) : false),
+    }));
+
+    return NextResponse.json({ members });
   } catch (err) {
     return apiError('admin/slack-workspace-users GET', err);
   }
@@ -62,7 +68,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'No users provided' }, { status: 400 });
     }
 
-    await Promise.all(body.users.map(u => upsertSlackUser(u.id, u.email, u.name)));
+    await Promise.all(body.users.map(u => upsertSlackUser(u.id, u.email || u.name, u.name)));
 
     return NextResponse.json({ onboarded: body.users.length });
   } catch (err) {

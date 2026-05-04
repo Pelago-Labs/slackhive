@@ -22,7 +22,10 @@ import type { Role } from '@/lib/auth';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const { searchParams, origin } = req.nextUrl;
+  const { searchParams } = req.nextUrl;
+  const proto = req.headers.get('x-forwarded-proto') ?? req.nextUrl.protocol.replace(':', '');
+  const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? req.nextUrl.host;
+  const origin = `${proto}://${host}`;
   const code = searchParams.get('code');
   const state = searchParams.get('state');
   const error = searchParams.get('error');
