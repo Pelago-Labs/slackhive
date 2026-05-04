@@ -1048,6 +1048,7 @@ function rowToJob(row: Record<string, unknown>): ScheduledJob {
     targetType: row.target_type as 'channel' | 'dm',
     targetId: row.target_id as string,
     enabled: row.enabled as boolean,
+    createdBy: (row.created_by as string) ?? 'system',
     createdAt: row.created_at as Date,
     updatedAt: row.updated_at as Date,
   };
@@ -1073,8 +1074,10 @@ function rowToJobRun(row: Record<string, unknown>): JobRun {
  *
  * @returns {Promise<Array<ScheduledJob & { lastRun?: JobRun }>>}
  */
-export async function getAllJobs(): Promise<Array<ScheduledJob & { lastRun?: JobRun }>> {
+export async function getAllJobs(createdBy?: string): Promise<Array<ScheduledJob & { lastRun?: JobRun }>> {
   const adapter = await db();
+  const params = createdBy ? [createdBy] : [];
+  const whereClause = createdBy ? 'WHERE j.created_by = $1' : '';
 
   if (adapter.type === 'sqlite') {
     // SQLite does not support LATERAL joins — use a correlated subquery instead
@@ -1086,8 +1089,9 @@ export async function getAllJobs(): Promise<Array<ScheduledJob & { lastRun?: Job
       LEFT JOIN job_runs lr ON lr.id = (
         SELECT jr.id FROM job_runs jr WHERE jr.job_id = j.id ORDER BY jr.started_at DESC LIMIT 1
       )
+      ${whereClause}
       ORDER BY j.created_at DESC
-    `);
+    `, params);
     return r.rows.map(row => ({
       ...rowToJob(row),
       lastRun: row.lr_id ? {
@@ -1107,8 +1111,9 @@ export async function getAllJobs(): Promise<Array<ScheduledJob & { lastRun?: Job
     LEFT JOIN LATERAL (
       SELECT * FROM job_runs WHERE job_id = j.id ORDER BY started_at DESC LIMIT 1
     ) lr ON true
+    ${whereClause}
     ORDER BY j.created_at DESC
-  `);
+  `, params);
   return r.rows.map(row => ({
     ...rowToJob(row),
     lastRun: row.lr_id ? {
@@ -1139,9 +1144,9 @@ export async function getJobById(id: string): Promise<ScheduledJob | null> {
 export async function createJob(req: CreateJobRequest): Promise<ScheduledJob> {
   const id = randomUUID();
   const r = await (await db()).query(
-    `INSERT INTO scheduled_jobs (id, agent_id, name, prompt, cron_schedule, target_type, target_id, enabled)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-    [id, req.agentId, req.name, req.prompt, req.cronSchedule, req.targetType ?? 'channel', req.targetId, req.enabled ?? true]
+    `INSERT INTO scheduled_jobs (id, agent_id, name, prompt, cron_schedule, target_type, target_id, enabled, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+    [id, req.agentId, req.name, req.prompt, req.cronSchedule, req.targetType ?? 'channel', req.targetId, req.enabled ?? true, req.createdBy ?? 'system']
   );
   return rowToJob(r.rows[0]);
 }

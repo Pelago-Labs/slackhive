@@ -314,7 +314,11 @@ export class SlackAdapter implements PlatformAdapter {
 
   async openDm(userId: string): Promise<string> {
     const result = await this.app.client.conversations.open({ users: userId });
-    return result.channel?.id ?? '';
+    const channelId = result.channel?.id;
+    if (!channelId) {
+      throw new Error(`Failed to open DM with user ${userId}: Slack did not return a channel ID`);
+    }
+    return channelId;
   }
 
   // ─── Formatting ────────────────────────────────────────────────────

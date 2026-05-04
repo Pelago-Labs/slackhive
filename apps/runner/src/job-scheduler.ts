@@ -140,11 +140,9 @@ export class JobScheduler {
         ? await agent.adapter.openDm(job.targetId)
         : job.targetId;
 
-      if (targetChannelId) {
-        const payloads = agent.adapter.buildPayloads(output);
-        for (const payload of payloads) {
-          await agent.adapter.postPayload(targetChannelId, payload);
-        }
+      const payloads = agent.adapter.buildPayloads(output);
+      for (const payload of payloads) {
+        await agent.adapter.postPayload(targetChannelId, payload);
       }
 
       await updateJobRun(runId, 'success', output.slice(0, 2000));

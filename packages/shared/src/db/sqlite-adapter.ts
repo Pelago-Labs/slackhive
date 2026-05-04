@@ -308,6 +308,7 @@ CREATE TABLE IF NOT EXISTS scheduled_jobs (
                      CHECK (target_type IN ('channel', 'dm')),
   target_id     TEXT NOT NULL,
   enabled       INTEGER NOT NULL DEFAULT 1,
+  created_by    TEXT NOT NULL DEFAULT 'system',
   created_at    TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -520,6 +521,11 @@ export function createSqliteAdapter(dbPath?: string): DbAdapter {
   }
   if (!agentCols.includes('last_heartbeat')) {
     db.exec('ALTER TABLE agents ADD COLUMN last_heartbeat TEXT');
+  }
+
+  const jobCols = (db.pragma('table_info(scheduled_jobs)') as { name: string }[]).map(c => c.name);
+  if (!jobCols.includes('created_by')) {
+    db.exec("ALTER TABLE scheduled_jobs ADD COLUMN created_by TEXT NOT NULL DEFAULT 'system'");
   }
 
   const accessCols = (db.pragma('table_info(agent_access)') as { name: string }[]).map(c => c.name);

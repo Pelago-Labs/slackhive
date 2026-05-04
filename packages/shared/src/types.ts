@@ -760,6 +760,7 @@ export interface ScheduledJob {
   /** Slack channel ID or user ID to deliver results to. */
   targetId: string;
   enabled: boolean;
+  createdBy: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -790,6 +791,7 @@ export interface CreateJobRequest {
   targetType?: JobTargetType;
   targetId: string;
   enabled?: boolean;
+  createdBy?: string;
 }
 
 /**

@@ -10,18 +10,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { guardAdmin } from '@/lib/api-guard';
 import { getAllJobs, createJob, publishAgentEvent } from '@/lib/db';
+import { getSessionFromRequest } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * Lists all scheduled jobs with their most recent run.
+ * Lists scheduled jobs. Superadmins see all; everyone else sees only their own.
  *
  * @returns {Promise<NextResponse>} JSON array of jobs.
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const denied = guardAdmin(req);
   if (denied) return denied;
-  const jobs = await getAllJobs();
+  const session = getSessionFromRequest(req)!;
+  const createdBy = session.role === 'superadmin' ? undefined : session.username;
+  const jobs = await getAllJobs(createdBy);
   return NextResponse.json(jobs);
 }
 
@@ -34,13 +37,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 export async function POST(req: Request): Promise<NextResponse> {
   const denied = guardAdmin(req);
   if (denied) return denied;
+  const session = getSessionFromRequest(req)!;
 
   const body = await req.json();
   if (!body.name || !body.prompt || !body.cronSchedule || !body.targetId || !body.agentId) {
     return NextResponse.json({ error: 'agentId, name, prompt, cronSchedule, and targetId are required' }, { status: 400 });
   }
 
-  const job = await createJob(body);
+  const job = await createJob({ ...body, createdBy: session.username });
   await publishAgentEvent({ type: 'reload-jobs' });
   return NextResponse.json(job, { status: 201 });
 }

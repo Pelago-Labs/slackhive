@@ -427,6 +427,7 @@ export async function getAllEnabledJobs(): Promise<ScheduledJob[]> {
     targetType: row.target_type as 'channel' | 'dm',
     targetId: row.target_id as string,
     enabled: row.enabled !== false && row.enabled !== 0,
+    createdBy: (row.created_by as string) ?? 'system',
     createdAt: row.created_at as Date,
     updatedAt: row.updated_at as Date,
   }));
