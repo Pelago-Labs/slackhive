@@ -1,0 +1,113 @@
+---
+title: "Debugging Agents"
+description: "Agent not responding? Start here - a quick path from symptom to fix using Logs, Activity, and Version History."
+---
+
+## Three tools, one flow
+
+When an agent doesn't behave as expected, SlackHive gives you three places to look. Each one answers a different question:
+
+| Tool | Where | Answers |
+|---|---|---|
+| **Logs** | Agent → Logs tab | What did the agent actually do, step by step? |
+| **Activity** | Sidebar → Activity | Is the agent currently running? Did it error? |
+| **Version History** | Agent → History tab | Did a recent change break something? |
+
+Start with Activity for a quick status check. Go to Logs for the full trace. Use History to roll back if a change caused the issue.
+
+---
+
+## Step 1 — Check Activity
+
+Go to **Activity** in the sidebar. This is the live kanban of every task your agents are running or have recently completed.
+
+- **Active** — the agent is mid-run right now
+- **Completed** — finished successfully
+- **Errors** — something went wrong
+
+If the job shows **Error**, click into it. The error summary tells you:
+- Was it a Claude error (model timeout, rate limit)?
+- Was it an MCP failure (tool server down, credentials expired)?
+- Was it a Slack API failure (bot not in channel, token expired)?
+
+Most errors are in one of these three buckets and the fix is quick.
+
+---
+
+## Step 2 — Read the Logs
+
+Activity gives you the error. Logs give you the full story.
+
+Open the agent → **Logs tab**. Each conversation is an expandable trace with:
+- The incoming message
+- Every tool call the agent made (MCP, memory read, skill invocation)
+- The agent's reasoning at each step
+- The final response
+
+Look for where the trace stops or goes sideways. Common patterns:
+
+| Symptom | Likely cause |
+|---|---|
+| Agent responds but gives wrong answer | Missing context - check wiki and memory |
+| Agent stops mid-run | MCP server error or timeout |
+| Agent says "I don't have access to that" | Tool not assigned to the agent |
+| No trace at all | Agent wasn't running when the message arrived |
+
+---
+
+## Step 3 — Roll Back with Version History
+
+If the agent was working last week and broke after an edit, use **Version History**.
+
+Open the agent → **History tab**. Every save is a snapshot - full diff of what changed: system prompt, skills, memory, tool assignments.
+
+Find the last version that worked, click **Restore**, and you're back to the known-good state in one click. You can then compare the two versions side by side to see exactly what the breaking change was.
+
+<Tip>Before making significant changes to a working agent, note the current version number. If the edit breaks something, you can restore without hunting through history.</Tip>
+
+---
+
+## Common issues and fixes
+
+### Agent not responding in Slack
+
+1. Check that the agent's Slack bot token is valid — Settings → Slack Apps
+2. Confirm the agent process is running — Activity should show recent pings
+3. Verify the bot has been invited to the channel (`/invite @agent-name`)
+
+### Scheduled job ran but posted nothing
+
+1. Open Activity → find the job run → check status
+2. If Success but silent: the agent decided nothing was worth posting (check your prompt - add "post a one-line summary even if nothing changed")
+3. If Error: check the MCP server the agent depends on
+
+### Agent gives outdated answers
+
+1. Check **Memory** - it may be recalling a stale fact. Delete the outdated memory entry.
+2. Check the **Wiki** - if the source was re-ingested, the wiki may need a refresh.
+3. If the system prompt was recently edited, check Version History for the change.
+
+### MCP tool calls failing
+
+1. Go to Agent → **Tools tab** - verify the MCP server is listed and active
+2. Check the MCP server's credentials haven't expired
+3. Test the MCP server independently via Test Mode — open the agent → **Test tab** and send a message that triggers the tool
+
+---
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Logs" icon="list" href="/features/logs">
+    Full reference for the Logs tab and what each field means.
+  </Card>
+  <Card title="Activity" icon="wave-pulse" href="/features/activity">
+    Live task view with MCP call drill-down.
+  </Card>
+  <Card title="Version History" icon="clock-rotate-left" href="/features/history">
+    Snapshot browsing and one-click restore.
+  </Card>
+  <Card title="Troubleshooting" icon="wrench" href="/operations/troubleshooting">
+    Startup errors, port conflicts, and CLI issues.
+  </Card>
+</CardGroup>

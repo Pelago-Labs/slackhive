@@ -73,6 +73,8 @@ CI fails. Someone re-runs it. Same failure. You tag the agent. It runs the test 
 
 Someone in `#analytics` asks "how many paid signups yesterday?" Normally that's an analyst context-switch, a query, a paste-back. The agent does it directly - writes the SQL, runs it, posts the number, links the chart. It knows your schema cold because the wiki holds every table's meaning and the "use this view, not that one" folklore. Non-analysts stop waiting; analysts do real analysis instead of answering the same shape of question.
 
+<Tip>Pair with a [Scheduled Job](/features/scheduled-jobs): "Every morning at 8 AM, post yesterday's key metrics to `#analytics`." The agent becomes proactive - insights arrive before anyone asks.</Tip>
+
 | Layer | What to put here |
 |---|---|
 | **System Prompt** | Role: data analyst for `<company>`. Tone: number first, caveat second. Hard rule: reads only, never writes. |
@@ -101,6 +103,8 @@ A designer updates a button in Figma. A week later the shipped UI has three butt
 
 Every Thursday the PM pulls merged PRs, writes notes, posts to `#releases`, updates the changelog, closes tickets. The agent drafts the whole thing - groups PRs by area, picks a customer-facing tone from past release notes, posts for the PM to edit. Once approved, it publishes, updates Notion, closes the Linear tickets. PMs get their Thursday afternoon back.
 
+<Tip>Schedule the draft step: `0 9 * * 4` (Thursday 9 AM) → "Run `/draft-release-notes` for the week and post the draft to `#releases` for PM review." The agent has the draft ready before the standup.</Tip>
+
 | Layer | What to put here |
 |---|---|
 | **System Prompt** | Role: technical program manager. Tone: clear for customers, dry for engineers. Hard rule: always post a draft for human approval before publishing. |
@@ -114,6 +118,8 @@ Every Thursday the PM pulls merged PRs, writes notes, posts to `#releases`, upda
 ### Competitor price watcher
 
 A competitor raises their enterprise tier 20%. Sales normally finds out three weeks later from a customer comparing quotes. The agent checks competitor pricing pages every morning, diffs against yesterday's snapshot, and posts only when something changed - side-by-side before/after in `#market-intel`. Pricing becomes a live conversation, not an annual review.
+
+<Tip>This agent is built for [Scheduled Jobs](/features/scheduled-jobs). Set a daily cron (`0 8 * * 1-5`) and the prompt: "Scrape competitor pricing pages, diff against yesterday's snapshot, post to `#market-intel` only if something changed."</Tip>
 
 | Layer | What to put here |
 |---|---|
@@ -139,6 +145,8 @@ A writer finishes a draft in Notion. It sits for days - someone has to copy-past
 
 Someone on the team spends an hour every morning scanning Twitter, newsletters, and blogs - then either forgets to share or shares too much and everyone tunes out. The agent does the scan. Every weekday at 8:30am it reads the source list, ranks items by what your team cares about, and posts the top five with a one-line *why this matters for us*. Debates reference the same papers.
 
+<Tip>Wire this up with a [Scheduled Job](/features/scheduled-jobs) on `30 8 * * 1-5` pointing at `#ai-news`. The agent runs `/morning-digest` automatically - no human trigger needed.</Tip>
+
 | Layer | What to put here |
 |---|---|
 | **System Prompt** | Role: research analyst. Tone: terse - one line of "why this matters" per item. Hard rule: exactly five items, never more. |
@@ -152,6 +160,8 @@ Someone on the team spends an hour every morning scanning Twitter, newsletters, 
 ### Birthday bot
 
 At 10 people someone remembers birthdays. At 50 they don't. The agent reads a one-line-per-teammate file and posts a warm wish in `#general` when today matches. That's the whole agent - no integrations, no skills, one file. Tiny ritual, outsized effect on culture. Ideal first agent because it proves the whole pattern in thirty minutes.
+
+<Tip>Schedule it: `0 10 * * *` → prompt "Check if today matches any birthday in birthdays.md. If yes, post a warm message to `#general`. If no, do nothing." Runs daily, silent unless it finds a match.</Tip>
 
 | Layer | What to put here |
 |---|---|
