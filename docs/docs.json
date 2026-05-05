@@ -82,6 +82,7 @@
             "group": "Operations",
             "pages": [
               "operations/cli",
+              "operations/debugging",
               "operations/troubleshooting"
             ]
           },

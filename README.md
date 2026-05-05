@@ -2,6 +2,7 @@
 
 <img src="https://raw.githubusercontent.com/pelago-labs/slackhive/main/apps/web/public/logo.svg" alt="SlackHive" width="80" />
 
+
 # SlackHive
 
 ### Build your AI-first company on Slack
@@ -17,6 +18,10 @@
 [![Security Audit](https://github.com/pelago-labs/slackhive/actions/workflows/audit.yml/badge.svg)](https://github.com/pelago-labs/slackhive/actions/workflows/audit.yml)
 
 [**Documentation**](https://slackhive.mintlify.app) · [Quick Start](#-quick-start) · [Features](#-features) · [Architecture](#-architecture) · [Contributing](#-contributing)
+
+<br />
+
+<img src="https://raw.githubusercontent.com/pelago-labs/slackhive/main/docs/images/dashboard.png" alt="SlackHive dashboard" style="border-radius: 12px;" />
 
 </div>
 

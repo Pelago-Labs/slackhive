@@ -243,6 +243,20 @@ The CEO gets a DM every hour. 99% of the time it's one line. When something brea
 
 ---
 
+## Who can see and create jobs
+
+| Role | Can see jobs | Can create / edit / delete |
+|------|-------------|--------------------------|
+| **Superadmin / Admin** | All jobs | ✅ |
+| **Editor** | Jobs for accessible agents | ✅ (edit-access agents only) |
+| **Viewer** | Jobs for accessible agents | ❌ read-only |
+
+Jobs are filtered by the agents a user can access — an editor only sees jobs assigned to agents they own or were granted access to. Viewers see the same filtered list but cannot make changes.
+
+When creating a job, editors can only pick agents they have **Edit** access to. Agents where they only have View or Trigger access won't appear in the agent dropdown.
+
+---
+
 ## Next steps
 
 <CardGroup cols={2}>

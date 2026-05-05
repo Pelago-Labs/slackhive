@@ -144,6 +144,17 @@ The four layers are not isolated - they compose:
 
 Memories and the system prompt are always in context; skills and wiki pages load on demand. That keeps the turn cost bounded while everything the agent has learned stays visible.
 
+## Quick reference: when to use each
+
+| You want to… | Use |
+|---|---|
+| Give the agent a permanent role, tone, or hard rule | System Prompt |
+| Define a repeatable workflow (triage, report, audit) | Skill |
+| Trigger that workflow on a schedule, hands-free | Skill + [Scheduled Job](/features/scheduled-jobs) |
+| Let the agent remember something it learned in a conversation | Memory |
+| Give the agent a codebase, runbook, or doc to look up | Wiki |
+| Delegate to the right specialist automatically | [Boss Agent](/agents/boss-agents) |
+
 ## Next steps
 
 <CardGroup cols={2}>

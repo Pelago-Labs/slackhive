@@ -1,13 +1,13 @@
 ---
 title: "Settings & Users"
-description: "Brand the dashboard, create users, assign roles, and control per-agent access."
+description: "Brand the dashboard, manage users, assign roles, import from Slack, and control per-agent access."
 ---
 
-The **Settings** page has two tabs: **General** (platform branding) and **Users** (accounts and roles). This page covers both.
+The **Settings** page is only visible to **superadmins**. It has three tabs: **General** (platform branding), **Users** (accounts and roles), and **Authentication** (Slack OAuth — superadmin only).
 
-## General - platform branding
+## General — platform branding
 
-The **General** tab lets admins rebrand the dashboard. Useful for white-labeling an internal deployment.
+The **General** tab lets superadmins rebrand the dashboard. Useful for white-labeling an internal deployment.
 
 | Field | What it controls | Default |
 |---|---|---|
@@ -21,42 +21,55 @@ The **General** tab lets admins rebrand the dashboard. Useful for white-labeling
 3. Click **Save**
 4. Reload to see the new branding
 
-Changes apply instantly for all users. Only admins and superadmins can edit; editors and viewers see the tab as read-only.
+Changes apply instantly for all users.
 
 ## Authentication overview
 
-SlackHive uses a simple built-in auth system - no external provider required.
+SlackHive supports two login methods:
 
-- **Superadmin** is configured via environment variables (`ADMIN_USERNAME` / `ADMIN_PASSWORD`) - never stored in the database
-- **Sessions** use HMAC-signed cookies. The signing key is `AUTH_SECRET` in your `.env`
-- All routes are protected - unauthenticated requests redirect to `/login`
+- **Username / password** — built-in, no external provider required
+- **Sign in with Slack** — users log in via Slack OAuth; their Slack identity links to their SlackHive account
+
+The **superadmin** account is configured via `ADMIN_USERNAME` / `ADMIN_PASSWORD` environment variables — never stored in the database. Sessions use HMAC-signed cookies; the signing key is `AUTH_SECRET` in your `.env`.
+
+### Sign in with Slack
+
+To enable Slack OAuth login, go to **Settings → General → Authentication** and enter your Slack app's **Client ID** and **Client Secret** (found in the Slack API console under **Basic Information → App Credentials**).
+
+Once configured, users see a **Sign in with Slack** button on the login page.
+
+**Open vs invite-only login:**
+- **Invite-only (default):** Only users you've already created or imported can log in via Slack. Anyone else gets an "account not invited" error.
+- **Open login:** Any Slack workspace member can log in and a SlackHive account is created automatically on first login.
+
+Toggle this with the **Allow any workspace member to sign in** checkbox — only available once Client ID and Client Secret are saved.
 
 ## Roles
 
 SlackHive has four roles with escalating permissions:
 
-| Role | View agents | Edit agents | Manage jobs | Settings | Manage users | [Activity](/features/activity) |
-|------|-------------|-------------|-------------|----------|-------------|-------------|
-| **Superadmin** | All | All | Yes | Yes | Yes | All tasks |
-| **Admin** | All | All | Yes | Yes | Yes | All tasks |
-| **Editor** | Granted only | Own + granted | Yes | Yes | No | Only own + granted agents |
-| **Viewer** | Granted only | No | No | No | No | Blocked (403) |
+| Role | View agents | Edit agents | Scheduled Jobs | Settings | Manage users | Activity |
+|------|-------------|-------------|----------------|----------|--------------|----------|
+| **Superadmin** | All | All | All jobs | ✅ | ✅ | All |
+| **Admin** | All | All | All jobs | ❌ | ❌ | All |
+| **Editor** | Granted only | Own + granted | Own jobs | ❌ | ❌ | Granted agents |
+| **Viewer** | Granted only | ❌ | Granted agents (read-only) | ❌ | ❌ | ❌ |
 
 ### Superadmin
 
-Configured via `ADMIN_USERNAME` and `ADMIN_PASSWORD` in `.env`. This account is never stored in the database - it exists only in environment configuration. The superadmin has all permissions and cannot be deleted or demoted.
+Configured via `ADMIN_USERNAME` and `ADMIN_PASSWORD` in `.env`. This account is never stored in the database — it exists only in environment configuration. The superadmin is the only role that can access the Settings page.
 
 ### Admin
 
-Full access equivalent to superadmin, but stored in the database and manageable via the Users page. Admins can create other users, change roles, and grant per-agent access (View or Edit) to editors and viewers.
+Full access equivalent to superadmin except Settings. Stored in the database and manageable via the Users page. Admins can create users, change roles, and grant per-agent access to editors and viewers.
 
 ### Editor
 
 Agents are **hidden by default**. Editors only see:
 - Agents they created themselves (full edit access automatically)
-- Agents an admin has explicitly granted them access to (View or Edit)
+- Agents an admin explicitly granted them View or Edit access to
 
-Editors can create and manage scheduled jobs. They can add env vars and edit/delete ones they added themselves. They cannot manage users or change platform settings.
+Editors can create and manage scheduled jobs for agents they have edit access to. They can add env vars and edit or delete ones they added themselves.
 
 ### Viewer
 
@@ -64,11 +77,13 @@ Agents are **hidden by default**. Viewers only see agents an admin has explicitl
 
 On a granted agent, viewers can browse all content tabs (Overview, Instructions, Skills, Tools, Knowledge, Memory) but cannot make changes. The **Test**, **Export**, **Download wiki**, **Logs**, and **History** tabs are hidden.
 
+Viewers can see the **Scheduled Jobs** page in read-only mode — they see jobs for the agents they have access to, but cannot create, edit, or delete jobs.
+
 ## Creating users
 
 Only superadmins and admins can create users.
 
-1. Go to **Settings → Users** in the sidebar
+1. Go to **Settings → Users**
 2. Click **Add User**
 3. Enter a username and password
 4. Select a role
@@ -76,62 +91,83 @@ Only superadmins and admins can create users.
 
 Users can log in immediately at the `/login` page.
 
+## Importing from Slack
+
+If your team is already on Slack, you can bulk-import workspace members so they can sign in via Slack without self-registering.
+
+1. Go to **Settings → Users**
+2. Click **Import from Slack**
+3. Enter a Slack **bot token** (`xoxb-…`) with `users:read` and `users:read.email` scopes
+4. Click **Import**
+
+SlackHive fetches your workspace's active members and creates accounts for anyone not already in the system. Existing users are matched by email and their Slack identity is linked — they can then use **Sign in with Slack**.
+
+Imported users start with the **viewer** role and no agent access — assign roles and grants after importing.
+
+<Note>
+  Only active, non-bot Slack members are imported. Deactivated accounts and bots are skipped.
+</Note>
+
 ## Changing a user's role
 
 1. Go to **Settings → Users**
-2. Find the user in the list
+2. Find the user in the table (use the search box to filter by name)
 3. Use the role dropdown to select a new role
-4. Changes take effect on the user's next page load (their active session remains valid)
+4. Changes take effect on the user's next page load
 
 ## Per-agent access grants
 
-Agents are invisible to editors and viewers until an admin grants access. There are two access levels:
+Agents are invisible to editors and viewers until an admin grants access. There are three access levels:
 
-| Level | Who can receive it | What they can do |
+| Level | SlackHive dashboard | Slack bot |
 |---|---|---|
-| **View** | Editors and viewers | Browse all content tabs read-only; Test, Export, Logs, History hidden |
-| **Edit** | Editors only | Full edit rights — identical to owning the agent |
+| **Trigger** | Hidden | Bot responds to their messages |
+| **View** | Read-only | Bot responds |
+| **Edit** | Full edit access | Bot responds |
+
+**Trigger** is useful when someone needs to interact with the agent in Slack (e.g. frontline staff using a bot daily) but shouldn't see agent configuration or conversation history in SlackHive.
 
 To grant access:
 
 1. Go to **Settings → Users**
-2. Click the user (editor or viewer)
+2. Click the user row to open the side panel
 3. Under **Agent Access**, find the agent
-4. Select **View** or **Edit** (viewers can only receive View)
-5. Save
+4. Select **Trigger**, **View**, or **Edit**
+5. Click **Save**
 
-To revoke access, set the toggle back to **None**.
+To revoke access, set the level back to **None**.
 
 <Note>
-  Editors automatically have Edit access on agents they created — no grant needed. Admins and superadmins always see all agents regardless of grants.
+  Editors automatically have Edit access on agents they created — no grant needed. Admins and superadmins always see all agents and the bot always responds to them regardless of grants.
 </Note>
 
 ## Env Vars ownership
 
 The **Settings → Env Vars** secret store tracks who added each secret:
 
-- **Admins** can create, edit, and delete any env var
-- **Editors** can create env vars; they can only edit or delete ones they added themselves
-- **Viewers** have no access to env vars
+- **Admins / superadmins** — create, edit, and delete any env var
+- **Editors** — create env vars; can only edit or delete ones they added themselves
+- **Viewers** — no access
 
-Each row shows **Added by {username} · date** so admins can see who owns each secret and when it was last rotated.
+Each row shows **Added by {username} · date** so admins can audit ownership and rotation history.
 
 ## Permissions enforcement
 
-All permissions are enforced **server-side** in API route guards - not just hidden in the UI. A viewer who manually calls an API endpoint to edit an agent will receive a 403 response.
+All permissions are enforced **server-side** — not just hidden in the UI. A viewer who manually calls an API endpoint to edit an agent will receive a 403 response.
 
-The permission model:
-- Agent list (`GET /api/agents`) is filtered — editors and viewers only receive agents they have access to
-- Individual agent routes return 404 (not 403) for agents a user has no access to — this avoids leaking agent existence
-- Write operations on an agent require: admin, superadmin, or (editor + agent ownership/Edit grant)
-- Settings mutations require: admin or superadmin
-- User management requires: admin or superadmin
-- [Activity Dashboard](/features/activity): admin/superadmin see all tasks; editors are scoped to agents they own or were granted; viewers get 403
+Key rules:
+- `GET /api/agents` is filtered — editors and viewers only receive agents they have access to
+- Individual agent routes return **404** (not 403) for agents a user has no access to, avoiding leaking agent existence
+- Write operations on an agent require: admin, superadmin, or editor with ownership / Edit grant
+- Settings mutations require superadmin
+- User management requires admin or superadmin
+- Jobs are filtered by accessible agents — each user only sees jobs for agents they can access
+- Slack bot access is also enforced — users with no access level (or None) receive no response from the bot
 
 ## Session behavior
 
-Sessions use HMAC-signed cookies with no expiry by default (persistent sessions). Sessions are invalidated when:
+Sessions use HMAC-signed cookies with no expiry by default. Sessions are invalidated when:
 - The user logs out explicitly
 - `AUTH_SECRET` is rotated in `.env` (invalidates all sessions immediately)
 
-There is no session table - sessions are stateless HMAC tokens, which means there's no way to invalidate individual sessions without rotating the `AUTH_SECRET`.
+Sessions are stateless HMAC tokens — there is no session table and no way to invalidate individual sessions without rotating the secret.

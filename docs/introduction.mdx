@@ -5,6 +5,18 @@ description: "SlackHive turns your Slack workspace into a team of AI agents - sp
 
 ## Build your AI-first company on Slack
 
+<img src="/images/dashboard.png" alt="SlackHive dashboard showing the AI agent team" style={{borderRadius: '12px', margin: '24px 0'}} />
+
+Picture a 12-person startup on a Tuesday morning. The CEO notices revenue is down and types `@data-analyst revenue dropped 8% overnight, what happened?` in Slack. Forty seconds later: *enterprise tier churn spiked after Tuesday's pricing page change — 3 accounts, $42k ARR at risk.* No BI dashboard opened. No analyst context-switched. The CEO has the answer before the standup starts.
+
+Meanwhile, an engineer tags `@devops` about a 500 error in checkout. The agent reads the logs, identifies a memory leak in the payment processor pool, and opens a PR with the fix. The on-call engineer reviews it instead of hunting for the bug. A PM tags `@designer` to mock up a simpler onboarding flow — three Figma variants appear in the thread ten minutes later.
+
+This is what that team's Slack looks like after one month with SlackHive.
+
+---
+
+## The idea behind it
+
 Andrej Karpathy made two observations that shaped how we built it: LLMs read **wikis** better than file dumps, and **specialists beat generalists**. So every agent gets its own Karpathy-style wiki, its own tools, its own memory - and a Boss agent that delegates to the right specialist instead of cramming everything into one context window.
 
 These aren't chatbots you switch to. They're **colleagues you @mention** - in the same channels, the same threads, with the same @mention pattern your team already uses for each other. Each one connects to the tools your team already uses - Notion, Jira, GitHub, Figma, your database, your analytics stack.
@@ -14,8 +26,6 @@ These aren't chatbots you switch to. They're **colleagues you @mention** - in th
 ---
 
 ## What this looks like in practice
-
-A CEO who wants to drill into metrics doesn't open a BI tool - they ask `@data-analyst` directly in Slack. An engineer debugging a production issue asks `@devops` to tail logs and open a PR with the fix. A PM sketches a feature idea and asks `@designer` to create the initial wireframe in Figma. A marketer asks `@content-writer` to draft a campaign brief in their brand voice.
 
 Every tool your company uses - Notion, Jira, GitHub, Redshift, HubSpot, Figma - becomes accessible through a simple @mention in Slack.
 
