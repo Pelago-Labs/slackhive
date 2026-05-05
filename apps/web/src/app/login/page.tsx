@@ -21,6 +21,7 @@ function LoginForm() {
   useEffect(() => {
     const err = searchParams.get('error');
     if (err === 'slack_denied') setError('Slack sign-in was cancelled.');
+    else if (err === 'slack_not_invited') setError('Your Slack account has not been invited. Contact an admin.');
     else if (err) setError('Slack sign-in failed. Please try again.');
   }, [searchParams]);
 
@@ -98,16 +99,7 @@ function LoginForm() {
               onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
               onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
             >
-              <svg width="18" height="18" viewBox="0 0 54 54" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M19.712 33.159a5.144 5.144 0 0 1-5.144 5.144 5.144 5.144 0 0 1-5.144-5.144 5.144 5.144 0 0 1 5.144-5.144h5.144v5.144z" fill="#E01E5A"/>
-                <path d="M22.284 33.159a5.144 5.144 0 0 1 5.144-5.144 5.144 5.144 0 0 1 5.144 5.144v12.86a5.144 5.144 0 0 1-5.144 5.144 5.144 5.144 0 0 1-5.144-5.144v-12.86z" fill="#E01E5A"/>
-                <path d="M27.428 19.712a5.144 5.144 0 0 1-5.144-5.144 5.144 5.144 0 0 1 5.144-5.144 5.144 5.144 0 0 1 5.144 5.144v5.144h-5.144z" fill="#36C5F0"/>
-                <path d="M27.428 22.284a5.144 5.144 0 0 1 5.144 5.144 5.144 5.144 0 0 1-5.144 5.144H14.568a5.144 5.144 0 0 1-5.144-5.144 5.144 5.144 0 0 1 5.144-5.144h12.86z" fill="#36C5F0"/>
-                <path d="M41.144 27.428a5.144 5.144 0 0 1 5.144 5.144 5.144 5.144 0 0 1-5.144 5.144 5.144 5.144 0 0 1-5.144-5.144v-5.144h5.144z" fill="#2EB67D"/>
-                <path d="M38.572 27.428a5.144 5.144 0 0 1-5.144-5.144 5.144 5.144 0 0 1 5.144-5.144h12.86a5.144 5.144 0 0 1 5.144 5.144 5.144 5.144 0 0 1-5.144 5.144h-12.86z" fill="#2EB67D"/>
-                <path d="M33.428 41.144a5.144 5.144 0 0 1-5.144 5.144 5.144 5.144 0 0 1-5.144-5.144 5.144 5.144 0 0 1 5.144-5.144h5.144v5.144z" fill="#ECB22E"/>
-                <path d="M33.428 38.572a5.144 5.144 0 0 1 5.144-5.144 5.144 5.144 0 0 1 5.144 5.144v12.86a5.144 5.144 0 0 1-5.144 5.144 5.144 5.144 0 0 1-5.144-5.144v-12.86z" fill="#ECB22E"/>
-              </svg>
+              <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/d/d5/Slack_icon_2019.svg/3840px-Slack_icon_2019.svg.png" width="18" height="18" alt="Slack" />
               Sign in with Slack
             </a>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 18 }}>

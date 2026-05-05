@@ -20,6 +20,7 @@ import {
   beginToolCall,
   finishToolCall,
   recordActivityUsage,
+  getDb,
 } from '@slackhive/shared';
 import type { ClaudeHandler } from './claude-handler';
 import { CorrectionHandler } from './correction-handler';
@@ -79,6 +80,14 @@ export class MessageHandler {
 
     // Check channel restrictions
     if (this.isChannelRestricted(channelId)) return;
+
+    // Check user access — only users with trigger/view/edit grant (or admins/creators) may interact
+    // Test platform bypasses this check (test users are synthetic)
+    if (msg.platform !== 'test' && !(await this.userCanTrigger(userId))) {
+      this.log.info('Denying message — user has no access to this agent', { userId });
+      await this.adapter.postMessage(channelId, "You don't have access to this agent.", threadId).catch(() => {});
+      return;
+    }
 
     // Route correction commands — still uses raw platform client for now
     // Will be fully adapter-based when CorrectionHandler is refactored
@@ -338,6 +347,27 @@ export class MessageHandler {
   private isChannelRestricted(channelId: string): boolean {
     if (!this.restrictions || this.restrictions.allowedChannels.length === 0) return false;
     return !this.restrictions.allowedChannels.includes(channelId);
+  }
+
+  private async userCanTrigger(slackUserId: string): Promise<boolean> {
+    const db = getDb();
+    const userRow = await db.query(
+      `SELECT u.role, u.username FROM users u WHERE u.slack_user_id = $1`,
+      [slackUserId]
+    );
+    if (!userRow.rows.length) return false;
+    const { role, username } = userRow.rows[0] as { role: string; username: string };
+    if (role === 'admin' || role === 'superadmin') return true;
+
+    const access = await db.query(
+      `SELECT 1 FROM agents WHERE id = $1 AND created_by = $2
+       UNION
+       SELECT 1 FROM agent_access aa JOIN users u ON u.id = aa.user_id
+         WHERE aa.agent_id = $1 AND u.username = $2
+       LIMIT 1`,
+      [this.agent.id, username]
+    );
+    return access.rows.length > 0;
   }
 
   /**

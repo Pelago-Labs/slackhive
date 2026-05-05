@@ -878,9 +878,23 @@ export async function getUserByUsername(username: string): Promise<{ id: string;
  *
  * @returns {Promise<Array<{ id: string; username: string; role: string; createdAt: string }>>}
  */
-export async function getAllUsers(): Promise<Array<{ id: string; username: string; role: string; createdAt: string }>> {
-  const r = await (await db()).query('SELECT id, username, role, created_at FROM users ORDER BY created_at');
-  return r.rows.map(row => ({ id: row.id as string, username: row.username as string, role: row.role as string, createdAt: row.created_at as string }));
+export async function getAllUsers(): Promise<Array<{ id: string; username: string; role: string; createdAt: string; fromSlack: boolean; agentCount: number }>> {
+  const r = await (await db()).query(`
+    SELECT u.id, u.username, u.role, u.created_at, u.slack_user_id,
+           COUNT(aa.agent_id) AS agent_count
+    FROM users u
+    LEFT JOIN agent_access aa ON aa.user_id = u.id
+    GROUP BY u.id
+    ORDER BY u.created_at
+  `);
+  return r.rows.map(row => ({
+    id: row.id as string,
+    username: row.username as string,
+    role: row.role as string,
+    createdAt: row.created_at as string,
+    fromSlack: !!(row.slack_user_id),
+    agentCount: Number(row.agent_count ?? 0),
+  }));
 }
 
 /**
@@ -980,16 +994,16 @@ export async function updateUserPassword(id: string, passwordHash: string): Prom
  * Returns all users with access to an agent — both explicit grants and the creator.
  * isOwner=true means access comes from created_by (not a grant row).
  */
-export async function getAgentWriteUsers(agentId: string): Promise<{ userId: string; username: string; canWrite: boolean; isOwner: boolean }[]> {
+export async function getAgentWriteUsers(agentId: string): Promise<{ userId: string; username: string; canWrite: boolean; accessLevel: string; isOwner: boolean }[]> {
   const r = await (await db()).query(
-    `SELECT aa.user_id, u.username, aa.can_write,
+    `SELECT aa.user_id, u.username, aa.can_write, aa.access_level,
             CASE WHEN a.created_by = u.username THEN 1 ELSE 0 END as is_owner
      FROM agent_access aa
      JOIN users u ON u.id = aa.user_id
      JOIN agents a ON a.id = aa.agent_id
      WHERE aa.agent_id = $1
      UNION
-     SELECT u.id as user_id, u.username, 1 as can_write, 1 as is_owner
+     SELECT u.id as user_id, u.username, 1 as can_write, 'edit' as access_level, 1 as is_owner
      FROM agents a
      JOIN users u ON u.username = a.created_by
      WHERE a.id = $1
@@ -1001,6 +1015,7 @@ export async function getAgentWriteUsers(agentId: string): Promise<{ userId: str
     userId: row.user_id as string,
     username: row.username as string,
     canWrite: row.can_write === 1 || row.can_write === true,
+    accessLevel: (row.access_level as string) ?? (row.can_write ? 'edit' : 'view'),
     isOwner: row.is_owner === 1 || row.is_owner === true,
   }));
 }
@@ -1009,29 +1024,32 @@ export async function getAgentWriteUsers(agentId: string): Promise<{ userId: str
  * Grants access to a user for an agent. canWrite=true = edit, canWrite=false = view only.
  * Upserts so calling again with a different canWrite updates the existing grant.
  */
-export async function grantAgentAccess(agentId: string, userId: string, canWrite: boolean): Promise<void> {
+export type AgentAccessLevel = 'trigger' | 'view' | 'edit';
+
+export async function grantAgentAccess(agentId: string, userId: string, accessLevel: AgentAccessLevel): Promise<void> {
+  const canWrite = accessLevel === 'edit' ? 1 : 0;
   await (await db()).query(
-    `INSERT INTO agent_access (agent_id, user_id, can_write) VALUES ($1, $2, $3)
-     ON CONFLICT (agent_id, user_id) DO UPDATE SET can_write = $3`,
-    [agentId, userId, canWrite ? 1 : 0]
+    `INSERT INTO agent_access (agent_id, user_id, can_write, access_level) VALUES ($1, $2, $3, $4)
+     ON CONFLICT (agent_id, user_id) DO UPDATE SET can_write = $3, access_level = $4`,
+    [agentId, userId, canWrite, accessLevel]
   );
 }
 
 /** @deprecated use grantAgentAccess */
 export async function grantAgentWrite(agentId: string, userId: string): Promise<void> {
-  return grantAgentAccess(agentId, userId, true);
+  return grantAgentAccess(agentId, userId, 'edit');
 }
 
 /**
- * Revokes all access (read and write) from a user for an agent.
+ * Revokes all access from a user for an agent.
  */
 export async function revokeAgentWrite(agentId: string, userId: string): Promise<void> {
   await (await db()).query('DELETE FROM agent_access WHERE agent_id = $1 AND user_id = $2', [agentId, userId]);
 }
 
 /**
- * Returns true if a user can read (see) an agent.
- * Admins/superadmins always can. Others need to be the creator or have any access grant.
+ * Returns true if a user can see an agent in SlackHive (view or edit level).
+ * Trigger-only users are excluded — they can use the bot in Slack but not see SlackHive.
  */
 export async function userCanReadAgent(agentId: string, username: string, role: string): Promise<boolean> {
   if (role === 'admin' || role === 'superadmin') return true;
@@ -1039,7 +1057,7 @@ export async function userCanReadAgent(agentId: string, username: string, role: 
     `SELECT 1 FROM agents WHERE id = $1 AND created_by = $2
      UNION
      SELECT 1 FROM agent_access aa JOIN users u ON u.id = aa.user_id
-       WHERE aa.agent_id = $1 AND u.username = $2
+       WHERE aa.agent_id = $1 AND u.username = $2 AND aa.access_level IN ('view', 'edit')
      LIMIT 1`,
     [agentId, username]
   );
@@ -1047,8 +1065,7 @@ export async function userCanReadAgent(agentId: string, username: string, role: 
 }
 
 /**
- * Returns true if a user has write access to an agent.
- * Write access = admin/superadmin role, OR own created agent, OR explicit grant with can_write=1.
+ * Returns true if a user has write (edit) access to an agent.
  */
 export async function userCanWriteAgent(agentId: string, username: string, role: string): Promise<boolean> {
   if (role === 'admin' || role === 'superadmin') return true;
@@ -1056,19 +1073,35 @@ export async function userCanWriteAgent(agentId: string, username: string, role:
     `SELECT 1 FROM agents WHERE id = $1 AND created_by = $2
      UNION
      SELECT 1 FROM agent_access aa JOIN users u ON u.id = aa.user_id
-       WHERE aa.agent_id = $1 AND u.username = $2 AND aa.can_write = 1
+       WHERE aa.agent_id = $1 AND u.username = $2 AND aa.access_level = 'edit'
      LIMIT 1`,
     [agentId, username]
   );
   return r.rows.length > 0;
 }
 
+
 /**
- * Returns the full list of agent IDs the user can access. Admins and
- * superadmins return `null` to signal "no restriction" — this lets callers
- * distinguish "see all" from "sees nothing". Editors/viewers get the union
- * of agents they created and agents granted via `agent_access`.
+ * Returns agent IDs where the user has edit access (for job creation).
+ * Includes agents created by the user and those with an explicit edit grant.
+ * Admins return null (no restriction).
  */
+export async function listWritableAgentIds(
+  username: string,
+  role: string,
+): Promise<string[] | null> {
+  if (role === 'admin' || role === 'superadmin') return null;
+  const r = await (await db()).query(
+    `SELECT id FROM agents WHERE created_by = $1
+     UNION
+     SELECT aa.agent_id FROM agent_access aa
+       JOIN users u ON u.id = aa.user_id
+      WHERE u.username = $1 AND aa.access_level = 'edit'`,
+    [username],
+  );
+  return r.rows.map(row => row.id as string);
+}
+
 export async function listAccessibleAgentIds(
   username: string,
   role: string,
@@ -1079,7 +1112,7 @@ export async function listAccessibleAgentIds(
      UNION
      SELECT aa.agent_id FROM agent_access aa
        JOIN users u ON u.id = aa.user_id
-      WHERE u.username = $1`,
+      WHERE u.username = $1 AND aa.access_level IN ('view', 'edit')`,
     [username],
   );
   return r.rows.map(row => row.id as string);

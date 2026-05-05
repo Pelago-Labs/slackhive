@@ -33,6 +33,7 @@ interface Job {
   targetType: 'channel' | 'dm';
   targetId: string;
   enabled: boolean;
+  createdBy: string;
   createdAt: string;
   updatedAt: string;
   lastRun?: JobRun;
@@ -76,6 +77,7 @@ export default function JobsPage() {
   const { canEdit } = useAuth();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [agents, setAgents] = useState<AgentOption[]>([]);
+  const [writableAgents, setWritableAgents] = useState<AgentOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingJob, setEditingJob] = useState<Job | null>(null);
@@ -87,7 +89,8 @@ export default function JobsPage() {
     Promise.all([
       fetch('/api/jobs').then(r => r.json()),
       fetch('/api/agents').then(r => r.json()),
-    ]).then(([j, a]) => { setJobs(j); setAgents(a); }).catch(() => {}).finally(() => setLoading(false));
+      fetch('/api/agents?writable=true').then(r => r.json()),
+    ]).then(([j, a, w]) => { setJobs(j); setAgents(a); setWritableAgents(w); }).catch(() => {}).finally(() => setLoading(false));
   };
   useEffect(() => { load(); }, []);
 
@@ -218,6 +221,11 @@ export default function JobsPage() {
                       {job.targetType === 'dm' ? <MessageSquare size={11} /> : <Hash size={11} />}
                       {job.targetType === 'dm' ? 'DM' : 'Channel'}: <code style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{job.targetId}</code>
                     </span>
+                    {job.createdBy && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                        by <strong style={{ fontWeight: 600, color: 'var(--text)' }}>{job.createdBy}</strong>
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -359,7 +367,7 @@ export default function JobsPage() {
       {showForm && (
         <JobFormModal
           job={editingJob}
-          agents={agents}
+          agents={writableAgents}
           onClose={() => { setShowForm(false); setEditingJob(null); }}
           onSaved={() => { setShowForm(false); setEditingJob(null); load(); }}
         />

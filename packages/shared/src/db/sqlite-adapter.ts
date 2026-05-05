@@ -327,9 +327,10 @@ CREATE TABLE IF NOT EXISTS job_runs (
 );
 
 CREATE TABLE IF NOT EXISTS agent_access (
-  agent_id  TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-  user_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  can_write INTEGER NOT NULL DEFAULT 1,
+  agent_id     TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  can_write    INTEGER NOT NULL DEFAULT 1,
+  access_level TEXT NOT NULL DEFAULT 'edit',
   PRIMARY KEY (agent_id, user_id)
 );
 
@@ -548,6 +549,13 @@ export function createSqliteAdapter(dbPath?: string): DbAdapter {
   const accessCols = (db.pragma('table_info(agent_access)') as { name: string }[]).map(c => c.name);
   if (!accessCols.includes('can_write')) {
     db.exec('ALTER TABLE agent_access ADD COLUMN can_write INTEGER NOT NULL DEFAULT 1');
+  }
+  if (!accessCols.includes('access_level')) {
+    // Migrate can_write → access_level, then recreate table without can_write
+    db.exec(`
+      ALTER TABLE agent_access ADD COLUMN access_level TEXT NOT NULL DEFAULT 'edit';
+      UPDATE agent_access SET access_level = CASE WHEN can_write = 1 THEN 'edit' ELSE 'view' END;
+    `);
   }
 
   const mcpCols = (db.pragma('table_info(mcp_servers)') as { name: string }[]).map(c => c.name);
