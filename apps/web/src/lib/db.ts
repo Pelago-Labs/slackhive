@@ -1161,10 +1161,17 @@ function rowToJobRun(row: Record<string, unknown>): JobRun {
  *
  * @returns {Promise<Array<ScheduledJob & { lastRun?: JobRun }>>}
  */
-export async function getAllJobs(createdBy?: string): Promise<Array<ScheduledJob & { lastRun?: JobRun }>> {
+export async function getAllJobs(agentIds?: string[] | null): Promise<Array<ScheduledJob & { lastRun?: JobRun }>> {
   const adapter = await db();
-  const params = createdBy ? [createdBy] : [];
-  const whereClause = createdBy ? 'WHERE j.created_by = $1' : '';
+  // null = all jobs (admin), undefined = all jobs, array = filter to those agent IDs
+  const params: unknown[] = [];
+  let whereClause = '';
+  if (Array.isArray(agentIds)) {
+    if (agentIds.length === 0) return [];
+    params.push(...agentIds);
+    const placeholders = agentIds.map((_, i) => `$${i + 1}`).join(', ');
+    whereClause = `WHERE j.agent_id IN (${placeholders})`;
+  }
 
   if (adapter.type === 'sqlite') {
     // SQLite does not support LATERAL joins — use a correlated subquery instead

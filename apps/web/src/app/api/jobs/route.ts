@@ -9,7 +9,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { guardAdmin } from '@/lib/api-guard';
-import { getAllJobs, createJob, publishAgentEvent } from '@/lib/db';
+import { getAllJobs, createJob, publishAgentEvent, listAccessibleAgentIds } from '@/lib/db';
 import { getSessionFromRequest } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -20,11 +20,10 @@ export const dynamic = 'force-dynamic';
  * @returns {Promise<NextResponse>} JSON array of jobs.
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const denied = guardAdmin(req);
-  if (denied) return denied;
-  const session = getSessionFromRequest(req)!;
-  const createdBy = session.role === 'superadmin' ? undefined : session.username;
-  const jobs = await getAllJobs(createdBy);
+  const session = getSessionFromRequest(req);
+  if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+  const agentIds = await listAccessibleAgentIds(session.username, session.role);
+  const jobs = await getAllJobs(agentIds);
   return NextResponse.json(jobs);
 }
 
