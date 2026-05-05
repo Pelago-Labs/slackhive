@@ -7,11 +7,30 @@ description: "SlackHive turns your Slack workspace into a team of AI agents - sp
 
 <img src="/images/dashboard.png" alt="SlackHive dashboard showing the AI agent team" style={{borderRadius: '12px', margin: '24px 0'}} />
 
-Picture a 12-person startup on a Tuesday morning. The CEO notices revenue is down and types `@data-analyst revenue dropped 8% overnight, what happened?` in Slack. Forty seconds later: *enterprise tier churn spiked after Tuesday's pricing page change — 3 accounts, $42k ARR at risk.* No BI dashboard opened. No analyst context-switched. The CEO has the answer before the standup starts.
+It's Tuesday morning. Revenue is down 8% and the standup is in 20 minutes.
 
-Meanwhile, an engineer tags `@devops` about a 500 error in checkout. The agent reads the logs, identifies a memory leak in the payment processor pool, and opens a PR with the fix. The on-call engineer reviews it instead of hunting for the bug. A PM tags `@designer` to mock up a simpler onboarding flow — three Figma variants appear in the thread ten minutes later.
+```
+CEO:       @data-analyst revenue dropped 8% overnight, what happened?
+           [40 seconds later]
+DataBot:   Enterprise tier churn spiked after yesterday's pricing page change.
+           3 accounts, $42k ARR. I've flagged the affected records in Notion.
+```
 
-This is what that team's Slack looks like after one month with SlackHive.
+No BI dashboard. No analyst context-switch. The CEO walks into standup with the answer.
+
+Across the company, in the same Slack:
+
+```
+Engineer:  @devops checkout is throwing 500s
+DevOps:    Memory leak in the payment processor pool.
+           PR #847 is up with the fix — ready for review.
+
+PM:        @designer mock up a simpler onboarding flow
+Designer:  Done. 3 variants in Figma — link in thread.
+           Which direction do you want to take?
+```
+
+This is what that team's Slack looks like **after one month with SlackHive** — not a demo, just a Tuesday.
 
 ---
 
