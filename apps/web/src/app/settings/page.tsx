@@ -522,7 +522,10 @@ function UsersTab() {
                     </td>
                     <td style={{ padding: '12px 16px' }}>
                       {u.fromSlack ? (
-                        <span style={{ fontSize: 12, color: '#0f766e', fontWeight: 500 }}>via Slack</span>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text)', fontWeight: 500 }}>
+                          <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/d/d5/Slack_icon_2019.svg/3840px-Slack_icon_2019.svg.png" width="13" height="13" alt="Slack" />
+                          Slack
+                        </span>
                       ) : (
                         <span style={{ fontSize: 12, color: 'var(--muted)' }}>Manual</span>
                       )}
@@ -596,7 +599,7 @@ function UsersTab() {
 
               {filteredUsers.length === 0 && (
                 <tr>
-                  <td colSpan={4} style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+                  <td colSpan={5} style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
                     {userSearch ? 'No members match your search.' : 'No members yet. Add one or import from Slack.'}
                   </td>
                 </tr>
@@ -957,6 +960,7 @@ const SLACK_CLIENT_SECRET_KEY = 'slack_client_secret';
 function AuthTab() {
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
+  const [loginOpen, setLoginOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
   const [redirectUri, setRedirectUri] = useState('');
@@ -968,6 +972,7 @@ function AuthTab() {
       .then((s: Record<string, string>) => {
         if (s[SLACK_CLIENT_ID_KEY]) setClientId(s[SLACK_CLIENT_ID_KEY]);
         if (s[SLACK_CLIENT_SECRET_KEY]) setClientSecret(s[SLACK_CLIENT_SECRET_KEY]);
+        setLoginOpen(s.slack_login_open === 'true');
       })
       .catch(() => {});
   }, []);
@@ -978,6 +983,7 @@ function AuthTab() {
       await Promise.all([
         fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: SLACK_CLIENT_ID_KEY, value: clientId }) }),
         fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: SLACK_CLIENT_SECRET_KEY, value: clientSecret }) }),
+        fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'slack_login_open', value: loginOpen ? 'true' : 'false' }) }),
       ]);
       setToast('Saved');
       setTimeout(() => setToast(''), 2000);
@@ -1031,6 +1037,21 @@ function AuthTab() {
             onChange={e => setClientSecret(e.target.value)}
             placeholder="••••••••••••••••••••••••••••••••"
           />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface-2)' }}>
+          <input
+            type="checkbox"
+            id="slack-login-open"
+            checked={loginOpen}
+            onChange={e => setLoginOpen(e.target.checked)}
+            style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--accent)' }}
+          />
+          <label htmlFor="slack-login-open" style={{ fontSize: 13, color: 'var(--text)', cursor: 'pointer', flex: 1 }}>
+            <strong style={{ fontWeight: 600 }}>Allow any workspace member to sign in</strong>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+              When off (default), only users imported via Settings → Users can log in with Slack.
+            </div>
+          </label>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button

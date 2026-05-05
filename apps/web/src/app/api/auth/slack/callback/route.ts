@@ -14,7 +14,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getSetting, upsertSlackUser } from '@/lib/db';
+import { getSetting, upsertSlackUser, getUserBySlackId } from '@/lib/db';
 
 import { signSession, COOKIE_NAME } from '@/lib/auth';
 import type { Role } from '@/lib/auth';
@@ -73,8 +73,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.redirect(`${origin}/login?error=slack_userinfo`);
   }
 
-  // Upsert user and issue session
-  const user = await upsertSlackUser(userInfo.sub, userInfo.email, userInfo.name ?? userInfo.email);
+  // If slack_login_open is not explicitly 'true', only pre-imported users may sign in
+  const loginOpen = await getSetting('slack_login_open');
+  let user = await getUserBySlackId(userInfo.sub);
+  if (!user) {
+    if (loginOpen !== 'true') {
+      return NextResponse.redirect(`${origin}/login?error=slack_not_invited`);
+    }
+    user = await upsertSlackUser(userInfo.sub, userInfo.email, userInfo.name ?? userInfo.email);
+  }
   const session = signSession({ username: user.username, role: user.role as Role });
 
   const response = NextResponse.redirect(`${origin}/`);

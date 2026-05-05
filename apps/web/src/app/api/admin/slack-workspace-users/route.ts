@@ -42,7 +42,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     const slackUsers = await fetchSlackUsers(token);
 
-    const d = await getDb();
+    const d = getDb();
     const existing = await d.query('SELECT slack_user_id, slack_email, username FROM users');
     const existingSlackIds = new Set(existing.rows.map(r => r.slack_user_id as string).filter(Boolean));
     const existingEmails = new Set(existing.rows.map(r => (r.slack_email || r.username) as string).filter(Boolean));
