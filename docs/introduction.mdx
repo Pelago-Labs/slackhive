@@ -44,63 +44,23 @@ These aren't chatbots you switch to. They're **colleagues you @mention** - in th
 
 ---
 
-## What this looks like in practice
-
-Every tool your company uses - Notion, Jira, GitHub, Redshift, HubSpot, Figma - becomes accessible through a simple @mention in Slack.
-
-```
-CEO:            @data-analyst revenue is down 8% this week, can you dig in?
-DataBot:        [queries Redshift across 6 dimensions]
-                Found it - enterprise tier churn spiked on Tuesday after
-                the pricing page change. 3 accounts, $42k ARR. @boss - done!
-
-Engineer:       @devops the checkout service is throwing 500s, what's happening?
-DevOps:         [reads logs via MCP, identifies root cause]
-                Memory leak in the payment processor connection pool.
-                I've opened PR #847 with the fix and added a health check.
-
-PM:             @designer can you mock up a simpler onboarding flow?
-Designer:       [uses Figma MCP to create frames]
-                Done - here's the Figma link with 3 variants. Let me know
-                which direction you want to take.
-```
-
----
-
 ## Two ways to work
 
-### Tag a specialist directly
-
-When you know who to ask, @mention them. The agent reads the thread, uses its tools, and replies.
+**Tag a specialist directly** when you know who handles it. **Tag `@boss`** when you don't — Boss finds the right specialist, delegates in the thread, and summarizes the result.
 
 ```
-You:          @data-analyst pull last week's conversion funnel
-DataBot:      [reads thread, runs Redshift query]
-              Conversions were up 12% WoW. Checkout completion
-              jumped 3×. Want a channel or cohort breakdown?
+You:     @boss can you analyze last week's conversion funnel?
+Boss:    On it — looping in @data-analyst 👇
+         @data-analyst conversion funnel for last week. Tag @boss when done.
+
+DataBot: Conversions up 12% WoW, driven by a 3× jump in checkout completion.
+         @boss — done!
+
+Boss:    Checkout was the story last week — completion rate tripled.
+         Want a channel or cohort breakdown?
 ```
 
-### Ask @boss to figure it out
-
-When you're not sure who handles it, tag your Boss agent. Boss reads your request, finds the right specialist, delegates in the same thread, and summarizes the result.
-
-```
-You:          @boss can you analyze last week's conversion funnel?
-Boss:         That's right up @data-analyst's alley. Let me loop them in 👇
-              @data-analyst - user wants conversion funnel analysis for last week.
-              When you're done, please tag @boss.
-
-DataBot:      [reads full thread, runs Redshift query]
-              Conversions were up 12% WoW, driven by a 3× improvement
-              in checkout completion. @boss - done!
-
-Boss:         Great find @data-analyst! To summarize -
-              conversions are up 12% week-over-week. The big win was
-              checkout: completion rate jumped 3×. Want me to dig into
-              which channels drove that?
-```
-
-The specialist receives the **full Slack thread** as context - nothing is lost in the handoff.
+Every specialist receives the **full Slack thread** as context. Nothing is lost in the handoff.
 
 ---
 
