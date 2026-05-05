@@ -48,6 +48,7 @@ function rowToAgent(row: Record<string, unknown>): Agent {
     lastError: (row.last_error as string | null | undefined) ?? null,
     runnerId: (row.runner_id as string | null | undefined) ?? null,
     lastHeartbeat: (row.last_heartbeat as string | null | undefined) ?? null,
+    tags: (Array.isArray(row.tags) ? row.tags : []) as string[],
   };
 }
 

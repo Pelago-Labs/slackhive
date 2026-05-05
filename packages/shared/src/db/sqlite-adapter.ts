@@ -81,6 +81,7 @@ function translateSql(sql: string): string {
 
 const ARRAY_COLUMNS = new Set([
   'reports_to',
+  'tags',
   'allowed_tools',
   'denied_tools',
   'allowed_channels',
@@ -525,6 +526,9 @@ export function createSqliteAdapter(dbPath?: string): DbAdapter {
   }
   if (!agentCols.includes('last_heartbeat')) {
     db.exec('ALTER TABLE agents ADD COLUMN last_heartbeat TEXT');
+  }
+  if (!agentCols.includes('tags')) {
+    db.exec("ALTER TABLE agents ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'");
   }
 
   const userCols = (db.pragma('table_info(users)') as { name: string }[]).map(c => c.name);

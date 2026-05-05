@@ -44,6 +44,7 @@ export default function Dashboard() {
   const [claudeStatus, setClaudeStatus] = useState<ClaudeStatus | null>(null);
   const [statusOpen, setStatusOpen] = useState(false);
   const [inProgressByAgent, setInProgressByAgent] = useState<Record<string, number>>({});
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const { canEdit } = useAuth();
 
   const loadStatus = () => {
@@ -75,12 +76,15 @@ export default function Dashboard() {
     return () => { clearInterval(interval); clearInterval(activityInterval); };
   }, []);
 
+  const allTags = [...new Set(agents.flatMap(a => a.tags ?? []))].sort();
+  const filteredAgents = selectedTag ? agents.filter(a => (a.tags ?? []).includes(selectedTag)) : agents;
+
   const running = agents.filter(a => a.status === 'running').length;
   const stopped = agents.filter(a => a.status === 'stopped').length;
   const total   = agents.length;
   const bossCount = agents.filter(a => a.isBoss).length;
 
-  const hasHierarchy = agents.some(a => a.isBoss) || agents.some(a => a.reportsTo?.length > 0);
+  const hasHierarchy = filteredAgents.some(a => a.isBoss) || filteredAgents.some(a => a.reportsTo?.length > 0);
 
   return (
     <InProgressContext.Provider value={inProgressByAgent}>
@@ -189,15 +193,45 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* ── Tag filter ───────────────────────────────────────────────────── */}
+      {!loading && allTags.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 20 }}>
+          <button
+            onClick={() => setSelectedTag(null)}
+            style={{
+              fontSize: 12, fontWeight: 500, padding: '4px 12px', borderRadius: 20,
+              border: '1px solid var(--border-2)', cursor: 'pointer',
+              background: selectedTag === null ? 'var(--text)' : 'var(--surface)',
+              color: selectedTag === null ? 'var(--surface)' : 'var(--muted)',
+              transition: 'all 0.15s',
+            }}
+          >All</button>
+          {allTags.map(tag => (
+            <button
+              key={tag}
+              onClick={() => setSelectedTag(selectedTag === tag ? null : tag)}
+              style={{
+                fontSize: 12, fontWeight: 500, padding: '4px 12px', borderRadius: 20,
+                border: `1px solid ${selectedTag === tag ? 'var(--accent, #3b82f6)' : 'var(--border-2)'}`,
+                cursor: 'pointer',
+                background: selectedTag === tag ? 'rgba(59,130,246,0.12)' : 'var(--surface)',
+                color: selectedTag === tag ? 'var(--accent, #3b82f6)' : 'var(--muted)',
+                transition: 'all 0.15s',
+              }}
+            >{tag}</button>
+          ))}
+        </div>
+      )}
+
       {/* ── Content ──────────────────────────────────────────────────────── */}
       {loading ? (
         <SkeletonGrid />
       ) : total === 0 ? (
         <EmptyState />
       ) : view === 'hierarchy' && hasHierarchy ? (
-        <HierarchyView agents={agents} />
+        <HierarchyView agents={filteredAgents} />
       ) : (
-        <GridView agents={agents} />
+        <GridView agents={filteredAgents} />
       )}
     </div>
     </InProgressContext.Provider>
@@ -508,6 +542,19 @@ function AgentCard({ agent, highlight, compact, multiReport }: {
             <span style={{ color: 'var(--subtle)', fontStyle: 'italic' }}>No description</span>
           )}
         </p>
+      )}
+
+      {/* Tags */}
+      {(agent.tags ?? []).length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: compact ? 10 : 14 }}>
+          {(agent.tags ?? []).map(tag => (
+            <span key={tag} style={{
+              fontSize: 10.5, fontWeight: 500, padding: '2px 7px', borderRadius: 5,
+              background: 'var(--surface-2)', color: 'var(--muted)',
+              border: '1px solid var(--border)',
+            }}>{tag}</span>
+          ))}
+        </div>
       )}
 
       {/* Footer */}

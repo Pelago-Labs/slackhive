@@ -198,6 +198,21 @@ export function Sidebar({ children, mobileOpen, onMobileClose }: { children?: Re
                         }}>BOSS</span>
                       )}
                     </div>
+                    {(agent.tags ?? []).length > 0 && (
+                      <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', marginTop: 2 }}>
+                        {(agent.tags ?? []).slice(0, 2).map((tag: string) => (
+                          <span key={tag} style={{
+                            fontSize: 9.5, fontWeight: 500,
+                            color: 'var(--subtle)', background: 'var(--surface-2)',
+                            border: '1px solid var(--border)', borderRadius: 4,
+                            padding: '1px 5px', lineHeight: 1.4,
+                          }}>{tag}</span>
+                        ))}
+                        {(agent.tags ?? []).length > 2 && (
+                          <span style={{ fontSize: 9.5, color: 'var(--subtle)' }}>+{(agent.tags ?? []).length - 2}</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </Link>

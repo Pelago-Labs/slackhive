@@ -94,6 +94,7 @@ function rowToAgent(row: Record<string, unknown>): Agent {
     isBoss: row.is_boss as boolean,
     verbose: row.verbose !== 0 && row.verbose !== false,
     reportsTo: (row.reports_to as string[]) ?? [],
+    tags: (row.tags as string[]) ?? [],
     claudeMd: (row.claude_md as string) ?? '',
     createdBy: (row.created_by as string) ?? 'system',
     createdAt: row.created_at as Date,
@@ -295,13 +296,13 @@ export async function createAgent(req: CreateAgentRequest, createdBy = 'system')
   const d = await db();
   const r = await d.query(
     `INSERT INTO agents
-       (id, slug, name, persona, description, model, is_boss, reports_to, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       (id, slug, name, persona, description, model, is_boss, reports_to, tags, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
      RETURNING *`,
     [
       id, req.slug, req.name, req.persona ?? null, req.description ?? null,
       req.model ?? DEFAULT_AGENT_MODEL, req.isBoss ?? false, req.reportsTo ?? [],
-      createdBy,
+      req.tags ?? [], createdBy,
     ]
   );
 
@@ -367,6 +368,7 @@ export async function updateAgent(id: string, req: UpdateAgentRequest): Promise<
   if (req.model !== undefined) { fields.push(`model = $${idx++}`); values.push(req.model); }
   if (req.isBoss !== undefined) { fields.push(`is_boss = $${idx++}`); values.push(req.isBoss); }
   if (req.reportsTo !== undefined) { fields.push(`reports_to = $${idx++}`); values.push(req.reportsTo); }
+  if (req.tags !== undefined) { fields.push(`tags = $${idx++}`); values.push(req.tags); }
   if (req.verbose !== undefined) { fields.push(`verbose = $${idx++}`); values.push(req.verbose); }
 
   // Upsert platform credentials if provided

@@ -178,6 +178,8 @@ export interface Agent {
    * recently — the owning process likely crashed.
    */
   liveStatus?: AgentStatus | 'stale';
+  /** Team/function labels for grouping and filtering agents on the dashboard. */
+  tags: string[];
 }
 
 /**
@@ -606,6 +608,7 @@ export interface CreateAgentRequest {
   model?: string;
   isBoss?: boolean;
   reportsTo?: string[];
+  tags?: string[];
   mcpServerIds?: string[];
   skillTemplate?: SkillTemplate;
 }
@@ -619,6 +622,7 @@ export interface UpdateAgentRequest {
   model?: string;
   isBoss?: boolean;
   reportsTo?: string[];
+  tags?: string[];
   verbose?: boolean;
 }
 

@@ -29,6 +29,7 @@ interface WizardState {
   name: string; slug: string; description: string; persona: string;
   model: string; isBoss: boolean;
   reportsToIds: string[];
+  tags: string[];
   slackBotToken: string; slackAppToken: string; slackSigningSecret: string;
   mcpServerIds: string[];
   selectedPersona: PersonaTemplate | null;
@@ -38,7 +39,7 @@ interface WizardState {
 const INITIAL: WizardState = {
   name: '', slug: '', description: '', persona: '',
   model: DEFAULT_AGENT_MODEL, isBoss: false,
-  reportsToIds: [],
+  reportsToIds: [], tags: [],
   slackBotToken: '', slackAppToken: '', slackSigningSecret: '',
   mcpServerIds: [], selectedPersona: null, importPayload: null,
 };
@@ -112,6 +113,7 @@ export default function NewAgentWizard() {
           model: state.model,
           isBoss: state.isBoss,
           reportsTo: state.isBoss ? [] : state.reportsToIds,
+          tags: state.tags,
           skillTemplate: 'blank',
           mcpServerIds: state.mcpServerIds,
           platform: 'slack',
@@ -422,6 +424,9 @@ function Step1Identity({ state, update, bosses }: {
           )}
         </div>
       )}
+
+      {/* Tags */}
+      <TagInputWizard tags={state.tags} onChange={tags => update({ tags })} />
 
       {/* Import config */}
     </div>
@@ -1307,6 +1312,55 @@ function Step5Review({ state, update, catalog, agents }: { state: WizardState; u
 }
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
+
+const SUGGESTED_TAGS = ['Engineering', 'Product', 'Infra', 'Security', 'Customer Success', 'Data', 'Marketing', 'Operations'];
+
+function TagInputWizard({ tags, onChange }: { tags: string[]; onChange: (t: string[]) => void }) {
+  const [input, setInput] = useState('');
+  const [focused, setFocused] = useState(false);
+  const suggestions = SUGGESTED_TAGS.filter(t => t.toLowerCase().includes(input.toLowerCase()) && !tags.includes(t));
+  const add = (tag: string) => { const t = tag.trim(); if (t && !tags.includes(t)) onChange([...tags, t]); setInput(''); };
+  const remove = (tag: string) => onChange(tags.filter(t => t !== tag));
+  const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if ((e.key === 'Enter' || e.key === ',') && input.trim()) { e.preventDefault(); add(input); }
+    if (e.key === 'Backspace' && !input && tags.length) remove(tags[tags.length - 1]);
+  };
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--muted)', marginBottom: 6 }}>Tags <span style={{ fontWeight: 400 }}>(optional)</span></label>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 10px', background: 'var(--surface)', minHeight: 38 }}>
+        {tags.map(tag => (
+          <span key={tag} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'rgba(59,130,246,0.12)', color: '#3b82f6', borderRadius: 6, padding: '2px 8px', fontSize: 12, fontWeight: 500 }}>
+            {tag}
+            <button onClick={() => remove(tag)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, color: 'inherit', opacity: 0.7 }}>×</button>
+          </span>
+        ))}
+        <div style={{ position: 'relative', flex: 1, minWidth: 80 }}>
+          <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKey}
+            onFocus={() => setFocused(true)} onBlur={() => setTimeout(() => setFocused(false), 150)}
+            placeholder={tags.length === 0 ? 'e.g. Engineering, Data...' : ''}
+            style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 13, color: 'var(--text)', width: '100%', padding: 0 }} />
+          {focused && (input || suggestions.length > 0) && (
+            <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 50, marginTop: 4, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', minWidth: 180, maxHeight: 200, overflowY: 'auto' }}>
+              {suggestions.map(s => (
+                <div key={s} onMouseDown={() => add(s)} style={{ padding: '8px 12px', fontSize: 13, cursor: 'pointer', color: 'var(--text)' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>{s}</div>
+              ))}
+              {input.trim() && !tags.includes(input.trim()) && !suggestions.includes(input.trim()) && (
+                <div onMouseDown={() => add(input)} style={{ padding: '8px 12px', fontSize: 13, cursor: 'pointer', color: '#3b82f6' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                  Add &ldquo;{input.trim()}&rdquo;
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function StepHeader({ step, title, desc }: { step: number; title: string; desc: string }) {
   return (
