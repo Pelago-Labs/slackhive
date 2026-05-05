@@ -3,7 +3,7 @@ title: "Settings & Users"
 description: "Brand the dashboard, manage users, assign roles, import from Slack, and control per-agent access."
 ---
 
-The **Settings** page is only visible to **superadmins**. It has two tabs: **General** (platform branding) and **Users** (accounts and roles).
+The **Settings** page is only visible to **superadmins**. It has three tabs: **General** (platform branding), **Users** (accounts and roles), and **Authentication** (Slack OAuth — superadmin only).
 
 ## General — platform branding
 
@@ -51,7 +51,7 @@ SlackHive has four roles with escalating permissions:
 | Role | View agents | Edit agents | Scheduled Jobs | Settings | Manage users | Activity |
 |------|-------------|-------------|----------------|----------|--------------|----------|
 | **Superadmin** | All | All | All jobs | ✅ | ✅ | All |
-| **Admin** | All | All | All jobs | ❌ | ✅ | All |
+| **Admin** | All | All | All jobs | ❌ | ❌ | All |
 | **Editor** | Granted only | Own + granted | Own jobs | ❌ | ❌ | Granted agents |
 | **Viewer** | Granted only | ❌ | Granted agents (read-only) | ❌ | ❌ | ❌ |
 

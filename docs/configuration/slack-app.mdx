@@ -180,7 +180,7 @@ You can also use a Slack app to let your team log in to SlackHive with their Sla
 
 This requires a **separate** Slack app (or the same one with additional OAuth configuration). You will need:
 - **Client ID** and **Client Secret** from **Basic Information → App Credentials**
-- The following **Redirect URL** added under **OAuth & Permissions → Redirect URLs**: `https://your-domain/api/auth/slack/callback`
+- The following **Redirect URL** added under **OAuth & Permissions → Redirect URLs**: `https://<your-slackhive-domain>/api/auth/slack/callback` (the path `/api/auth/slack/callback` is exact — only replace the domain)
 - The `openid`, `email`, and `profile` scopes added under **OAuth & Permissions → User Token Scopes**
 
 Once you have these, go to **Settings → General → Authentication** in SlackHive and enter the Client ID and Client Secret.
