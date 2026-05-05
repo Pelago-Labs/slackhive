@@ -955,11 +955,21 @@ export async function upsertSlackUser(slackUserId: string, email: string, name: 
   if (existing) return existing;
 
   const id = randomUUID();
-  const username = email;
+  const username = name || email;
   const r = await (await db()).query(
     'INSERT INTO users (id, username, password_hash, role, slack_user_id, slack_email) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, username, role',
     [id, username, null, 'viewer', slackUserId, email]
   );
+  const row = r.rows[0];
+  return { id: row.id as string, username: row.username as string, role: row.role as string };
+}
+
+export async function fixSlackUsername(id: string, name: string): Promise<{ id: string; username: string; role: string } | null> {
+  const r = await (await db()).query(
+    'UPDATE users SET username = $1 WHERE id = $2 RETURNING id, username, role',
+    [name, id]
+  );
+  if (!r.rows.length) return null;
   const row = r.rows[0];
   return { id: row.id as string, username: row.username as string, role: row.role as string };
 }

@@ -14,7 +14,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getSetting, upsertSlackUser, getUserBySlackId } from '@/lib/db';
+import { getSetting, upsertSlackUser, getUserBySlackId, fixSlackUsername } from '@/lib/db';
 
 import { signSession, COOKIE_NAME } from '@/lib/auth';
 import type { Role } from '@/lib/auth';
@@ -81,6 +81,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       return NextResponse.redirect(`${origin}/login?error=slack_not_invited`);
     }
     user = await upsertSlackUser(userInfo.sub, userInfo.email, userInfo.name ?? userInfo.email);
+  } else if (userInfo.name && user.username === userInfo.email) {
+    user = await fixSlackUsername(user.id, userInfo.name) ?? user;
   }
   const session = signSession({ username: user.username, role: user.role as Role });
 
