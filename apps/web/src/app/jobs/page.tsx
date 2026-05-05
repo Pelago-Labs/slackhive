@@ -87,9 +87,9 @@ export default function JobsPage() {
   const load = () => {
     setLoading(true);
     Promise.all([
-      fetch('/api/jobs').then(r => r.json()),
-      fetch('/api/agents').then(r => r.json()),
-      fetch('/api/agents?writable=true').then(r => r.json()),
+      fetch('/api/jobs').then(r => r.json()).then(d => Array.isArray(d) ? d : []),
+      fetch('/api/agents').then(r => r.json()).then(d => Array.isArray(d) ? d : []),
+      fetch('/api/agents?writable=true').then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     ]).then(([j, a, w]) => { setJobs(j); setAgents(a); setWritableAgents(w); }).catch(() => {}).finally(() => setLoading(false));
   };
   useEffect(() => { load(); }, []);

@@ -248,12 +248,14 @@ export function Sidebar({ children, mobileOpen, onMobileClose }: { children?: Re
             </svg>
           }>Jobs</NavItem>
 
+          {role === 'superadmin' && (
           <NavItem href="/settings" active={pathname === '/settings'} collapsed={collapsed} icon={
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path d="M6.86 2h2.28l.32 1.6a5 5 0 011.32.77l1.54-.52.94 1.62-1.22 1.08a5 5 0 010 1.54l1.22 1.08-.94 1.62-1.54-.52a5 5 0 01-1.32.77L9.14 14H6.86l-.32-1.6a5 5 0 01-1.32-.77l-1.54.52-.94-1.62 1.22-1.08a5 5 0 010-1.54L2.74 6.83l.94-1.62 1.54.52a5 5 0 011.32-.77L6.86 2z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
               <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.2"/>
             </svg>
           }>Settings</NavItem>
+          )}
 
         </div>
         </div>
