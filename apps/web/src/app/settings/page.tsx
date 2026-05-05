@@ -980,11 +980,14 @@ function AuthTab() {
   async function save() {
     setSaving(true);
     try {
-      await Promise.all([
+      const saves = [
         fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: SLACK_CLIENT_ID_KEY, value: clientId }) }),
         fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: SLACK_CLIENT_SECRET_KEY, value: clientSecret }) }),
-        fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'slack_login_open', value: loginOpen ? 'true' : 'false' }) }),
-      ]);
+      ];
+      if (clientId && clientSecret) {
+        saves.push(fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'slack_login_open', value: loginOpen ? 'true' : 'false' }) }));
+      }
+      await Promise.all(saves);
       setToast('Saved');
       setTimeout(() => setToast(''), 2000);
     } finally { setSaving(false); }

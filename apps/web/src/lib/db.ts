@@ -1080,32 +1080,10 @@ export async function userCanWriteAgent(agentId: string, username: string, role:
   return r.rows.length > 0;
 }
 
-/**
- * Returns true if a Slack user (by slack_user_id) can trigger an agent.
- * Requires trigger, view, or edit access. Admins and agent creators always can.
- */
-export async function userCanTriggerAgent(agentId: string, slackUserId: string): Promise<boolean> {
-  const r = await (await db()).query(
-    `SELECT u.role, u.username FROM users u WHERE u.slack_user_id = $1`,
-    [slackUserId]
-  );
-  if (!r.rows.length) return false;
-  const { role, username } = r.rows[0] as { role: string; username: string };
-  if (role === 'admin' || role === 'superadmin') return true;
-
-  const access = await (await db()).query(
-    `SELECT 1 FROM agents WHERE id = $1 AND created_by = $2
-     UNION
-     SELECT 1 FROM agent_access aa JOIN users u ON u.id = aa.user_id
-       WHERE aa.agent_id = $1 AND u.username = $2
-     LIMIT 1`,
-    [agentId, username]
-  );
-  return access.rows.length > 0;
-}
 
 /**
- * Returns agent IDs visible in SlackHive (view/edit only, not trigger).
+ * Returns agent IDs where the user has edit access (for job creation).
+ * Includes agents created by the user and those with an explicit edit grant.
  * Admins return null (no restriction).
  */
 export async function listWritableAgentIds(
